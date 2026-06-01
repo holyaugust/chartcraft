@@ -1,0 +1,124 @@
+import { useState, useMemo } from 'react'
+import { Table2, Upload, BarChart2 } from 'lucide-react'
+import DataTable from './components/DataTable'
+import ExcelUpload from './components/ExcelUpload'
+import ChartTypeSelector from './components/ChartTypeSelector'
+import ChartSettings from './components/ChartSettings'
+import ChartPreview from './components/ChartPreview'
+import { DEFAULT_TABLE, type ChartConfig, type TableData } from './types'
+import { parseTableData, validateTableData } from './utils/parseData'
+import './App.css'
+
+type InputTab = 'table' | 'upload'
+
+const DEFAULT_CONFIG: ChartConfig = {
+  type: 'bar',
+  title: '销售数据分析',
+  subtitle: '2024 年上半年',
+  showLegend: true,
+  showGrid: true,
+  smooth: true,
+  stacked: false,
+}
+
+export default function App() {
+  const [tableData, setTableData] = useState<TableData>(DEFAULT_TABLE)
+  const [inputTab, setInputTab] = useState<InputTab>('table')
+  const [chartConfig, setChartConfig] = useState<ChartConfig>(DEFAULT_CONFIG)
+
+  const parsed = useMemo(() => parseTableData(tableData), [tableData])
+  const validationError = useMemo(() => validateTableData(tableData), [tableData])
+
+  return (
+    <div className="app">
+      <header className="app-header">
+        <div className="header-brand">
+          <div className="brand-icon">
+            <BarChart2 size={24} />
+          </div>
+          <div>
+            <h1>ChartCraft</h1>
+            <p>数据可视化图表生成器</p>
+          </div>
+        </div>
+      </header>
+
+      <main className="app-main">
+        <section className="panel panel-data">
+          <div className="panel-header">
+            <h2>数据源</h2>
+            <div className="tab-bar">
+              <button
+                type="button"
+                className={`tab ${inputTab === 'table' ? 'active' : ''}`}
+                onClick={() => setInputTab('table')}
+              >
+                <Table2 size={16} />
+                手动填表
+              </button>
+              <button
+                type="button"
+                className={`tab ${inputTab === 'upload' ? 'active' : ''}`}
+                onClick={() => setInputTab('upload')}
+              >
+                <Upload size={16} />
+                上传 Excel
+              </button>
+            </div>
+          </div>
+
+          <div className="panel-body">
+            {inputTab === 'table' ? (
+              <DataTable data={tableData} onChange={setTableData} />
+            ) : (
+              <ExcelUpload
+                onImport={(data) => {
+                  setTableData(data)
+                  setInputTab('table')
+                }}
+              />
+            )}
+          </div>
+
+          <div className="data-hint">
+            <strong>数据格式：</strong>第一列为分类名称，其余列为数值。修改数据后图表实时更新。
+          </div>
+        </section>
+
+        <section className="panel panel-chart">
+          <div className="panel-header">
+            <h2>图表配置</h2>
+          </div>
+
+          <div className="panel-body chart-panel-body">
+            <ChartTypeSelector
+              value={chartConfig.type}
+              onChange={(type) => setChartConfig({ ...chartConfig, type })}
+            />
+
+            <ChartSettings config={chartConfig} onChange={setChartConfig} />
+
+            <div className="preview-section">
+              <h3>图表预览</h3>
+              {validationError ? (
+                <div className="preview-empty">
+                  <p>{validationError}</p>
+                </div>
+              ) : parsed ? (
+                <ChartPreview parsed={parsed} config={chartConfig} />
+              ) : (
+                <div className="preview-empty">
+                  <p>请输入有效数据以生成图表</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer className="app-footer">
+        <span>ChartCraft — 表格数据 · Excel 导入 · 多类型图表 · PNG 导出</span>
+      </footer>
+    </div>
+  )
+}
