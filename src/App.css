@@ -216,6 +216,28 @@
   gap: 8px;
 }
 
+.toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: #e2e8f0;
+  margin: 0 2px;
+}
+
+.btn-icon-only {
+  padding: 5px 8px;
+}
+
+.btn-icon-only:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.table-tip {
+  margin: 0;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
 .toolbar-group {
   display: flex;
   gap: 6px;
@@ -233,10 +255,26 @@
   font-size: 13px;
 }
 
+.data-table th,
+.data-table td {
+  padding: 0;
+  border-bottom: 1px solid #f1f5f9;
+  position: relative;
+}
+
 .data-table th {
   background: #f8fafc;
-  padding: 0;
   border-bottom: 2px solid #e2e8f0;
+}
+
+.data-table tr:last-child td,
+.data-table tr:last-child th {
+  border-bottom: none;
+}
+
+.data-table .cell-selected {
+  background: #eef2ff;
+  box-shadow: inset 0 0 0 2px #6366f1;
 }
 
 .data-table td {
@@ -479,6 +517,86 @@
   margin: 0;
   accent-color: #6366f1;
   cursor: pointer;
+}
+
+.color-scheme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 8px;
+}
+
+.color-scheme-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.color-scheme-btn:hover {
+  border-color: #c7d2fe;
+}
+
+.color-scheme-btn.active {
+  border-color: #6366f1;
+  background: #eef2ff;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+.color-swatches {
+  display: flex;
+  gap: 3px;
+  height: 14px;
+}
+
+.color-swatch {
+  flex: 1;
+  border-radius: 3px;
+}
+
+.color-scheme-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+  text-align: left;
+}
+
+.color-scheme-btn.active .color-scheme-label {
+  color: #6366f1;
+}
+
+.bar-style-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.bar-style-btn {
+  padding: 8px 10px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  background: white;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.bar-style-btn:hover {
+  border-color: #c7d2fe;
+  color: #6366f1;
+}
+
+.bar-style-btn.active {
+  border-color: #6366f1;
+  background: linear-gradient(135deg, #eef2ff, #f5f3ff);
+  color: #6366f1;
 }
 
 .setting-toggles {

@@ -1,11 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Table2, Upload, BarChart2 } from 'lucide-react'
 import DataTable from './components/DataTable'
 import ExcelUpload from './components/ExcelUpload'
 import ChartTypeSelector from './components/ChartTypeSelector'
 import ChartSettings from './components/ChartSettings'
 import ChartPreview from './components/ChartPreview'
-import { DEFAULT_TABLE, type ChartConfig, type TableData } from './types'
+import { useTableUndoShortcut, useUndoableTableState } from './hooks/useUndoableTableState'
+import { DEFAULT_TABLE, createTableState, type ChartConfig } from './types'
 import { parseTableData, validateTableData } from './utils/parseData'
 import './App.css'
 
@@ -20,15 +21,21 @@ const DEFAULT_CONFIG: ChartConfig = {
   showGrid: true,
   smooth: true,
   stacked: false,
+  colorScheme: 'default',
+  barStyle: 'rounded',
 }
 
 export default function App() {
-  const [tableData, setTableData] = useState<TableData>(DEFAULT_TABLE)
+  const { state: tableState, setTableState, pushSnapshot, undo } = useUndoableTableState(
+    createTableState(DEFAULT_TABLE),
+  )
   const [inputTab, setInputTab] = useState<InputTab>('table')
   const [chartConfig, setChartConfig] = useState<ChartConfig>(DEFAULT_CONFIG)
 
-  const parsed = useMemo(() => parseTableData(tableData), [tableData])
-  const validationError = useMemo(() => validateTableData(tableData), [tableData])
+  useTableUndoShortcut(undo)
+
+  const parsed = useMemo(() => parseTableData(tableState.data), [tableState.data])
+  const validationError = useMemo(() => validateTableData(tableState.data), [tableState.data])
 
   return (
     <div className="app">
@@ -70,11 +77,16 @@ export default function App() {
 
           <div className="panel-body">
             {inputTab === 'table' ? (
-              <DataTable data={tableData} onChange={setTableData} />
+              <DataTable
+                state={tableState}
+                onChange={setTableState}
+                onBeforeChange={pushSnapshot}
+              />
             ) : (
               <ExcelUpload
                 onImport={(data) => {
-                  setTableData(data)
+                  pushSnapshot()
+                  setTableState(createTableState(data))
                   setInputTab('table')
                 }}
               />
@@ -82,7 +94,7 @@ export default function App() {
           </div>
 
           <div className="data-hint">
-            <strong>数据格式：</strong>第一列为分类名称，其余列为数值。修改数据后图表实时更新。
+            <strong>数据格式：</strong>第一列为分类名称，其余列为数值。可选中单元格设置对齐或合并。
           </div>
         </section>
 

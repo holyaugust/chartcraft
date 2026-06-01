@@ -1,6 +1,21 @@
 export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'scatter' | 'radar' | 'donut'
 
-export type TableData = string[][]
+export type ColorSchemeId =
+  | 'default'
+  | 'ocean'
+  | 'sunset'
+  | 'forest'
+  | 'vivid'
+  | 'pastel'
+  | 'business'
+  | 'mono'
+
+export type BarStyleId = 'rounded' | 'flat' | 'gradient' | 'capsule' | 'outline' | 'shadow'
+
+export type { CellAlign, CellMerge, TableData, TableMeta, TableState } from './types/table'
+export { EMPTY_TABLE_META, createTableState } from './types/table'
+
+import type { TableData } from './types/table'
 
 export interface ChartConfig {
   type: ChartType
@@ -11,6 +26,8 @@ export interface ChartConfig {
   showGrid: boolean
   smooth: boolean
   stacked: boolean
+  colorScheme: ColorSchemeId
+  barStyle: BarStyleId
 }
 
 export interface ParsedChartData {

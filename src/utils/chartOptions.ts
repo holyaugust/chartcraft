@@ -1,23 +1,11 @@
 import type { EChartsOption } from 'echarts'
-import type { ChartConfig, ParsedChartData } from '../types'
-
-const COLORS = [
-  '#6366f1',
-  '#8b5cf6',
-  '#ec4899',
-  '#f43f5e',
-  '#f97316',
-  '#eab308',
-  '#22c55e',
-  '#14b8a6',
-  '#06b6d4',
-  '#3b82f6',
-]
+import type { BarStyleId, ChartConfig, ParsedChartData } from '../types'
+import { alphaColor, getColors, lightenColor } from './colorSchemes'
 
 function baseOption(config: ChartConfig): EChartsOption {
   return {
     backgroundColor: 'transparent',
-    color: COLORS,
+    color: getColors(config.colorScheme),
     title: {
       text: config.title,
       subtext: config.subtitle,
@@ -50,10 +38,88 @@ function baseOption(config: ChartConfig): EChartsOption {
   }
 }
 
+function buildBarItemStyle(style: BarStyleId, color: string) {
+  switch (style) {
+    case 'flat':
+      return { borderRadius: 0, color }
+    case 'capsule':
+      return { borderRadius: 999, color }
+    case 'gradient':
+      return {
+        borderRadius: [8, 8, 0, 0],
+        color: {
+          type: 'linear' as const,
+          x: 0,
+          y: 0,
+          x2: 0,
+          y2: 1,
+          colorStops: [
+            { offset: 0, color: lightenColor(color, 0.25) },
+            { offset: 1, color },
+          ],
+        },
+      }
+    case 'outline':
+      return {
+        borderRadius: [8, 8, 0, 0],
+        color: alphaColor(color, 0.15),
+        borderColor: color,
+        borderWidth: 2,
+      }
+    case 'shadow':
+      return {
+        borderRadius: [8, 8, 0, 0],
+        color,
+        shadowBlur: 10,
+        shadowColor: alphaColor(color, 0.45),
+        shadowOffsetY: 4,
+      }
+    case 'rounded':
+    default:
+      return { borderRadius: [8, 8, 0, 0], color }
+  }
+}
+
+function buildBarSeries(
+  parsed: ParsedChartData,
+  config: ChartConfig,
+): EChartsOption['series'] {
+  const colors = getColors(config.colorScheme)
+  const isCapsule = config.barStyle === 'capsule'
+
+  return parsed.series.map((s, index) => ({
+    name: s.name,
+    type: 'bar' as const,
+    data: s.data,
+    stack: config.stacked ? 'total' : undefined,
+    barWidth: isCapsule ? '36%' : undefined,
+    barGap: isCapsule ? '20%' : undefined,
+    emphasis: { focus: 'series' as const },
+    itemStyle: buildBarItemStyle(config.barStyle, colors[index % colors.length]),
+  }))
+}
+
+function barOption(parsed: ParsedChartData, config: ChartConfig): EChartsOption {
+  const option = baseOption(config)
+  option.xAxis = {
+    type: 'category',
+    data: parsed.categories,
+    axisLine: { lineStyle: { color: '#cbd5e1' } },
+    axisLabel: { color: '#64748b' },
+  }
+  option.yAxis = {
+    type: 'value',
+    splitLine: { show: config.showGrid, lineStyle: { color: '#f1f5f9', type: 'dashed' } },
+    axisLabel: { color: '#64748b' },
+  }
+  option.series = buildBarSeries(parsed, config)
+  return option
+}
+
 function barLineAreaOption(
   parsed: ParsedChartData,
   config: ChartConfig,
-  chartType: 'bar' | 'line' | 'area',
+  chartType: 'line' | 'area',
 ): EChartsOption {
   const option = baseOption(config)
   option.xAxis = {
@@ -75,7 +141,6 @@ function barLineAreaOption(
     stack: config.stacked ? 'total' : undefined,
     areaStyle: chartType === 'area' ? { opacity: 0.25 } : undefined,
     emphasis: { focus: 'series' },
-    itemStyle: { borderRadius: chartType === 'bar' ? [6, 6, 0, 0] : undefined },
   }))
   return option
 }
@@ -170,7 +235,7 @@ function radarOption(parsed: ParsedChartData, config: ChartConfig): EChartsOptio
 export function buildChartOption(parsed: ParsedChartData, config: ChartConfig): EChartsOption {
   switch (config.type) {
     case 'bar':
-      return barLineAreaOption(parsed, config, 'bar')
+      return barOption(parsed, config)
     case 'line':
       return barLineAreaOption(parsed, config, 'line')
     case 'area':
@@ -184,6 +249,6 @@ export function buildChartOption(parsed: ParsedChartData, config: ChartConfig): 
     case 'radar':
       return radarOption(parsed, config)
     default:
-      return barLineAreaOption(parsed, config, 'bar')
+      return barOption(parsed, config)
   }
 }
