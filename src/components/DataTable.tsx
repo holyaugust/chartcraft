@@ -1,7 +1,8 @@
 import { useCallback, useRef } from 'react'
-import { Plus, Minus, Download, RotateCcw } from 'lucide-react'
+import { Plus, Minus, Download, RotateCcw, ArrowRightLeft } from 'lucide-react'
 import type { TableData } from '../types'
 import { exportToExcel } from '../utils/excelParser'
+import { transposeTable } from '../utils/tableUtils'
 
 interface DataTableProps {
   data: TableData
@@ -52,6 +53,10 @@ export default function DataTable({ data, onChange }: DataTableProps) {
     ])
   }
 
+  const switchRowsCols = () => {
+    onChange(transposeTable(data))
+  }
+
   return (
     <div className="data-table-wrapper">
       <div className="table-toolbar">
@@ -70,6 +75,9 @@ export default function DataTable({ data, onChange }: DataTableProps) {
           </button>
         </div>
         <div className="toolbar-group">
+          <button type="button" className="btn btn-sm btn-ghost" onClick={switchRowsCols} title="将行与列互换">
+            <ArrowRightLeft size={14} /> 切换行列
+          </button>
           <button type="button" className="btn btn-sm btn-ghost" onClick={resetSample}>
             <RotateCcw size={14} /> 示例数据
           </button>
