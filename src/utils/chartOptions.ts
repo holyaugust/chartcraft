@@ -37,6 +37,7 @@ function baseOption(config: ChartConfig): EChartsOption {
     legend: {
       show: config.showLegend,
       bottom: 8,
+      itemGap: config.legendItemGap,
       textStyle: { color: '#64748b' },
     },
     grid: {
@@ -87,6 +88,7 @@ function pieOption(parsed: ParsedChartData, config: ChartConfig, donut = false):
     orient: 'vertical',
     right: 16,
     top: 'center',
+    itemGap: config.legendItemGap,
     textStyle: { color: '#64748b' },
   }
 

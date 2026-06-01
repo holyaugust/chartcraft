@@ -16,6 +16,7 @@ const DEFAULT_CONFIG: ChartConfig = {
   title: '销售数据分析',
   subtitle: '2024 年上半年',
   showLegend: true,
+  legendItemGap: 20,
   showGrid: true,
   smooth: true,
   stacked: false,

@@ -48,6 +48,23 @@ export default function ChartSettings({ config, onChange }: ChartSettingsProps) 
           <span>显示图例</span>
         </label>
 
+        {config.showLegend && (
+          <div className="setting-field setting-field-inline">
+            <label htmlFor="legend-gap">
+              图例间距 <span className="setting-value">{config.legendItemGap}px</span>
+            </label>
+            <input
+              id="legend-gap"
+              type="range"
+              min={4}
+              max={80}
+              step={2}
+              value={config.legendItemGap}
+              onChange={(e) => update('legendItemGap', Number(e.target.value))}
+            />
+          </div>
+        )}
+
         <label className="toggle">
           <input
             type="checkbox"

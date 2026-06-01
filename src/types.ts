@@ -7,6 +7,7 @@ export interface ChartConfig {
   title: string
   subtitle: string
   showLegend: boolean
+  legendItemGap: number
   showGrid: boolean
   smooth: boolean
   stacked: boolean
