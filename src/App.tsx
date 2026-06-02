@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Table2, Upload, BarChart2 } from 'lucide-react'
 import DataTable from './components/DataTable'
 import ExcelUpload from './components/ExcelUpload'
@@ -26,13 +26,24 @@ const DEFAULT_CONFIG: ChartConfig = {
 }
 
 export default function App() {
-  const { state: tableState, setTableState, pushSnapshot, undo } = useUndoableTableState(
+  const { state: tableState, applyChange, undo } = useUndoableTableState(
     createTableState(DEFAULT_TABLE),
   )
+  const resetTableEditRef = useRef<(() => void) | null>(null)
   const [inputTab, setInputTab] = useState<InputTab>('table')
   const [chartConfig, setChartConfig] = useState<ChartConfig>(DEFAULT_CONFIG)
 
-  useTableUndoShortcut(undo)
+  const resetTableEdit = useCallback(() => {
+    resetTableEditRef.current?.()
+  }, [])
+
+  const performUndo = useCallback(() => {
+    const done = undo()
+    if (done) resetTableEdit()
+    return done
+  }, [undo, resetTableEdit])
+
+  useTableUndoShortcut(performUndo, resetTableEdit, inputTab === 'table')
 
   const parsed = useMemo(() => parseTableData(tableState.data), [tableState.data])
   const validationError = useMemo(() => validateTableData(tableState.data), [tableState.data])
@@ -79,14 +90,14 @@ export default function App() {
             {inputTab === 'table' ? (
               <DataTable
                 state={tableState}
-                onChange={setTableState}
-                onBeforeChange={pushSnapshot}
+                onChange={applyChange}
+                onUndo={performUndo}
+                resetEditRef={resetTableEditRef}
               />
             ) : (
               <ExcelUpload
                 onImport={(data) => {
-                  pushSnapshot()
-                  setTableState(createTableState(data))
+                  applyChange(createTableState(data))
                   setInputTab('table')
                 }}
               />
@@ -94,7 +105,7 @@ export default function App() {
           </div>
 
           <div className="data-hint">
-            <strong>数据格式：</strong>第一列为分类名称，其余列为数值。可选中单元格设置对齐或合并。
+            <strong>数据格式：</strong>第一列为分类，其余列为数值；单元格支持 Excel 公式（如 =SUM(B2:B7)）。
           </div>
         </section>
 

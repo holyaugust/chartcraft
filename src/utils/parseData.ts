@@ -1,16 +1,16 @@
 import type { ParsedChartData, TableData } from '../types'
+import { getCellNumericForChart, getComputedTable } from './formulaEngine'
 
 function parseNumber(value: string): number {
-  const cleaned = value.replace(/[,，%％\s]/g, '')
-  const num = parseFloat(cleaned)
-  return Number.isFinite(num) ? num : 0
+  return getCellNumericForChart(value)
 }
 
 export function parseTableData(data: TableData): ParsedChartData | null {
-  if (data.length < 2 || data[0].length < 2) return null
+  const computed = getComputedTable(data)
+  if (computed.length < 2 || computed[0].length < 2) return null
 
-  const headers = data[0]
-  const rows = data.slice(1).filter((row) => row.some((cell) => cell.trim() !== ''))
+  const headers = computed[0]
+  const rows = computed.slice(1).filter((row) => row.some((cell) => cell.trim() !== '' && !cell.startsWith('#')))
 
   if (rows.length === 0) return null
 

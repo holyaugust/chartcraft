@@ -204,7 +204,7 @@ export function removeTableRow(state: TableState): TableState {
 export function addTableCol(state: TableState): TableState {
   return {
     ...state,
-    data: state.data.map((row, i) => [...row, i === 0 ? `列${row.length + 1}` : '']),
+    data: state.data.map((row) => [...row, '']),
   }
 }
 
