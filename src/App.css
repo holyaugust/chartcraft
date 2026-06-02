@@ -203,10 +203,239 @@
 }
 
 /* Data Table */
+.data-table-themed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  --table-accent: #6366f1;
+  --table-accent-hover: #4f46e5;
+  --table-accent-light: #eef2ff;
+  --table-accent-soft: rgba(99, 102, 241, 0.12);
+  --table-title-bg: linear-gradient(90deg, #eef2ff 0%, #f5f3ff 100%);
+  --table-title-text: #4338ca;
+  --table-label-bg: #f8fafc;
+  --table-label-text: #475569;
+  --table-row-even: #ffffff;
+  --table-row-odd: #f8fafc;
+  --table-axis-bg: #f1f5f9;
+  --table-axis-corner: #e2e8f0;
+  --table-axis-text: #64748b;
+  --table-axis-active-bg: #fef3c7;
+  --table-axis-active-text: #92400e;
+  --table-border: #f1f5f9;
+  --table-scroll-border: #e2e8f0;
+  --table-formula-bg: #f8fafc;
+  --table-formula-border: #e2e8f0;
+  --table-formula-active-bg: #eef2ff;
+  --table-formula-ref: #6366f1;
+  --table-formula-cell: #0f766e;
+  --table-focus-bg: #eef2ff;
+  --table-pick-hover: #fef9c3;
+  --table-fill-preview: #fef9c3;
+  --table-col-0: #6366f1;
+  --table-col-1: #8b5cf6;
+  --table-col-2: #ec4899;
+  --table-col-3: #0ea5e9;
+  --table-col-4: #14b8a6;
+  --table-col-5: #f59e0b;
+  --table-grid-color: #f1f5f9;
+  --table-grid-color-strong: #e2e8f0;
+  --table-border-strong: #e2e8f0;
+  --table-outer-glow: rgba(99, 102, 241, 0.12);
+  --table-axis-divider: #e2e8f0;
+  --table-gradient-border: linear-gradient(135deg, #6366f1, #ec4899);
+  --table-radius: 10px;
+  --table-outer-border-width: 1px;
+  --table-outer-border-style: solid;
+  --table-cell-border-width: 1px;
+  --table-cell-border-style: solid;
+  --table-axis-border-width: 1px;
+  --table-title-border-width: 2px;
+  --table-outer-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
 .data-table-wrapper {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.table-appearance-panel {
+  --table-accent: #6366f1;
+  --table-accent-hover: #4f46e5;
+  --table-accent-light: #eef2ff;
+  --table-accent-soft: rgba(99, 102, 241, 0.12);
+  --table-scroll-border: #e2e8f0;
+  --table-formula-bg: #f8fafc;
+  --table-axis-text: #64748b;
+  --table-title-text: #4338ca;
+  --table-outer-glow: rgba(99, 102, 241, 0.12);
+  --table-grid-color: #f1f5f9;
+  --table-row-even: #ffffff;
+  --table-gradient-border: linear-gradient(135deg, #6366f1, #ec4899);
+  --table-radius: 10px;
+  --table-outer-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--table-radius);
+  border: 1px solid var(--table-scroll-border);
+  background: linear-gradient(180deg, var(--table-formula-bg) 0%, color-mix(in srgb, var(--table-accent-light) 35%, #fff) 100%);
+  box-shadow: var(--table-outer-shadow);
+}
+
+.table-appearance-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.table-appearance-section + .table-appearance-section {
+  padding-top: 10px;
+  border-top: 1px dashed color-mix(in srgb, var(--table-scroll-border) 80%, transparent);
+}
+
+.table-appearance-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--table-axis-text);
+  white-space: nowrap;
+  min-width: 72px;
+  padding-top: 5px;
+}
+
+.table-appearance-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
+.table-theme-btn,
+.table-style-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 4px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.table-style-btn {
+  padding: 5px 10px 5px 6px;
+  border-radius: 10px;
+}
+
+.table-theme-btn:hover,
+.table-style-btn:hover {
+  border-color: var(--table-scroll-border);
+  transform: translateY(-1px);
+}
+
+.table-theme-btn.active,
+.table-style-btn.active {
+  border-color: var(--table-accent);
+  background: var(--table-accent-light);
+  color: var(--table-title-text);
+  font-weight: 600;
+  box-shadow: 0 2px 10px var(--table-outer-glow);
+}
+
+.table-theme-swatches {
+  display: flex;
+  gap: 2px;
+}
+
+.table-theme-swatches span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+.table-style-preview {
+  width: 26px;
+  height: 18px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: var(--table-row-even);
+  position: relative;
+  overflow: hidden;
+}
+
+.table-style-preview::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--table-scroll-border);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.table-style-preview::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  background:
+    linear-gradient(var(--table-grid-color) 1px, transparent 1px) 0 0 / 100% 6px,
+    linear-gradient(90deg, var(--table-grid-color) 1px, transparent 1px) 0 0 / 8px 100%;
+  opacity: 0.85;
+}
+
+.table-style-preview[data-preview-style='minimal']::after {
+  background: linear-gradient(var(--table-grid-color) 1px, transparent 1px) 0 0 / 100% 6px;
+}
+
+.table-style-preview[data-preview-style='outline']::before {
+  border-width: 2px;
+  border-color: var(--table-accent);
+}
+
+.table-style-preview[data-preview-style='double']::before {
+  border-width: 2px;
+  border-style: double;
+}
+
+.table-style-preview[data-preview-style='card'] {
+  box-shadow: 0 2px 6px var(--table-outer-glow);
+}
+
+.table-style-preview[data-preview-style='modern']::before {
+  border-color: transparent;
+  background: var(--table-gradient-border);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  padding: 1px;
+}
+
+.table-style-btn-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  line-height: 1.2;
+}
+
+.table-style-btn-desc {
+  font-size: 9px;
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+/* legacy aliases */
+.table-theme-bar {
+  display: none;
 }
 
 .table-toolbar {
@@ -216,10 +445,15 @@
   gap: 8px;
 }
 
+.data-table-themed[data-table-style='soft'] .table-scroll,
+.data-table-themed[data-table-style='card'] .formula-bar {
+  border-radius: calc(var(--table-radius) - 4px);
+}
+
 .toolbar-divider {
   width: 1px;
   height: 20px;
-  background: #e2e8f0;
+  background: var(--table-scroll-border);
   margin: 0 2px;
 }
 
@@ -243,16 +477,16 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  background: #f8fafc;
+  border: 1px solid var(--table-formula-border);
+  border-radius: calc(var(--table-radius) - 2px);
+  background: var(--table-formula-bg);
 }
 
 .formula-bar-ref {
   min-width: 36px;
   font-size: 12px;
   font-weight: 600;
-  color: #6366f1;
+  color: var(--table-formula-ref);
   font-family: ui-monospace, Consolas, monospace;
 }
 
@@ -341,8 +575,8 @@
 }
 
 .data-table .cell-formula-editing {
-  background: #eef2ff;
-  box-shadow: inset 0 0 0 2px #6366f1;
+  background: var(--table-formula-active-bg);
+  box-shadow: inset 0 0 0 2px var(--table-accent);
 }
 
 .data-table .cell-formula-editing .cell-input,
@@ -355,21 +589,17 @@
 }
 
 .formula-bar-active {
-  border-color: #6366f1;
-  background: #eef2ff;
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
-}
-
-.data-table .cell-pick-target {
-  cursor: cell;
+  border-color: var(--table-accent);
+  background: var(--table-formula-active-bg);
+  box-shadow: 0 0 0 2px var(--table-accent-soft);
 }
 
 .data-table .cell-pick-target:hover {
-  background: #fef9c3;
+  background: var(--table-pick-hover);
 }
 
 .data-table .cell-formula .cell-input {
-  color: #0f766e;
+  color: var(--table-formula-cell);
   font-weight: 500;
 }
 
@@ -384,20 +614,198 @@
 
 .table-scroll {
   overflow-x: auto;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
+  border-radius: var(--table-radius);
+  border: var(--table-outer-border-width) var(--table-outer-border-style) var(--table-scroll-border);
+  box-shadow: var(--table-outer-shadow);
+  background: var(--table-row-even);
+}
+
+/* 导出 PNG 时隐藏编辑态 UI，避免截图带选中框/填充手柄 */
+.table-export-capture .fill-handle {
+  display: none !important;
+}
+
+.table-export-capture .cell-selected {
+  background: inherit !important;
+  box-shadow: none !important;
+}
+
+.table-export-capture .cell-fill-preview,
+.table-export-capture .cell-fill-source,
+.table-export-capture .cell-formula-editing {
+  background: inherit !important;
+  box-shadow: none !important;
+}
+
+.table-export-capture .sheet-axis-active {
+  background: var(--table-axis-bg) !important;
+  color: var(--table-axis-text) !important;
+}
+
+.table-export-capture .cell-export-snapshot {
+  pointer-events: none;
+}
+
+/* 隐藏 Excel 式行列标号（A/B/C、1/2/3） */
+.data-table.sheet-axis-hidden thead,
+.data-table.sheet-axis-hidden .sheet-row-header {
+  display: none;
+}
+
+.data-table-themed[data-table-style='minimal'] .data-table.sheet-axis-hidden tbody th.sheet-row-header {
+  display: none;
+}
+
+/* 隐藏标号后：列标样式 → 首行，行标样式 → 首列 */
+.data-table.sheet-axis-hidden tbody tr.table-row-title td.axis-as-col-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+  color: var(--table-axis-text);
+  background: var(--table-axis-bg);
+  border-bottom: var(--table-title-border-width) var(--table-cell-border-style) var(--table-grid-color-strong);
+  border-right: var(--table-axis-border-width) var(--table-cell-border-style) var(--table-axis-divider);
+}
+
+.data-table.sheet-axis-hidden tbody tr.table-row-title td.axis-as-corner {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  background: var(--table-axis-corner);
+}
+
+.data-table.sheet-axis-hidden tbody tr.table-row-title td.axis-as-col-header .cell-input {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--table-axis-text);
+}
+
+.data-table.sheet-axis-hidden tbody td.axis-as-row-header {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  padding: 0;
+  text-align: center;
+  vertical-align: middle;
+  color: var(--table-axis-text);
+  background: var(--table-axis-bg);
+  border-right: var(--table-axis-border-width) var(--table-cell-border-style) var(--table-axis-divider);
+}
+
+.data-table.sheet-axis-hidden tbody td.axis-as-row-header .cell-input {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--table-axis-text);
+}
+
+.data-table.sheet-axis-hidden tbody td.axis-as-col-header.sheet-axis-active,
+.data-table.sheet-axis-hidden tbody td.axis-as-row-header.sheet-axis-active {
+  background: var(--table-axis-active-bg);
+  color: var(--table-axis-active-text);
+  box-shadow: none;
+}
+
+.data-table.sheet-axis-hidden tbody td.axis-as-col-header.sheet-axis-active .cell-input,
+.data-table.sheet-axis-hidden tbody td.axis-as-row-header.sheet-axis-active .cell-input {
+  color: var(--table-axis-active-text);
+}
+
+.data-table.sheet-axis-hidden tbody tr.table-row-title td.axis-as-col-header[data-col-accent='0'] {
+  background: color-mix(in srgb, var(--table-col-0) 14%, var(--table-axis-bg));
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--table-col-0) 55%, transparent);
+}
+.data-table.sheet-axis-hidden tbody tr.table-row-title td.axis-as-col-header[data-col-accent='1'] {
+  background: color-mix(in srgb, var(--table-col-1) 14%, var(--table-axis-bg));
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--table-col-1) 55%, transparent);
+}
+.data-table.sheet-axis-hidden tbody tr.table-row-title td.axis-as-col-header[data-col-accent='2'] {
+  background: color-mix(in srgb, var(--table-col-2) 14%, var(--table-axis-bg));
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--table-col-2) 55%, transparent);
+}
+.data-table.sheet-axis-hidden tbody tr.table-row-title td.axis-as-col-header[data-col-accent='3'] {
+  background: color-mix(in srgb, var(--table-col-3) 14%, var(--table-axis-bg));
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--table-col-3) 55%, transparent);
+}
+.data-table.sheet-axis-hidden tbody tr.table-row-title td.axis-as-col-header[data-col-accent='4'] {
+  background: color-mix(in srgb, var(--table-col-4) 14%, var(--table-axis-bg));
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--table-col-4) 55%, transparent);
+}
+.data-table.sheet-axis-hidden tbody tr.table-row-title td.axis-as-col-header[data-col-accent='5'] {
+  background: color-mix(in srgb, var(--table-col-5) 14%, var(--table-axis-bg));
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--table-col-5) 55%, transparent);
+}
+
+.data-table.sheet-axis-hidden tbody tr.table-row-title td.axis-as-corner[data-col-accent='0'] {
+  background: var(--table-axis-corner);
+  box-shadow: none;
+}
+
+.data-table.sheet-axis-hidden tbody tr.table-row-title td.axis-as-col-header.sheet-axis-active[data-col-accent] {
+  background: var(--table-axis-active-bg);
+  box-shadow: none;
+}
+
+.data-table.sheet-axis-hidden tbody tr.table-row-data td.cell-label-col.axis-as-row-header {
+  background: var(--table-axis-bg);
+}
+
+.data-table-themed[data-table-style='modern'] .table-scroll {
+  border: var(--table-outer-border-width) solid transparent;
+  background:
+    linear-gradient(var(--table-row-even), var(--table-row-even)) padding-box,
+    var(--table-gradient-border) border-box;
+}
+
+.data-table-themed[data-table-style='outline'] .table-scroll {
+  border-color: var(--table-border-strong);
+  box-shadow: 0 0 0 1px var(--table-accent-soft), var(--table-outer-shadow);
+}
+
+.data-table-themed[data-table-style='outline'] .data-table th,
+.data-table-themed[data-table-style='outline'] .data-table td {
+  border-color: color-mix(in srgb, var(--table-accent) 14%, var(--table-grid-color));
+}
+
+.data-table-themed[data-table-style='excel'] .data-table th,
+.data-table-themed[data-table-style='excel'] .data-table td {
+  border-color: var(--table-grid-color-strong);
+}
+
+.data-table-themed[data-table-style='minimal'] .data-table tbody td,
+.data-table-themed[data-table-style='minimal'] .data-table tbody th.sheet-row-header {
+  border-right: none;
+}
+
+.data-table-themed[data-table-style='minimal'] .data-table thead th {
+  border-right: none;
+}
+
+.data-table-themed[data-table-style='minimal'] .data-table .sheet-corner,
+.data-table-themed[data-table-style='minimal'] .data-table .sheet-row-header {
+  border-right: var(--table-axis-border-width) var(--table-cell-border-style) var(--table-axis-divider);
 }
 
 .data-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  background: var(--table-row-even);
 }
 
 .data-table th,
 .data-table td {
   padding: 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: var(--table-cell-border-width) var(--table-cell-border-style) var(--table-grid-color);
+  border-right: var(--table-cell-border-width) var(--table-cell-border-style) var(--table-grid-color);
   position: relative;
 }
 
@@ -407,26 +815,26 @@
   bottom: 1px;
   width: 8px;
   height: 8px;
-  background: #6366f1;
+  background: var(--table-accent);
   border: 1px solid #fff;
   border-radius: 1px;
   cursor: crosshair;
   z-index: 2;
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 0 0 1px var(--table-accent-soft);
 }
 
 .data-table .fill-handle:hover {
-  background: #4f46e5;
+  background: var(--table-accent-hover);
   transform: scale(1.15);
 }
 
 .data-table .cell-fill-preview {
-  background: #fef9c3;
-  box-shadow: inset 0 0 0 1px #facc15;
+  background: var(--table-fill-preview);
+  box-shadow: inset 0 0 0 1px var(--table-accent);
 }
 
 .data-table .cell-fill-source {
-  box-shadow: inset 0 0 0 2px #6366f1;
+  box-shadow: inset 0 0 0 2px var(--table-accent);
 }
 
 .data-table .cell-ref-highlight {
@@ -438,9 +846,8 @@
   background: transparent;
 }
 
-.data-table th {
-  background: #f8fafc;
-  border-bottom: 2px solid #e2e8f0;
+.data-table thead .sheet-col-header {
+  border-bottom: var(--table-title-border-width) var(--table-cell-border-style) var(--table-grid-color-strong);
 }
 
 .data-table .sheet-corner,
@@ -450,12 +857,13 @@
   text-align: center;
   font-size: 12px;
   font-weight: 600;
-  color: #64748b;
-  background: #f1f5f9;
-  border-right: 1px solid #e2e8f0;
-  border-bottom: 1px solid #e2e8f0;
+  color: var(--table-axis-text);
+  background: var(--table-axis-bg);
+  border-right: var(--table-axis-border-width) var(--table-cell-border-style) var(--table-axis-divider);
+  border-bottom: var(--table-axis-border-width) var(--table-cell-border-style) var(--table-axis-divider);
   user-select: none;
   vertical-align: middle;
+  cursor: pointer;
 }
 
 .data-table .sheet-corner {
@@ -466,7 +874,79 @@
   width: 44px;
   min-width: 44px;
   max-width: 44px;
-  background: #e2e8f0;
+  background: var(--table-axis-corner);
+  cursor: default;
+}
+
+.data-table .sheet-axis-active {
+  background: var(--table-axis-active-bg);
+  color: var(--table-axis-active-text);
+}
+
+.data-table .cell-selected {
+  background: var(--table-accent-light) !important;
+  box-shadow: inset 0 0 0 2px var(--table-accent);
+}
+
+.data-table tbody tr.table-row-title td {
+  background: var(--table-title-bg);
+  border-bottom: var(--table-title-border-width) var(--table-cell-border-style) var(--table-grid-color-strong);
+}
+
+.data-table tbody tr.table-row-title .header-input {
+  color: var(--table-title-text);
+}
+
+.data-table tbody tr.table-row-data.table-row-even td.cell-label-col {
+  background: var(--table-label-bg);
+}
+
+.data-table tbody tr.table-row-data.table-row-odd td.cell-label-col {
+  background: color-mix(in srgb, var(--table-label-bg) 70%, var(--table-row-odd));
+}
+
+.data-table tbody tr.table-row-data.table-row-even td.cell-data-col {
+  background: var(--table-row-even);
+}
+
+.data-table tbody tr.table-row-data.table-row-odd td.cell-data-col {
+  background: var(--table-row-odd);
+}
+
+.data-table td.cell-label-col .label-cell {
+  color: var(--table-label-text);
+}
+
+/* 列字母标题轻量配色，不在数据区画粗竖线 */
+.data-table .sheet-col-header[data-col-accent='0'] {
+  background: color-mix(in srgb, var(--table-col-0) 14%, var(--table-axis-bg));
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--table-col-0) 55%, transparent);
+}
+.data-table .sheet-col-header[data-col-accent='1'] {
+  background: color-mix(in srgb, var(--table-col-1) 14%, var(--table-axis-bg));
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--table-col-1) 55%, transparent);
+}
+.data-table .sheet-col-header[data-col-accent='2'] {
+  background: color-mix(in srgb, var(--table-col-2) 14%, var(--table-axis-bg));
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--table-col-2) 55%, transparent);
+}
+.data-table .sheet-col-header[data-col-accent='3'] {
+  background: color-mix(in srgb, var(--table-col-3) 14%, var(--table-axis-bg));
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--table-col-3) 55%, transparent);
+}
+.data-table .sheet-col-header[data-col-accent='4'] {
+  background: color-mix(in srgb, var(--table-col-4) 14%, var(--table-axis-bg));
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--table-col-4) 55%, transparent);
+}
+.data-table .sheet-col-header[data-col-accent='5'] {
+  background: color-mix(in srgb, var(--table-col-5) 14%, var(--table-axis-bg));
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--table-col-5) 55%, transparent);
+}
+
+.data-table .sheet-col-header.sheet-axis-active {
+  background: var(--table-axis-active-bg);
+  color: var(--table-axis-active-text);
+  box-shadow: none;
 }
 
 .data-table .sheet-col-header {
@@ -489,28 +969,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-.data-table .sheet-axis-active {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.data-table thead .sheet-col-header {
-  border-bottom: 2px solid #cbd5e1;
-}
-
 .data-table tr:last-child td,
 .data-table tr:last-child th {
   border-bottom: none;
 }
 
-.data-table .cell-selected {
-  background: #eef2ff;
-  box-shadow: inset 0 0 0 2px #6366f1;
-}
-
 .data-table td {
   padding: 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--table-border);
 }
 
 .data-table tr:last-child td {
@@ -531,12 +997,11 @@
 }
 
 .cell-input:focus {
-  background: #eef2ff;
+  background: var(--table-focus-bg);
 }
 
 .header-input {
   font-weight: 600;
-  color: #6366f1;
 }
 
 .label-cell {
@@ -545,6 +1010,20 @@
 
 .value-cell {
   font-variant-numeric: tabular-nums;
+}
+
+.data-table td[data-cell-align='left'] .cell-input,
+.data-table td[data-cell-align='left'] .cell-formula-highlight {
+  text-align: left;
+}
+
+.data-table td[data-cell-align='center'] .cell-input,
+.data-table td[data-cell-align='center'] .cell-formula-highlight {
+  text-align: center;
+}
+
+.data-table td[data-cell-align='right'] .cell-input,
+.data-table td[data-cell-align='right'] .cell-formula-highlight {
   text-align: right;
 }
 

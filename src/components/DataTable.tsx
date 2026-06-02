@@ -3,6 +3,7 @@ import {
   Plus,
   Minus,
   Download,
+  ImageDown,
   RotateCcw,
   ArrowRightLeft,
   AlignLeft,
@@ -10,13 +11,16 @@ import {
   AlignRight,
   Merge,
   SplitSquareHorizontal,
+  ListOrdered,
+  Palette,
+  LayoutGrid,
 } from 'lucide-react'
 import type { ApplyChangeOptions } from '../hooks/useUndoableTableState'
 import type { CellAlign, TableState } from '../types'
 import { createTableState } from '../types'
-import FormulaBarEditor from './FormulaBarEditor'
 import FormulaOverlayInput from './FormulaOverlayInput'
 import { exportToExcel } from '../utils/excelParser'
+import { exportTableToImage } from '../utils/tableImageExport'
 import {
   appendCellReference,
   applyFormulaFill,
@@ -45,6 +49,14 @@ import {
   unmergeAt,
   type CellSelection,
 } from '../utils/tableMeta'
+import {
+  getTableAppearanceStyle,
+  loadTableAppearance,
+  saveTableAppearance,
+  type TableAppearance,
+} from '../utils/tableAppearance'
+import { TABLE_STYLES, type TableStyleId } from '../utils/tableStyles'
+import { TABLE_THEMES, type TableThemeId } from '../utils/tableThemes'
 
 interface DataTableProps {
   state: TableState
@@ -68,32 +80,59 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
   const stateRef = useRef(state)
   stateRef.current = state
   const tableRef = useRef<HTMLTableElement>(null)
-  const formulaBarRef = useRef<HTMLInputElement>(null)
+  const themedRef = useRef<HTMLDivElement>(null)
+  const [exportingImage, setExportingImage] = useState(false)
+  const [exportingExcel, setExportingExcel] = useState(false)
   const cellInputRefs = useRef<Record<string, HTMLInputElement>>({})
   const editHistoryStartedRef = useRef(false)
   const editingCellRef = useRef<{ row: number; col: number } | null>(null)
-  const formulaBarFocusedRef = useRef(false)
   const [selection, setSelection] = useState<CellSelection | null>(null)
   const [editingCell, setEditingCell] = useState<{ row: number; col: number } | null>(null)
-  const [formulaBarFocused, setFormulaBarFocused] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [fillDrag, setFillDrag] = useState<{
     source: { row: number; col: number }
     end: { row: number; col: number }
   } | null>(null)
+  const [appearance, setAppearance] = useState<TableAppearance>(loadTableAppearance)
+
+  const tableAppearanceStyle = useMemo(
+    () => getTableAppearanceStyle(appearance.theme, appearance.style),
+    [appearance],
+  )
+
+  const handleThemeChange = useCallback((theme: TableThemeId) => {
+    setAppearance((prev) => {
+      const next = { ...prev, theme }
+      saveTableAppearance(next)
+      return next
+    })
+  }, [])
+
+  const handleStyleChange = useCallback((style: TableStyleId) => {
+    setAppearance((prev) => {
+      const next = { ...prev, style }
+      saveTableAppearance(next)
+      return next
+    })
+  }, [])
+
+  const showSheetAxis = appearance.showSheetAxis !== false
+
+  const handleSheetAxisToggle = useCallback(() => {
+    setAppearance((prev) => {
+      const next = { ...prev, showSheetAxis: !(prev.showSheetAxis ?? true) }
+      saveTableAppearance(next)
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     editingCellRef.current = editingCell
   }, [editingCell])
 
   useEffect(() => {
-    formulaBarFocusedRef.current = formulaBarFocused
-  }, [formulaBarFocused])
-
-  useEffect(() => {
     resetEditRef.current = () => {
       setEditingCell(null)
-      setFormulaBarFocused(false)
       setFillDrag(null)
       editHistoryStartedRef.current = false
       if (document.activeElement instanceof HTMLElement) {
@@ -107,23 +146,17 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
 
   const activeCell = editingCell ?? (selection ? selection.start : null)
 
-  const formulaEditTarget = formulaBarFocused ? activeCell : editingCell
-
   const isFormulaEditing =
-    formulaEditTarget !== null &&
-    isFormula(data[formulaEditTarget.row]?.[formulaEditTarget.col] ?? '')
+    editingCell !== null &&
+    isFormula(data[editingCell.row]?.[editingCell.col] ?? '')
 
   const refocusEditor = useCallback(() => {
     requestAnimationFrame(() => {
-      if (formulaBarFocused) {
-        formulaBarRef.current?.focus()
-        return
-      }
       if (editingCell) {
         cellInputRefs.current[`${editingCell.row},${editingCell.col}`]?.focus()
       }
     })
-  }, [editingCell, formulaBarFocused])
+  }, [editingCell])
 
   const updateCell = useCallback(
     (row: number, col: number, value: string) => {
@@ -134,7 +167,7 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
         ),
         meta: currentMeta,
       }
-      const isEditing = editingCellRef.current !== null || formulaBarFocusedRef.current
+      const isEditing = editingCellRef.current !== null
       const skipHistory = isEditing && editHistoryStartedRef.current
       if (isEditing) {
         editHistoryStartedRef.current = true
@@ -178,7 +211,6 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
   const commitEdit = useCallback(
     (moveTo?: { row: number; col: number }) => {
       setEditingCell(null)
-      setFormulaBarFocused(false)
 
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur()
@@ -190,6 +222,36 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
     },
     [],
   )
+
+  const clearTableInteraction = useCallback(() => {
+    setSelection(null)
+    setEditingCell(null)
+    setFillDrag(null)
+    setIsDragging(false)
+    editHistoryStartedRef.current = false
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
+  }, [])
+
+  const shouldKeepTableSelection = useCallback((target: EventTarget | null) => {
+    if (!(target instanceof Element)) return false
+    return !!(
+      target.closest('.data-table td') ||
+      target.closest('.data-table th') ||
+      target.closest('.table-toolbar')
+    )
+  }, [])
+
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (shouldKeepTableSelection(event.target)) return
+      clearTableInteraction()
+    }
+
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onPointerDown, true)
+  }, [clearTableInteraction, shouldKeepTableSelection])
 
   const handleEditorKeyDown = useCallback(
     (row: number, col: number, e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -219,17 +281,11 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
     [commitEdit, cycleReferenceAtCursor, data.length, onUndo],
   )
 
-  const formulaBarValue = useMemo(() => {
-    if (!activeCell) return ''
-    return data[activeCell.row]?.[activeCell.col] ?? ''
-  }, [activeCell, data])
-
   const editingFormula = useMemo(() => {
-    const target = formulaBarFocused ? activeCell : editingCell
-    if (!target) return ''
-    const raw = data[target.row]?.[target.col] ?? ''
+    if (!editingCell) return ''
+    const raw = data[editingCell.row]?.[editingCell.col] ?? ''
     return isFormula(raw) ? raw : ''
-  }, [formulaBarFocused, activeCell, editingCell, data])
+  }, [editingCell, data])
 
   const formulaRefColorMap = useMemo(
     () => (editingFormula ? buildFormulaRefColorMap(editingFormula) : new Map<string, number>()),
@@ -300,6 +356,42 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
     setSelection({ start: { row, col }, end: { row, col } })
   }
 
+  const selectEntireColumn = useCallback(
+    (col: number) => {
+      if (colCount === 0 || data.length === 0) return
+      commitEdit()
+      setSelection({
+        start: { row: 0, col },
+        end: { row: data.length - 1, col },
+      })
+      setIsDragging(false)
+    },
+    [colCount, data.length, commitEdit],
+  )
+
+  const selectEntireRow = useCallback(
+    (row: number) => {
+      if (colCount === 0) return
+      commitEdit()
+      setSelection({
+        start: { row, col: 0 },
+        end: { row, col: colCount - 1 },
+      })
+      setIsDragging(false)
+    },
+    [colCount, commitEdit],
+  )
+
+  const handleColHeaderMouseDown = (col: number, e: React.MouseEvent) => {
+    e.preventDefault()
+    selectEntireColumn(col)
+  }
+
+  const handleRowHeaderMouseDown = (row: number, e: React.MouseEvent) => {
+    e.preventDefault()
+    selectEntireRow(row)
+  }
+
   const handleMouseUp = () => {
     if (fillDrag) {
       const { source, end } = fillDrag
@@ -313,9 +405,13 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
     setIsDragging(false)
   }
 
+  const selectionRef = useRef(selection)
+  selectionRef.current = selection
+
   const applyAlign = (align: CellAlign) => {
-    if (!selection) return
-    onChange(setSelectionAlign(state, selection, align))
+    const currentSelection = selectionRef.current
+    if (!currentSelection) return
+    onChange(setSelectionAlign(stateRef.current, currentSelection, align))
   }
 
   const handleMerge = () => {
@@ -332,8 +428,91 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
   const canMerge = selection !== null && selectionSize(selection) >= 2
   const canUnmerge = selection !== null && findMergeAt(meta, selection.start.row, selection.start.col) !== null
 
+  const handleExportExcel = async () => {
+    if (exportingExcel) return
+    setExportingExcel(true)
+    try {
+      await exportToExcel(data)
+    } catch (err) {
+      console.error(err)
+      window.alert(err instanceof Error ? err.message : '导出 Excel 失败')
+    } finally {
+      setExportingExcel(false)
+    }
+  }
+
+  const handleExportImage = async () => {
+    if (!themedRef.current || exportingImage) return
+    setExportingImage(true)
+    try {
+      await exportTableToImage(themedRef.current)
+    } catch (err) {
+      console.error(err)
+      window.alert(err instanceof Error ? err.message : '导出图片失败')
+    } finally {
+      setExportingImage(false)
+    }
+  }
+
   return (
     <div className="data-table-wrapper" onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
+      <div className="table-appearance-panel">
+        <div className="table-appearance-section">
+          <span className="table-appearance-label">
+            <Palette size={14} />
+            配色
+          </span>
+          <div className="table-appearance-grid">
+            {TABLE_THEMES.map((theme) => (
+              <button
+                key={theme.id}
+                type="button"
+                className={`table-theme-btn ${appearance.theme === theme.id ? 'active' : ''}`}
+                onClick={() => handleThemeChange(theme.id)}
+                title={theme.label}
+              >
+                <span className="table-theme-swatches">
+                  {theme.swatches.map((color) => (
+                    <span key={color} style={{ background: color }} />
+                  ))}
+                </span>
+                {theme.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="table-appearance-section">
+          <span className="table-appearance-label">
+            <LayoutGrid size={14} />
+            边框
+          </span>
+          <div className="table-appearance-grid">
+            {TABLE_STYLES.map((style) => (
+              <button
+                key={style.id}
+                type="button"
+                className={`table-style-btn ${appearance.style === style.id ? 'active' : ''}`}
+                onClick={() => handleStyleChange(style.id)}
+                title={style.description}
+              >
+                <span className="table-style-preview" data-preview-style={style.id} />
+                <span className="table-style-btn-text">
+                  <span>{style.label}</span>
+                  <span className="table-style-btn-desc">{style.description}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div
+        ref={themedRef}
+        className="data-table-themed"
+        style={tableAppearanceStyle}
+        data-table-theme={appearance.theme}
+        data-table-style={appearance.style}
+      >
       <div className="table-toolbar">
         <div className="toolbar-group">
           <button type="button" className="btn btn-sm" onClick={() => onChange(addTableRow(state))} title="添加行">
@@ -354,6 +533,7 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
           <button
             type="button"
             className="btn btn-sm btn-icon-only"
+            onMouseDown={(e) => e.preventDefault()}
             onClick={() => applyAlign('left')}
             disabled={!selection}
             title="左对齐"
@@ -363,6 +543,7 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
           <button
             type="button"
             className="btn btn-sm btn-icon-only"
+            onMouseDown={(e) => e.preventDefault()}
             onClick={() => applyAlign('center')}
             disabled={!selection}
             title="居中对齐"
@@ -372,6 +553,7 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
           <button
             type="button"
             className="btn btn-sm btn-icon-only"
+            onMouseDown={(e) => e.preventDefault()}
             onClick={() => applyAlign('right')}
             disabled={!selection}
             title="右对齐"
@@ -403,6 +585,14 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
           <button
             type="button"
             className="btn btn-sm btn-ghost"
+            onClick={handleSheetAxisToggle}
+            title={showSheetAxis ? '隐藏行列标号（A/B/C、1/2/3）' : '显示行列标号'}
+          >
+            <ListOrdered size={14} /> {showSheetAxis ? '隐藏标号' : '显示标号'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
             onClick={() => onChange(transposeTableState(state))}
             title="将行与列互换"
           >
@@ -415,68 +605,32 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
           >
             <RotateCcw size={14} /> 示例数据
           </button>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => exportToExcel(data)}>
-            <Download size={14} /> 导出 Excel
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={handleExportExcel}
+            disabled={exportingExcel}
+            title="选择保存位置并导出 Excel"
+          >
+            <Download size={14} /> {exportingExcel ? '导出中…' : '导出 Excel'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={handleExportImage}
+            disabled={exportingImage}
+            title="选择保存位置并导出 PNG 图片"
+          >
+            <ImageDown size={14} /> {exportingImage ? '导出中…' : '导出图片'}
           </button>
         </div>
       </div>
 
-      <div className={`formula-bar ${isFormulaEditing ? 'formula-bar-active' : ''}`}>
-        <span className="formula-bar-ref">{activeCell ? cellAddress(activeCell.row, activeCell.col) : ''}</span>
-        <span className="formula-bar-fx">fx</span>
-        <FormulaBarEditor
-          inputRef={formulaBarRef}
-          value={formulaBarValue}
-          placeholder={activeCell ? '输入 = 后点击单元格可引用，如 =B2+C2' : '选择单元格以编辑公式'}
-          disabled={!activeCell}
-          onChange={(value) => {
-            if (!activeCell) return
-            updateCell(activeCell.row, activeCell.col, value)
-          }}
-          onFocus={() => {
-            if (activeCell) setEditingCell(activeCell)
-            setFormulaBarFocused(true)
-            editHistoryStartedRef.current = false
-          }}
-          onBlur={() => {
-            // 延迟清除，避免切换到单元格输入时 editingCell 被过早清空
-            requestAnimationFrame(() => {
-              if (document.activeElement?.closest('.data-table-wrapper')) return
-              setFormulaBarFocused(false)
-              setEditingCell(null)
-              editHistoryStartedRef.current = false
-            })
-          }}
-          onKeyDown={(e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
-              e.preventDefault()
-              onUndo()
-              return
-            }
-            if (e.key === 'F4' && activeCell) {
-              e.preventDefault()
-              cycleReferenceAtCursor(e.currentTarget, activeCell.row, activeCell.col)
-              return
-            }
-            if (e.key === 'Enter' && activeCell) {
-              e.preventDefault()
-              const nextRow = Math.min(activeCell.row + 1, data.length - 1)
-              commitEdit({ row: nextRow, col: activeCell.col })
-            }
-            if (e.key === 'Escape') {
-              e.preventDefault()
-              commitEdit()
-            }
-          }}
-        />
-      </div>
-
-      <p className="table-tip">
-        拖拽右下角填充公式；F4 切换引用类型（A1 / $A$1 / A$1 / $A1）；Ctrl+Z 撤回
-      </p>
-
       <div className="table-scroll">
-        <table ref={tableRef} className="data-table">
+        <table
+          ref={tableRef}
+          className={`data-table${showSheetAxis ? '' : ' sheet-axis-hidden'}`}
+        >
           <thead>
             <tr>
               <th className="sheet-corner" aria-hidden="true" />
@@ -484,6 +638,9 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
                 <th
                   key={`col-${colIdx}`}
                   className={`sheet-col-header${axisActiveCol === colIdx ? ' sheet-axis-active' : ''}`}
+                  data-col-accent={String(colIdx % 6)}
+                  title={`选中整列 ${colToLetter(colIdx)}`}
+                  onMouseDown={(e) => handleColHeaderMouseDown(colIdx, e)}
                 >
                   {colToLetter(colIdx)}
                 </th>
@@ -492,9 +649,18 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
           </thead>
           <tbody>
             {data.map((row, rowIdx) => (
-              <tr key={rowIdx}>
+              <tr
+                key={rowIdx}
+                className={
+                  rowIdx === 0
+                    ? 'table-row-title'
+                    : `table-row-data ${rowIdx % 2 === 1 ? 'table-row-odd' : 'table-row-even'}`
+                }
+              >
                 <th
                   className={`sheet-row-header${axisActiveRow === rowIdx ? ' sheet-axis-active' : ''}`}
+                  title={`选中整行 ${rowIdx + 1}`}
+                  onMouseDown={(e) => handleRowHeaderMouseDown(rowIdx, e)}
                 >
                   {rowIdx + 1}
                 </th>
@@ -508,11 +674,7 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
                   const isEditing = editingCell?.row === rowIdx && editingCell?.col === colIdx
                   const isPickTarget = isFormulaEditing && !isEditing
                   const hasFormula = isFormula(cell)
-                  const isEditingThis =
-                    (isEditing && !formulaBarFocused) ||
-                    (formulaBarFocused &&
-                      activeCell?.row === rowIdx &&
-                      activeCell?.col === colIdx)
+                  const isEditingThis = isEditing
                   const displayValue = isEditingThis
                     ? cell
                     : getCellDisplayValue(data, rowIdx, colIdx)
@@ -531,6 +693,9 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
                     refColorIndex !== undefined ? getFormulaRefCellStyle(refColorIndex) : undefined
 
                   const isFormulaEditingThis = isEditingThis && isFormula(cell)
+                  const axisAsColHeader = !showSheetAxis && rowIdx === 0
+                  const axisAsRowHeader = !showSheetAxis && colIdx === 0 && rowIdx > 0
+                  const axisAsCorner = !showSheetAxis && rowIdx === 0 && colIdx === 0
 
                   return (
                     <td
@@ -538,7 +703,16 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
                       rowSpan={isAnchor && merge ? merge.rowSpan : undefined}
                       colSpan={isAnchor && merge ? merge.colSpan : undefined}
                       style={refHighlightStyle}
+                      data-col-accent={axisAsColHeader ? String(colIdx % 6) : undefined}
+                      data-cell-align={align}
                       className={[
+                        rowIdx > 0 && colIdx === 0 ? 'cell-label-col' : '',
+                        rowIdx > 0 && colIdx > 0 ? 'cell-data-col' : '',
+                        axisAsColHeader ? 'axis-as-col-header' : '',
+                        axisAsRowHeader ? 'axis-as-row-header' : '',
+                        axisAsCorner ? 'axis-as-corner' : '',
+                        axisAsColHeader && axisActiveCol === colIdx ? 'sheet-axis-active' : '',
+                        axisAsRowHeader && axisActiveRow === rowIdx ? 'sheet-axis-active' : '',
                         selected && !isFormulaEditingThis ? 'cell-selected' : '',
                         inFillPreview ? 'cell-fill-preview' : '',
                         isFillSource ? 'cell-fill-source' : '',
@@ -568,11 +742,9 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
                         onKeyDown={(e) => handleEditorKeyDown(rowIdx, colIdx, e)}
                         onFocus={() => {
                           setEditingCell({ row: rowIdx, col: colIdx })
-                          setFormulaBarFocused(false)
                           editHistoryStartedRef.current = false
                         }}
                         onBlur={() => {
-                          if (formulaBarFocusedRef.current) return
                           setEditingCell((current) =>
                             current?.row === rowIdx && current.col === colIdx ? null : current,
                           )
@@ -593,6 +765,7 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
             ))}
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   )

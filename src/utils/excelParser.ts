@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx'
 import type { TableData } from '../types'
+import { saveFile } from './saveFile'
 
 export function parseExcelFile(file: File): Promise<TableData> {
   return new Promise((resolve, reject) => {
@@ -36,9 +37,20 @@ export function parseExcelFile(file: File): Promise<TableData> {
   })
 }
 
-export function exportToExcel(data: TableData, filename = 'chart-data.xlsx') {
+export async function exportToExcel(data: TableData, filename = 'chart-data.xlsx'): Promise<boolean> {
   const ws = XLSX.utils.aoa_to_sheet(data)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '数据')
-  XLSX.writeFile(wb, filename)
+  const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+
+  return saveFile(blob, {
+    suggestedName: filename,
+    description: 'Excel 工作簿',
+    accept: {
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+    },
+  })
 }
