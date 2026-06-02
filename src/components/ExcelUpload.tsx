@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react'
 import { Upload, FileSpreadsheet, X } from 'lucide-react'
 import { parseExcelFile } from '../utils/excelParser'
-import type { TableData } from '../types'
+import type { TableState } from '../types'
 
 interface ExcelUploadProps {
-  onImport: (data: TableData) => void
+  onImport: (state: TableState) => void
 }
 
 export default function ExcelUpload({ onImport }: ExcelUploadProps) {
@@ -24,9 +24,9 @@ export default function ExcelUpload({ onImport }: ExcelUploadProps) {
     setError(null)
 
     try {
-      const data = await parseExcelFile(file)
+      const state = await parseExcelFile(file)
       setFileName(file.name)
-      onImport(data)
+      onImport(state)
     } catch (err) {
       setError(err instanceof Error ? err.message : '文件解析失败')
       setFileName(null)

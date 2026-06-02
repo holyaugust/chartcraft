@@ -14,12 +14,22 @@
   position: sticky;
   top: 0;
   z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .header-brand {
   display: flex;
   align-items: center;
   gap: 14px;
+}
+
+.autosave-hint {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
 }
 
 .brand-icon {
@@ -258,6 +268,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  outline: none;
 }
 
 .table-appearance-panel {
@@ -464,6 +475,47 @@
 .btn-icon-only:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.toolbar-font-group {
+  align-items: center;
+}
+
+.toolbar-select {
+  height: 28px;
+  border: 1px solid var(--table-scroll-border);
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 0 8px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  appearance: auto;
+}
+
+.toolbar-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.toolbar-font-family {
+  min-width: 108px;
+  max-width: 132px;
+}
+
+.toolbar-font-size {
+  width: 56px;
+  padding-right: 4px;
+}
+
+.toolbar-number-format {
+  min-width: 88px;
+}
+
+.btn-toggle-active {
+  background: var(--table-accent-light);
+  color: var(--table-accent);
+  box-shadow: inset 0 0 0 1px var(--table-accent-soft);
 }
 
 .table-tip {
@@ -1027,6 +1079,33 @@
   text-align: right;
 }
 
+/* 斜体：input 对中文字体支持弱，叠加 oblique + 轻量倾斜保证可见 */
+.data-table td[data-cell-italic='true'] .cell-input-wrap {
+  display: block;
+  width: 100%;
+  transform: skewX(-10deg);
+  transform-origin: left center;
+}
+
+.data-table td[data-cell-align='center'][data-cell-italic='true'] .cell-input-wrap {
+  transform-origin: center center;
+}
+
+.data-table td[data-cell-align='right'][data-cell-italic='true'] .cell-input-wrap {
+  transform-origin: right center;
+}
+
+.data-table td[data-cell-italic='true'] .cell-input,
+.data-table td[data-cell-italic='true'] .cell-formula-highlight {
+  font-style: oblique;
+  font-synthesis: style;
+}
+
+.cell-input.cell-underline,
+.cell-formula-highlight.cell-underline {
+  text-decoration: underline;
+}
+
 .data-hint {
   padding: 12px 20px;
   background: #f8fafc;
@@ -1280,12 +1359,14 @@
   color: #6366f1;
 }
 
+.chart-style-grid,
 .bar-style-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 
+.chart-style-btn,
 .bar-style-btn {
   padding: 8px 10px;
   border: 1.5px solid #e2e8f0;
@@ -1298,11 +1379,13 @@
   transition: all 0.2s;
 }
 
+.chart-style-btn:hover,
 .bar-style-btn:hover {
   border-color: #c7d2fe;
   color: #6366f1;
 }
 
+.chart-style-btn.active,
 .bar-style-btn.active {
   border-color: #6366f1;
   background: linear-gradient(135deg, #eef2ff, #f5f3ff);

@@ -1,5 +1,6 @@
-import type { BarStyleId, ChartConfig, ColorSchemeId } from '../types'
-import { BAR_STYLE_LABELS, COLOR_SCHEMES } from '../utils/colorSchemes'
+import type { ChartConfig, ColorSchemeId } from '../types'
+import { COLOR_SCHEMES } from '../utils/colorSchemes'
+import { getChartStyleMeta } from '../utils/chartStyles'
 
 interface ChartSettingsProps {
   config: ChartConfig
@@ -13,9 +14,11 @@ export default function ChartSettings({ config, onChange }: ChartSettingsProps) 
 
   const showLineOptions = ['line', 'area'].includes(config.type)
   const showStackOption = ['bar', 'area'].includes(config.type)
-  const showBarOptions = config.type === 'bar'
   const showPieHint = ['pie', 'donut'].includes(config.type)
-  const barStyles = Object.keys(BAR_STYLE_LABELS) as BarStyleId[]
+
+  const styleMeta = getChartStyleMeta(config.type)
+  const styleOptions = Object.keys(styleMeta.labels)
+  const currentStyle = config[styleMeta.configKey] as string
 
   return (
     <div className="chart-settings">
@@ -100,47 +103,43 @@ export default function ChartSettings({ config, onChange }: ChartSettingsProps) 
         )}
       </div>
 
-      {showBarOptions && (
-        <>
-          <div className="setting-field">
-            <label>配色方案</label>
-            <div className="color-scheme-grid">
-              {COLOR_SCHEMES.map((scheme) => (
-                <button
-                  key={scheme.id}
-                  type="button"
-                  className={`color-scheme-btn ${config.colorScheme === scheme.id ? 'active' : ''}`}
-                  onClick={() => update('colorScheme', scheme.id as ColorSchemeId)}
-                  title={scheme.label}
-                >
-                  <span className="color-swatches">
-                    {scheme.colors.slice(0, 4).map((color) => (
-                      <span key={color} className="color-swatch" style={{ background: color }} />
-                    ))}
-                  </span>
-                  <span className="color-scheme-label">{scheme.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+      <div className="setting-field">
+        <label>配色方案</label>
+        <div className="color-scheme-grid">
+          {COLOR_SCHEMES.map((scheme) => (
+            <button
+              key={scheme.id}
+              type="button"
+              className={`color-scheme-btn ${config.colorScheme === scheme.id ? 'active' : ''}`}
+              onClick={() => update('colorScheme', scheme.id as ColorSchemeId)}
+              title={scheme.label}
+            >
+              <span className="color-swatches">
+                {scheme.colors.slice(0, 4).map((color) => (
+                  <span key={color} className="color-swatch" style={{ background: color }} />
+                ))}
+              </span>
+              <span className="color-scheme-label">{scheme.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
-          <div className="setting-field">
-            <label>柱状样式</label>
-            <div className="bar-style-grid">
-              {barStyles.map((style) => (
-                <button
-                  key={style}
-                  type="button"
-                  className={`bar-style-btn ${config.barStyle === style ? 'active' : ''}`}
-                  onClick={() => update('barStyle', style)}
-                >
-                  {BAR_STYLE_LABELS[style]}
-                </button>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
+      <div className="setting-field">
+        <label>{styleMeta.title}</label>
+        <div className="chart-style-grid">
+          {styleOptions.map((style) => (
+            <button
+              key={style}
+              type="button"
+              className={`chart-style-btn ${currentStyle === style ? 'active' : ''}`}
+              onClick={() => update(styleMeta.configKey, style as ChartConfig[typeof styleMeta.configKey])}
+            >
+              {styleMeta.labels[style]}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {showPieHint && (
         <p className="setting-hint">饼图/环形图使用第一列作为分类，第一组数值列作为数据</p>

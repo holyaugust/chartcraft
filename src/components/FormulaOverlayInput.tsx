@@ -34,6 +34,8 @@ export function renderColoredFormula(formula: string, refs: FormulaReference[]) 
 interface FormulaOverlayInputProps {
   value: string
   disabled?: boolean
+  readOnly?: boolean
+  tabIndex?: number
   placeholder?: string
   inputRef?: Ref<HTMLInputElement>
   onChange: (value: string) => void
@@ -50,6 +52,8 @@ interface FormulaOverlayInputProps {
 export default function FormulaOverlayInput({
   value,
   disabled,
+  readOnly,
+  tabIndex,
   placeholder,
   inputRef,
   onChange,
@@ -83,6 +87,8 @@ export default function FormulaOverlayInput({
         value={value}
         placeholder={placeholder}
         disabled={disabled}
+        readOnly={readOnly}
+        tabIndex={tabIndex}
         onChange={(e) => onChange(e.target.value)}
         onFocus={onFocus}
         onBlur={onBlur}

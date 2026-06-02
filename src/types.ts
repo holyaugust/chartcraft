@@ -12,7 +12,17 @@ export type ColorSchemeId =
 
 export type BarStyleId = 'rounded' | 'flat' | 'gradient' | 'capsule' | 'outline' | 'shadow'
 
-export type { CellAlign, CellMerge, TableData, TableMeta, TableState } from './types/table'
+export type LineStyleId = 'solid' | 'dashed' | 'step' | 'dot' | 'bold' | 'gradient'
+
+export type AreaStyleId = 'gradient' | 'solid' | 'stream' | 'outline' | 'step' | 'layered'
+
+export type PieStyleId = 'classic' | 'flat' | 'rose' | 'gap' | 'gradient' | 'minimal'
+
+export type ScatterStyleId = 'circle' | 'diamond' | 'ring' | 'cross' | 'triangle' | 'bubble'
+
+export type RadarStyleId = 'circle' | 'polygon' | 'filled' | 'outline' | 'gradient' | 'dashed'
+
+export type { CellAlign, CellMerge, CellNumberFormat, CellStyle, TableData, TableMeta, TableState } from './types/table'
 export { EMPTY_TABLE_META, createTableState } from './types/table'
 
 import type { TableData } from './types/table'
@@ -28,6 +38,11 @@ export interface ChartConfig {
   stacked: boolean
   colorScheme: ColorSchemeId
   barStyle: BarStyleId
+  lineStyle: LineStyleId
+  areaStyle: AreaStyleId
+  pieStyle: PieStyleId
+  scatterStyle: ScatterStyleId
+  radarStyle: RadarStyleId
 }
 
 export interface ParsedChartData {

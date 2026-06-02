@@ -18,6 +18,7 @@ function statesEqual(a: TableState, b: TableState): boolean {
 export function useUndoableTableState(initial: TableState) {
   const [state, setState] = useState(initial)
   const pastRef = useRef<TableState[]>([])
+  const futureRef = useRef<TableState[]>([])
   const stateRef = useRef(state)
   stateRef.current = state
 
@@ -29,6 +30,7 @@ export function useUndoableTableState(initial: TableState) {
       if (pastRef.current.length > MAX_HISTORY) {
         pastRef.current.shift()
       }
+      futureRef.current = []
     }
 
     stateRef.current = next
@@ -38,47 +40,85 @@ export function useUndoableTableState(initial: TableState) {
   const undo = useCallback(() => {
     const previous = pastRef.current.pop()
     if (!previous) return false
+    futureRef.current.push(cloneState(stateRef.current))
     stateRef.current = previous
     setState(previous)
     return true
   }, [])
 
-  const canUndo = useCallback(() => pastRef.current.length > 0, [])
+  const redo = useCallback(() => {
+    const next = futureRef.current.pop()
+    if (!next) return false
+    pastRef.current.push(cloneState(stateRef.current))
+    stateRef.current = next
+    setState(next)
+    return true
+  }, [])
 
-  return { state, applyChange, undo, canUndo }
+  const canUndo = useCallback(() => pastRef.current.length > 0, [])
+  const canRedo = useCallback(() => futureRef.current.length > 0, [])
+
+  const resetHistory = useCallback((next: TableState) => {
+    pastRef.current = []
+    futureRef.current = []
+    stateRef.current = next
+    setState(next)
+  }, [])
+
+  return { state, applyChange, undo, redo, canUndo, canRedo, resetHistory }
 }
 
-export function useTableUndoShortcut(
+export function useTableHistoryShortcuts(
   undo: () => boolean,
-  onAfterUndo?: () => void,
+  redo: () => boolean,
+  onAfterHistory?: () => void,
   enabled = true,
 ) {
   useEffect(() => {
     if (!enabled) return
 
     const handler = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== 'z' || event.shiftKey) return
       if (!event.ctrlKey && !event.metaKey) return
 
+      const key = event.key.toLowerCase()
       const target = event.target as HTMLElement | null
       const inTable = !!target?.closest('.data-table-wrapper')
 
-      const ok = undo()
-      if (ok) {
-        event.preventDefault()
-        event.stopPropagation()
-        onAfterUndo?.()
+      if (key === 'z' && !event.shiftKey) {
+        const ok = undo()
+        if (ok) {
+          event.preventDefault()
+          event.stopPropagation()
+          onAfterHistory?.()
+          return
+        }
+        if (inTable) {
+          event.preventDefault()
+          event.stopPropagation()
+        }
         return
       }
 
-      // 在表格区域内拦截 Ctrl+Z，避免输入框原生撤销与表格状态不同步
-      if (inTable) {
-        event.preventDefault()
-        event.stopPropagation()
+      if (key === 'y' || (key === 'z' && event.shiftKey)) {
+        const ok = redo()
+        if (ok) {
+          event.preventDefault()
+          event.stopPropagation()
+          onAfterHistory?.()
+        }
       }
     }
 
     window.addEventListener('keydown', handler, true)
     return () => window.removeEventListener('keydown', handler, true)
-  }, [undo, onAfterUndo, enabled])
+  }, [undo, redo, onAfterHistory, enabled])
+}
+
+/** @deprecated 使用 useTableHistoryShortcuts */
+export function useTableUndoShortcut(
+  undo: () => boolean,
+  onAfterUndo?: () => void,
+  enabled = true,
+) {
+  useTableHistoryShortcuts(undo, () => false, onAfterUndo, enabled)
 }

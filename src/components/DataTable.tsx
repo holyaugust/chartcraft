@@ -6,9 +6,14 @@ import {
   ImageDown,
   RotateCcw,
   ArrowRightLeft,
+  Undo2,
+  Redo2,
   AlignLeft,
   AlignCenter,
   AlignRight,
+  Bold,
+  Italic,
+  Underline,
   Merge,
   SplitSquareHorizontal,
   ListOrdered,
@@ -16,10 +21,21 @@ import {
   LayoutGrid,
 } from 'lucide-react'
 import type { ApplyChangeOptions } from '../hooks/useUndoableTableState'
-import type { CellAlign, TableState } from '../types'
+import type { CellAlign, CellNumberFormat, CellStyle, TableState } from '../types'
 import { createTableState } from '../types'
 import FormulaOverlayInput from './FormulaOverlayInput'
 import { exportToExcel } from '../utils/excelParser'
+import {
+  clearSelectionCells,
+  extractSelectionPayload,
+  getInternalClipboard,
+  parseClipboardGrid,
+  pasteGridAt,
+  readTextFromSystemClipboard,
+  serializeGridToTsv,
+  setInternalClipboard,
+  writeTextToSystemClipboard,
+} from '../utils/tableClipboard'
 import { exportTableToImage } from '../utils/tableImageExport'
 import {
   appendCellReference,
@@ -33,18 +49,30 @@ import {
   isFormula,
   isInFillPreview,
 } from '../utils/formulaEngine'
+import { formatCellDisplay, NUMBER_FORMAT_LABELS } from '../utils/cellFormat'
+import {
+  DEFAULT_FONT_ID,
+  DEFAULT_FONT_SIZE,
+  resolveFontId,
+  TABLE_FONT_OPTIONS,
+  TABLE_FONT_SIZES,
+} from '../utils/tableFonts'
 import {
   addTableCol,
   addTableRow,
   findMergeAt,
   getCellAlign,
+  getCellStyle,
+  getSelectionStyleSnapshot,
   isCellSelected,
   isHiddenByMerge,
   mergeSelection,
+  patchSelectionCellStyle,
   removeTableCol,
   removeTableRow,
   selectionSize,
   setSelectionAlign,
+  setSelectionNumberFormat,
   transposeTableState,
   unmergeAt,
   type CellSelection,
@@ -62,6 +90,7 @@ interface DataTableProps {
   state: TableState
   onChange: (state: TableState, options?: ApplyChangeOptions) => void
   onUndo: () => boolean
+  onRedo: () => boolean
   resetEditRef: React.MutableRefObject<(() => void) | null>
 }
 
@@ -75,11 +104,27 @@ const SAMPLE_DATA = [
   ['6月', '13300', '4200', '9100'],
 ]
 
-export default function DataTable({ state, onChange, onUndo, resetEditRef }: DataTableProps) {
+function buildCellInputStyle(align: CellAlign, cellStyle: CellStyle) {
+  return {
+    textAlign: align,
+    fontFamily: cellStyle.fontFamily,
+    fontSize: `${cellStyle.fontSize}px`,
+    fontWeight: cellStyle.bold ? 700 : 400,
+    fontStyle: cellStyle.italic ? 'oblique' : 'normal',
+    textDecoration: cellStyle.underline ? 'underline' : 'none',
+  } as const
+}
+
+function preventToolbarFocusLoss(e: React.MouseEvent) {
+  e.preventDefault()
+}
+
+export default function DataTable({ state, onChange, onUndo, onRedo, resetEditRef }: DataTableProps) {
   const { data, meta } = state
   const stateRef = useRef(state)
   stateRef.current = state
   const tableRef = useRef<HTMLTableElement>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
   const themedRef = useRef<HTMLDivElement>(null)
   const [exportingImage, setExportingImage] = useState(false)
   const [exportingExcel, setExportingExcel] = useState(false)
@@ -223,6 +268,25 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
     [],
   )
 
+  const beginEditing = useCallback(
+    (row: number, col: number, initialValue?: string) => {
+      if (initialValue !== undefined) {
+        updateCell(row, col, initialValue)
+      }
+      setEditingCell({ row, col })
+      setSelection({ start: { row, col }, end: { row, col } })
+      requestAnimationFrame(() => {
+        const input = cellInputRefs.current[`${row},${col}`]
+        input?.focus()
+        if (input && initialValue !== undefined) {
+          const end = input.value.length
+          input.setSelectionRange(end, end)
+        }
+      })
+    },
+    [updateCell],
+  )
+
   const clearTableInteraction = useCallback(() => {
     setSelection(null)
     setEditingCell(null)
@@ -261,16 +325,38 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
         return
       }
 
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+        e.preventDefault()
+        onRedo()
+        return
+      }
+
       if (e.key === 'F4') {
         e.preventDefault()
         cycleReferenceAtCursor(e.currentTarget, row, col)
         return
       }
 
+      const totalCols = data[0]?.length ?? 0
+
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        const nextCol = e.shiftKey ? col - 1 : col + 1
+        commitEdit()
+        if (nextCol >= 0 && nextCol < totalCols) {
+          beginEditing(row, nextCol)
+        } else {
+          setSelection({ start: { row, col }, end: { row, col } })
+        }
+        return
+      }
+
       if (e.key === 'Enter') {
         e.preventDefault()
         const nextRow = Math.min(row + 1, data.length - 1)
-        commitEdit({ row: nextRow, col })
+        commitEdit()
+        beginEditing(nextRow, col)
+        return
       }
 
       if (e.key === 'Escape') {
@@ -278,7 +364,7 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
         commitEdit()
       }
     },
-    [commitEdit, cycleReferenceAtCursor, data.length, onUndo],
+    [beginEditing, commitEdit, cycleReferenceAtCursor, data, onRedo, onUndo],
   )
 
   const editingFormula = useMemo(() => {
@@ -325,12 +411,24 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
       }
     }
 
+    if (!isFormulaEditing) {
+      e.preventDefault()
+    }
+
     if (e.shiftKey && selection) {
       setSelection({ start: selection.start, end: { row, col } })
     } else {
       setSelection({ start: { row, col }, end: { row, col } })
       setIsDragging(true)
     }
+
+    wrapperRef.current?.focus({ preventScroll: true })
+  }
+
+  const handleCellDoubleClick = (row: number, col: number, e: React.MouseEvent) => {
+    if (isHiddenByMerge(meta, row, col)) return
+    e.preventDefault()
+    beginEditing(row, col)
   }
 
   const handleCellMouseEnter = (row: number, col: number) => {
@@ -408,11 +506,142 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
   const selectionRef = useRef(selection)
   selectionRef.current = selection
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const inTable =
+        !!document.activeElement?.closest('.data-table-wrapper') || !!selectionRef.current
+      if (!inTable) return
+
+      const currentSelection = selectionRef.current
+      const isEditing = editingCellRef.current !== null
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+        if (isEditing) return
+        if (!currentSelection) return
+        event.preventDefault()
+        void (async () => {
+          const payload = extractSelectionPayload(stateRef.current, currentSelection)
+          setInternalClipboard(payload)
+          await writeTextToSystemClipboard(serializeGridToTsv(payload.cells))
+        })()
+        return
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'x') {
+        if (isEditing) return
+        if (!currentSelection) return
+        event.preventDefault()
+        void (async () => {
+          const payload = extractSelectionPayload(stateRef.current, currentSelection)
+          setInternalClipboard(payload)
+          await writeTextToSystemClipboard(serializeGridToTsv(payload.cells))
+          onChange(clearSelectionCells(stateRef.current, currentSelection))
+        })()
+        return
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+        if (isEditing) return
+        event.preventDefault()
+        void (async () => {
+          const anchor = currentSelection?.start ?? { row: 0, col: 0 }
+          const internal = getInternalClipboard()
+          let payload = internal
+
+          try {
+            const text = await readTextFromSystemClipboard()
+            if (text.trim()) {
+              const externalCells = parseClipboardGrid(text)
+              const internalTsv = internal ? serializeGridToTsv(internal.cells) : ''
+              const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trimEnd()
+              const normalizedInternal = internalTsv.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trimEnd()
+              if (internal && normalizedText === normalizedInternal) {
+                payload = internal
+              } else {
+                payload = { cells: externalCells, alignments: {}, cellStyles: {} }
+              }
+            }
+          } catch {
+            /* clipboard permission denied */
+          }
+
+          if (!payload) return
+          onChange(pasteGridAt(stateRef.current, anchor, payload))
+        })()
+        return
+      }
+
+      if (isEditing || !currentSelection) return
+
+      const { row, col } = currentSelection.start
+      let nextRow = row
+      let nextCol = col
+
+      switch (event.key) {
+        case 'ArrowUp':
+          nextRow = Math.max(0, row - 1)
+          break
+        case 'ArrowDown':
+          nextRow = Math.min(data.length - 1, row + 1)
+          break
+        case 'ArrowLeft':
+          nextCol = Math.max(0, col - 1)
+          break
+        case 'ArrowRight':
+          nextCol = Math.min(colCount - 1, col + 1)
+          break
+        case 'Tab':
+          event.preventDefault()
+          nextCol = event.shiftKey ? Math.max(0, col - 1) : Math.min(colCount - 1, col + 1)
+          setSelection({ start: { row, col: nextCol }, end: { row, col: nextCol } })
+          return
+        case 'Enter':
+        case 'F2':
+          event.preventDefault()
+          beginEditing(row, col)
+          return
+        case 'Delete':
+        case 'Backspace':
+          event.preventDefault()
+          onChange(clearSelectionCells(stateRef.current, currentSelection))
+          return
+        default:
+          if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            event.preventDefault()
+            beginEditing(row, col, event.key)
+          }
+          return
+      }
+
+      if (nextRow !== row || nextCol !== col) {
+        event.preventDefault()
+        setSelection({ start: { row: nextRow, col: nextCol }, end: { row: nextRow, col: nextCol } })
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [beginEditing, colCount, data.length, onChange])
+
   const applyAlign = (align: CellAlign) => {
     const currentSelection = selectionRef.current
     if (!currentSelection) return
     onChange(setSelectionAlign(stateRef.current, currentSelection, align))
   }
+
+  const applyCellStylePatch = useCallback(
+    (patch: Partial<CellStyle> | ((current: CellStyle, row: number, col: number) => Partial<CellStyle>)) => {
+      const currentSelection = selectionRef.current
+      if (!currentSelection) return
+      onChange(patchSelectionCellStyle(stateRef.current, currentSelection, patch))
+    },
+    [onChange],
+  )
+
+  const selectionStyle = useMemo(
+    () => getSelectionStyleSnapshot(meta, selection),
+    [meta, selection],
+  )
 
   const handleMerge = () => {
     if (!selection || selectionSize(selection) < 2) return
@@ -432,7 +661,7 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
     if (exportingExcel) return
     setExportingExcel(true)
     try {
-      await exportToExcel(data)
+      await exportToExcel(state)
     } catch (err) {
       console.error(err)
       window.alert(err instanceof Error ? err.message : '导出 Excel 失败')
@@ -455,7 +684,13 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
   }
 
   return (
-    <div className="data-table-wrapper" onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
+    <div
+      ref={wrapperRef}
+      className="data-table-wrapper"
+      tabIndex={-1}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
       <div className="table-appearance-panel">
         <div className="table-appearance-section">
           <span className="table-appearance-label">
@@ -484,7 +719,7 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
         <div className="table-appearance-section">
           <span className="table-appearance-label">
             <LayoutGrid size={14} />
-            边框
+            样式
           </span>
           <div className="table-appearance-grid">
             {TABLE_STYLES.map((style) => (
@@ -515,6 +750,23 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
       >
       <div className="table-toolbar">
         <div className="toolbar-group">
+          <button
+            type="button"
+            className="btn btn-sm btn-icon-only"
+            onClick={() => onUndo()}
+            title="撤销 (Ctrl+Z)"
+          >
+            <Undo2 size={14} />
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-icon-only"
+            onClick={() => onRedo()}
+            title="重做 (Ctrl+Y)"
+          >
+            <Redo2 size={14} />
+          </button>
+          <span className="toolbar-divider" />
           <button type="button" className="btn btn-sm" onClick={() => onChange(addTableRow(state))} title="添加行">
             <Plus size={14} /> 行
           </button>
@@ -527,6 +779,91 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
           <button type="button" className="btn btn-sm" onClick={() => onChange(removeTableCol(state))} title="删除列">
             <Minus size={14} /> 列
           </button>
+        </div>
+
+        <div className="toolbar-group toolbar-font-group">
+          <select
+            className="toolbar-select toolbar-font-family"
+            value={selection ? resolveFontId(selectionStyle?.fontFamily) : DEFAULT_FONT_ID}
+            disabled={!selection}
+            title="字体"
+            onChange={(e) => {
+              const font = TABLE_FONT_OPTIONS.find((item) => item.id === e.target.value)
+              if (font) applyCellStylePatch({ fontFamily: font.id })
+            }}
+          >
+            {TABLE_FONT_OPTIONS.map((font) => (
+              <option key={font.id} value={font.id}>
+                {font.label}
+              </option>
+            ))}
+          </select>
+          <select
+            className="toolbar-select toolbar-font-size"
+            value={String(selectionStyle?.fontSize ?? DEFAULT_FONT_SIZE)}
+            disabled={!selection}
+            title="字号"
+            onChange={(e) => applyCellStylePatch({ fontSize: Number(e.target.value) })}
+          >
+            {TABLE_FONT_SIZES.map((size) => (
+              <option key={size} value={String(size)}>
+                {size}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className={`btn btn-sm btn-icon-only${selectionStyle?.bold ? ' btn-toggle-active' : ''}`}
+            onMouseDown={preventToolbarFocusLoss}
+            onClick={() => applyCellStylePatch((current) => ({ bold: !current.bold }))}
+            disabled={!selection}
+            title="加粗"
+          >
+            <Bold size={14} />
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm btn-icon-only${selectionStyle?.italic ? ' btn-toggle-active' : ''}`}
+            onMouseDown={preventToolbarFocusLoss}
+            onClick={() => applyCellStylePatch((current) => ({ italic: !current.italic }))}
+            disabled={!selection}
+            title="倾斜"
+          >
+            <Italic size={14} />
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm btn-icon-only${selectionStyle?.underline ? ' btn-toggle-active' : ''}`}
+            onMouseDown={preventToolbarFocusLoss}
+            onClick={() => applyCellStylePatch((current) => ({ underline: !current.underline }))}
+            disabled={!selection}
+            title="下划线"
+          >
+            <Underline size={14} />
+          </button>
+          <select
+            className="toolbar-select toolbar-number-format"
+            value={selectionStyle?.numberFormat ?? 'general'}
+            disabled={!selection}
+            title="单元格格式"
+            onChange={(e) => {
+              const currentSelection = selectionRef.current
+              if (!currentSelection) return
+              onChange(
+                setSelectionNumberFormat(
+                  stateRef.current,
+                  currentSelection,
+                  e.target.value as CellNumberFormat,
+                ),
+              )
+            }}
+          >
+            {(Object.keys(NUMBER_FORMAT_LABELS) as CellNumberFormat[]).map((format) => (
+              <option key={format} value={format}>
+                {NUMBER_FORMAT_LABELS[format]}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="toolbar-group">
@@ -670,6 +1007,8 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
                   const merge = findMergeAt(meta, rowIdx, colIdx)
                   const isAnchor = merge?.row === rowIdx && merge?.col === colIdx
                   const align = getCellAlign(meta, rowIdx, colIdx)
+                  const cellStyle = getCellStyle(meta, rowIdx, colIdx)
+                  const inputStyle = buildCellInputStyle(align, cellStyle)
                   const selected = isCellSelected(selection, rowIdx, colIdx)
                   const isEditing = editingCell?.row === rowIdx && editingCell?.col === colIdx
                   const isPickTarget = isFormulaEditing && !isEditing
@@ -677,7 +1016,10 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
                   const isEditingThis = isEditing
                   const displayValue = isEditingThis
                     ? cell
-                    : getCellDisplayValue(data, rowIdx, colIdx)
+                    : formatCellDisplay(
+                        getCellDisplayValue(data, rowIdx, colIdx),
+                        cellStyle.numberFormat ?? 'general',
+                      )
                   const inputKey = `${rowIdx},${colIdx}`
 
                   const inFillPreview = fillDrag ? isInFillPreview(fillDrag, rowIdx, colIdx) : false
@@ -705,6 +1047,7 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
                       style={refHighlightStyle}
                       data-col-accent={axisAsColHeader ? String(colIdx % 6) : undefined}
                       data-cell-align={align}
+                      data-cell-italic={cellStyle.italic ? 'true' : undefined}
                       className={[
                         rowIdx > 0 && colIdx === 0 ? 'cell-label-col' : '',
                         rowIdx > 0 && colIdx > 0 ? 'cell-data-col' : '',
@@ -725,6 +1068,7 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
                         .filter(Boolean)
                         .join(' ') || undefined}
                       onMouseDown={(e) => handleCellMouseDown(rowIdx, colIdx, e)}
+                      onDoubleClick={(e) => handleCellDoubleClick(rowIdx, colIdx, e)}
                       onMouseEnter={() => handleCellMouseEnter(rowIdx, colIdx)}
                     >
                       <FormulaOverlayInput
@@ -732,12 +1076,14 @@ export default function DataTable({ state, onChange, onUndo, resetEditRef }: Dat
                           if (el) cellInputRefs.current[inputKey] = el
                           else delete cellInputRefs.current[inputKey]
                         }}
-                        className={`cell-input ${rowIdx === 0 ? 'header-input' : ''} ${colIdx === 0 && rowIdx > 0 ? 'label-cell' : ''} ${colIdx > 0 && rowIdx > 0 ? 'value-cell' : ''}`}
-                        wrapClassName="cell-input-wrap"
+                        className={`cell-input ${rowIdx === 0 ? 'header-input' : ''} ${colIdx === 0 && rowIdx > 0 ? 'label-cell' : ''} ${colIdx > 0 && rowIdx > 0 ? 'value-cell' : ''}${cellStyle.italic ? ' cell-italic' : ''}${cellStyle.underline ? ' cell-underline' : ''}`}
+                        wrapClassName={`cell-input-wrap${cellStyle.italic ? ' cell-text-italic' : ''}`}
                         highlightClassName="cell-formula-highlight"
-                        style={{ textAlign: align }}
-                        highlightStyle={{ textAlign: align }}
+                        style={inputStyle}
+                        highlightStyle={inputStyle}
                         value={isEditingThis ? cell : displayValue}
+                        readOnly={!isEditingThis}
+                        tabIndex={isEditingThis ? 0 : -1}
                         onChange={(value) => updateCell(rowIdx, colIdx, value)}
                         onKeyDown={(e) => handleEditorKeyDown(rowIdx, colIdx, e)}
                         onFocus={() => {

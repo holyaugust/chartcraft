@@ -1,4 +1,5 @@
-import type { CellAlign, CellMerge, TableMeta, TableState } from '../types/table'
+import type { CellAlign, CellMerge, CellStyle, CellNumberFormat, TableMeta, TableState } from '../types/table'
+import { DEFAULT_FONT_SIZE, resolveFontFamily } from './tableFonts'
 
 export function cellKey(row: number, col: number): string {
   return `${row},${col}`
@@ -55,6 +56,71 @@ export function getCellAlign(meta: TableMeta, row: number, col: number): CellAli
   if (row === 0) return 'center'
   if (col === 0) return 'left'
   return 'right'
+}
+
+export function styleKey(meta: TableMeta, row: number, col: number): string {
+  const anchor = findMergeAt(meta, row, col)
+  return cellKey(anchor?.row ?? row, anchor?.col ?? col)
+}
+
+export function getCellStyle(meta: TableMeta, row: number, col: number): CellStyle {
+  const key = styleKey(meta, row, col)
+  const saved = meta.cellStyles?.[key] ?? {}
+  return {
+    fontFamily: resolveFontFamily(saved.fontFamily),
+    fontSize: saved.fontSize ?? DEFAULT_FONT_SIZE,
+    bold: 'bold' in saved ? Boolean(saved.bold) : row === 0,
+    italic: Boolean(saved.italic),
+    underline: Boolean(saved.underline),
+    numberFormat: saved.numberFormat ?? 'general',
+  }
+}
+
+function forEachSelectionCell(
+  state: TableState,
+  selection: CellSelection,
+  fn: (row: number, col: number, key: string) => void,
+) {
+  const { r1, c1, r2, c2 } = normalizeSelection(selection)
+  for (let row = r1; row <= r2; row++) {
+    for (let col = c1; col <= c2; col++) {
+      if (isHiddenByMerge(state.meta, row, col)) continue
+      fn(row, col, styleKey(state.meta, row, col))
+    }
+  }
+}
+
+export function patchSelectionCellStyle(
+  state: TableState,
+  selection: CellSelection,
+  patch: Partial<CellStyle> | ((current: CellStyle, row: number, col: number) => Partial<CellStyle>),
+): TableState {
+  const cellStyles = { ...(state.meta.cellStyles ?? {}) }
+
+  forEachSelectionCell(state, selection, (row, col, key) => {
+    const current = getCellStyle(state.meta, row, col)
+    const nextPatch = typeof patch === 'function' ? patch(current, row, col) : patch
+    cellStyles[key] = { ...(cellStyles[key] ?? {}), ...nextPatch }
+  })
+
+  return { ...state, meta: { ...state.meta, cellStyles } }
+}
+
+export function getSelectionStyleSnapshot(
+  meta: TableMeta,
+  selection: CellSelection | null,
+): CellStyle | null {
+  if (!selection) return null
+  const { r1, c1 } = normalizeSelection(selection)
+  return getCellStyle(meta, r1, c1)
+}
+
+export function setSelectionNumberFormat(
+  state: TableState,
+  selection: CellSelection,
+  numberFormat: CellNumberFormat,
+): TableState {
+  return patchSelectionCellStyle(state, selection, { numberFormat })
 }
 
 function removeOverlappingMerges(
@@ -121,6 +187,19 @@ export function unmergeAt(state: TableState, row: number, col: number): TableSta
   }
 }
 
+function shiftCellStyles(
+  cellStyles: Record<string, CellStyle>,
+  mapKey: (row: number, col: number) => string | null,
+) {
+  const next: Record<string, CellStyle> = {}
+  for (const [key, style] of Object.entries(cellStyles)) {
+    const [rowStr, colStr] = key.split(',')
+    const mapped = mapKey(Number(rowStr), Number(colStr))
+    if (mapped) next[mapped] = style
+  }
+  return next
+}
+
 function shiftMetaForRowRemoval(meta: TableMeta, removedRow: number): TableMeta {
   const alignments: Record<string, CellAlign> = {}
   for (const [key, align] of Object.entries(meta.alignments)) {
@@ -151,7 +230,12 @@ function shiftMetaForRowRemoval(meta: TableMeta, removedRow: number): TableMeta 
     })
   }
 
-  return { alignments, merges }
+  const cellStyles = shiftCellStyles(meta.cellStyles ?? {}, (row, col) => {
+    if (row === removedRow) return null
+    return cellKey(row > removedRow ? row - 1 : row, col)
+  })
+
+  return { alignments, cellStyles, merges }
 }
 
 function shiftMetaForColRemoval(meta: TableMeta, removedCol: number): TableMeta {
@@ -184,7 +268,12 @@ function shiftMetaForColRemoval(meta: TableMeta, removedCol: number): TableMeta 
     })
   }
 
-  return { alignments, merges }
+  const cellStyles = shiftCellStyles(meta.cellStyles ?? {}, (row, col) => {
+    if (col === removedCol) return null
+    return cellKey(row, col > removedCol ? col - 1 : col)
+  })
+
+  return { alignments, cellStyles, merges }
 }
 
 export function addTableRow(state: TableState): TableState {
@@ -244,7 +333,13 @@ export function transposeTableState(state: TableState): TableState {
     colSpan: merge.rowSpan,
   }))
 
-  return { data, meta: { alignments, merges } }
+  const cellStyles: Record<string, CellStyle> = {}
+  for (const [key, style] of Object.entries(state.meta.cellStyles ?? {})) {
+    const [rowStr, colStr] = key.split(',')
+    cellStyles[cellKey(Number(colStr), Number(rowStr))] = style
+  }
+
+  return { data, meta: { alignments, cellStyles, merges } }
 }
 
 export function isCellSelected(selection: CellSelection | null, row: number, col: number): boolean {
