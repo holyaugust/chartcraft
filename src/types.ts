@@ -1,4 +1,4 @@
-export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'scatter' | 'radar' | 'donut'
+export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'scatter' | 'radar' | 'donut' | 'combo'
 
 export type ColorSchemeId =
   | 'default'
@@ -24,6 +24,18 @@ export type RadarStyleId = 'circle' | 'polygon' | 'filled' | 'outline' | 'gradie
 
 export type { CellAlign, CellMerge, CellNumberFormat, CellStyle, TableData, TableMeta, TableState } from './types/table'
 export { EMPTY_TABLE_META, createTableState } from './types/table'
+export type { WorkbookSheet, WorkbookState } from './types/workbook'
+export {
+  createDefaultWorkbook,
+  createWorkbookFromSheets,
+  createWorkbookFromTableState,
+  createBlankSheetState,
+  generateSheetName,
+  getActiveSheet,
+  getActiveTableState,
+  isSheetNameTaken,
+  newSheetId,
+} from './types/workbook'
 
 import type { TableData } from './types/table'
 
@@ -36,6 +48,11 @@ export interface ChartConfig {
   showGrid: boolean
   smooth: boolean
   stacked: boolean
+  showDataLabels: boolean
+  xAxisTitle: string
+  yAxisTitle: string
+  yAxis2Title: string
+  dualAxis: boolean
   colorScheme: ColorSchemeId
   barStyle: BarStyleId
   lineStyle: LineStyleId
@@ -69,4 +86,5 @@ export const CHART_TYPE_LABELS: Record<ChartType, string> = {
   scatter: '散点图',
   radar: '雷达图',
   donut: '环形图',
+  combo: '柱线组合',
 }

@@ -198,7 +198,18 @@ function tableStateToWorksheet(state: TableState): XLSX.WorkSheet {
   return ws
 }
 
-export function parseExcelFile(file: File): Promise<TableState> {
+export interface ExcelSheetInfo {
+  name: string
+  rowCount: number
+  colCount: number
+}
+
+export interface ExcelWorkbookPreview {
+  sheetNames: string[]
+  sheets: ExcelSheetInfo[]
+}
+
+function readWorkbookFromFile(file: File): Promise<XLSX.WorkBook> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
 
@@ -210,8 +221,7 @@ export function parseExcelFile(file: File): Promise<TableState> {
           cellFormula: true,
           cellStyles: true,
         })
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
-        resolve(sheetToTableState(firstSheet))
+        resolve(workbook)
       } catch (err) {
         reject(err instanceof Error ? err : new Error('无法解析 Excel 文件，请确认文件格式正确'))
       }
@@ -220,6 +230,68 @@ export function parseExcelFile(file: File): Promise<TableState> {
     reader.onerror = () => reject(new Error('文件读取失败'))
     reader.readAsArrayBuffer(file)
   })
+}
+
+function sheetDimensions(sheet: XLSX.WorkSheet): { rowCount: number; colCount: number } {
+  const ref = sheet['!ref']
+  if (!ref) return { rowCount: 0, colCount: 0 }
+  const range = XLSX.utils.decode_range(ref)
+  return {
+    rowCount: range.e.r - range.s.r + 1,
+    colCount: range.e.c - range.s.c + 1,
+  }
+}
+
+export async function previewExcelFile(file: File): Promise<ExcelWorkbookPreview> {
+  const workbook = await readWorkbookFromFile(file)
+  const sheets = workbook.SheetNames.map((name) => {
+    const { rowCount, colCount } = sheetDimensions(workbook.Sheets[name])
+    return { name, rowCount, colCount }
+  })
+  return { sheetNames: workbook.SheetNames, sheets }
+}
+
+export async function parseExcelFile(file: File, sheetName?: string): Promise<TableState> {
+  const sheets = await parseExcelSheets(file, sheetName ? [sheetName] : undefined)
+  return sheets[0].state
+}
+
+export async function parseExcelSheets(
+  file: File,
+  sheetNames?: string[],
+): Promise<{ name: string; state: TableState }[]> {
+  const workbook = await readWorkbookFromFile(file)
+  const names =
+    sheetNames && sheetNames.length > 0
+      ? sheetNames.filter((name) => workbook.SheetNames.includes(name))
+      : workbook.SheetNames
+
+  if (names.length === 0) {
+    throw new Error('Excel 文件中没有可用的工作表')
+  }
+
+  const results: { name: string; state: TableState }[] = []
+  const skipped: string[] = []
+
+  for (const name of names) {
+    try {
+      results.push({ name, state: sheetToTableState(workbook.Sheets[name]) })
+    } catch (err) {
+      skipped.push(
+        `${name}（${err instanceof Error ? err.message : '无法解析'}）`,
+      )
+    }
+  }
+
+  if (results.length === 0) {
+    throw new Error(
+      skipped.length > 0
+        ? `没有可导入的工作表：${skipped.join('；')}`
+        : '没有可导入的工作表',
+    )
+  }
+
+  return results
 }
 
 export async function exportToExcel(

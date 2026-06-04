@@ -7,6 +7,7 @@ import {
   ScatterChart,
   Radar,
   CircleDot,
+  ChartColumn,
 } from 'lucide-react'
 import type { ChartType } from '../types'
 import { CHART_TYPE_LABELS } from '../types'
@@ -20,6 +21,7 @@ const CHART_TYPES: { type: ChartType; icon: ReactNode }[] = [
   { type: 'bar', icon: <BarChart3 size={20} /> },
   { type: 'line', icon: <LineChart size={20} /> },
   { type: 'area', icon: <AreaChart size={20} /> },
+  { type: 'combo', icon: <ChartColumn size={20} /> },
   { type: 'pie', icon: <PieChart size={20} /> },
   { type: 'donut', icon: <CircleDot size={20} /> },
   { type: 'scatter', icon: <ScatterChart size={20} /> },

@@ -1,61 +1,75 @@
 import { useRef, useMemo, useCallback, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
-import { Download, Maximize2, X } from 'lucide-react'
+import { Maximize2, X, FileImage, FileType2, FileText } from 'lucide-react'
 import type { ECharts } from 'echarts'
 import type { ChartConfig, ParsedChartData } from '../types'
 import { buildChartOption } from '../utils/chartOptions'
+import {
+  captureLiveChartPng,
+  dataUrlToBlob,
+  saveChartPdfFromPng,
+  saveChartSvg,
+} from '../utils/chartExport'
 import { saveFile } from '../utils/saveFile'
+import ChartReportExport from './ChartReportExport'
 
 interface ChartPreviewProps {
   parsed: ParsedChartData
   config: ChartConfig
 }
 
-function dataUrlToBlob(dataUrl: string): Blob {
-  const [header, base64] = dataUrl.split(',')
-  const mime = header.match(/:(.*?);/)?.[1] ?? 'image/png'
-  const binary = atob(base64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i)
-  }
-  return new Blob([bytes], { type: mime })
-}
+type ExportKind = 'png' | 'svg' | 'pdf'
 
 export default function ChartPreview({ parsed, config }: ChartPreviewProps) {
   const chartRef = useRef<ReactECharts>(null)
   const [fullscreen, setFullscreen] = useState(false)
-  const [exporting, setExporting] = useState(false)
+  const [exporting, setExporting] = useState<ExportKind | null>(null)
 
   const option = useMemo(() => buildChartOption(parsed, config), [parsed, config])
+  const baseName = (config.title || 'chart').replace(/[\\/:*?"<>|]/g, '_')
 
   const getInstance = useCallback((): ECharts | undefined => {
     return chartRef.current?.getEchartsInstance()
   }, [])
 
-  const downloadImage = async () => {
+  const getChartSize = useCallback(() => {
+    const instance = getInstance()
+    const width = instance?.getWidth() ?? 960
+    const height = instance?.getHeight() ?? 480
+    return { width, height }
+  }, [getInstance])
+
+  const exportChart = async (kind: ExportKind) => {
     const instance = getInstance()
     if (!instance || exporting) return
 
-    setExporting(true)
+    setExporting(kind)
     try {
-      const dataUrl = instance.getDataURL({
-        type: 'png',
-        pixelRatio: 3,
-        backgroundColor: '#ffffff',
-      })
+      const { width, height } = getChartSize()
 
-      const blob = dataUrlToBlob(dataUrl)
-      await saveFile(blob, {
-        suggestedName: `${config.title || 'chart'}.png`,
-        description: 'PNG 图片',
-        accept: { 'image/png': ['.png'] },
-      })
+      if (kind === 'svg') {
+        await saveChartSvg(option, width, height, `${baseName}.svg`)
+        return
+      }
+
+      const { dataUrl, width: outW, height: outH } = captureLiveChartPng(instance, 'white', width * 3)
+
+      if (kind === 'png') {
+        const blob = dataUrlToBlob(dataUrl)
+        await saveFile(blob, {
+          suggestedName: `${baseName}.png`,
+          description: 'PNG 图片',
+          accept: { 'image/png': ['.png'] },
+        })
+        return
+      }
+
+      await saveChartPdfFromPng(dataUrl, outW, outH, `${baseName}.pdf`)
     } catch (err) {
       console.error(err)
-      window.alert(err instanceof Error ? err.message : '导出图表图片失败')
+      window.alert(err instanceof Error ? err.message : '导出图表失败')
     } finally {
-      setExporting(false)
+      setExporting(null)
     }
   }
 
@@ -72,18 +86,46 @@ export default function ChartPreview({ parsed, config }: ChartPreviewProps) {
 
   return (
     <div className="chart-preview">
-      <div className="chart-actions">
-        <button type="button" className="btn btn-primary" onClick={downloadImage} disabled={exporting}>
-          <Download size={16} />
-          {exporting ? '导出中…' : '下载 PNG 图片'}
-        </button>
-        <button type="button" className="btn btn-ghost" onClick={() => setFullscreen(true)}>
-          <Maximize2 size={16} />
-          全屏预览
-        </button>
-      </div>
-
       <div className="chart-container">{chartElement}</div>
+
+      <ChartReportExport option={option} baseName={baseName} getChartInstance={getInstance} />
+
+      <div className="chart-quick-export">
+        <span className="chart-quick-export-label">快速导出（与预览完全一致）</span>
+        <div className="chart-actions">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => exportChart('png')}
+            disabled={exporting !== null}
+          >
+            <FileImage size={16} />
+            {exporting === 'png' ? '导出中…' : 'PNG'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => exportChart('svg')}
+            disabled={exporting !== null}
+          >
+            <FileType2 size={16} />
+            {exporting === 'svg' ? '导出中…' : 'SVG'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => exportChart('pdf')}
+            disabled={exporting !== null}
+          >
+            <FileText size={16} />
+            {exporting === 'pdf' ? '导出中…' : 'PDF'}
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFullscreen(true)}>
+            <Maximize2 size={16} />
+            全屏预览
+          </button>
+        </div>
+      </div>
 
       {fullscreen && (
         <div className="fullscreen-overlay" onClick={() => setFullscreen(false)}>

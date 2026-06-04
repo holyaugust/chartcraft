@@ -61,6 +61,7 @@ export const CHART_TYPE_STYLE_TITLES: Record<ChartType, string> = {
   donut: '环形样式',
   scatter: '散点样式',
   radar: '雷达样式',
+  combo: '组合样式',
 }
 
 export const DEFAULT_LINE_STYLE: LineStyleId = 'solid'
@@ -120,6 +121,13 @@ export function getChartStyleMeta(type: ChartType): {
         title: CHART_TYPE_STYLE_TITLES.radar,
         labels: RADAR_STYLE_LABELS,
         defaultStyle: DEFAULT_RADAR_STYLE,
+      }
+    case 'combo':
+      return {
+        configKey: 'barStyle',
+        title: CHART_TYPE_STYLE_TITLES.combo,
+        labels: BAR_STYLE_LABELS,
+        defaultStyle: 'rounded',
       }
   }
 }

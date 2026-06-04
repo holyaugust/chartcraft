@@ -92,6 +92,7 @@ interface DataTableProps {
   onUndo: () => boolean
   onRedo: () => boolean
   resetEditRef: React.MutableRefObject<(() => void) | null>
+  sheetTabs?: React.ReactNode
 }
 
 const SAMPLE_DATA = [
@@ -119,7 +120,14 @@ function preventToolbarFocusLoss(e: React.MouseEvent) {
   e.preventDefault()
 }
 
-export default function DataTable({ state, onChange, onUndo, onRedo, resetEditRef }: DataTableProps) {
+export default function DataTable({
+  state,
+  onChange,
+  onUndo,
+  onRedo,
+  resetEditRef,
+  sheetTabs,
+}: DataTableProps) {
   const { data, meta } = state
   const stateRef = useRef(state)
   stateRef.current = state
@@ -963,6 +971,7 @@ export default function DataTable({ state, onChange, onUndo, onRedo, resetEditRe
         </div>
       </div>
 
+      <div className={`table-sheet-frame${sheetTabs ? ' has-sheet-tabs' : ''}`}>
       <div className="table-scroll">
         <table
           ref={tableRef}
@@ -1111,6 +1120,8 @@ export default function DataTable({ state, onChange, onUndo, onRedo, resetEditRe
             ))}
           </tbody>
         </table>
+      </div>
+      {sheetTabs ? <div className="workbook-sheet-bar">{sheetTabs}</div> : null}
       </div>
       </div>
     </div>

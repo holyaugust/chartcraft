@@ -2,11 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Table2, Upload, BarChart2 } from 'lucide-react'
 import DataTable from './components/DataTable'
 import ExcelUpload from './components/ExcelUpload'
+import WorkbookTabs from './components/WorkbookTabs'
+import ChartTemplateLibrary from './components/ChartTemplateLibrary'
 import ChartTypeSelector from './components/ChartTypeSelector'
 import ChartSettings from './components/ChartSettings'
 import ChartPreview from './components/ChartPreview'
-import { useTableHistoryShortcuts, useUndoableTableState } from './hooks/useUndoableTableState'
-import { type ChartConfig } from './types'
+import { useWorkbookState } from './hooks/useWorkbookState'
+import { useTableHistoryShortcuts } from './hooks/useUndoableTableState'
+import { type ChartConfig, createTableState } from './types'
+import type { ChartTemplate } from './data/chartTemplates'
 import { parseTableData, validateTableData } from './utils/parseData'
 import {
   createDefaultProjectDraft,
@@ -24,12 +28,22 @@ function getInitialDraft(): ProjectDraft {
 
 export default function App() {
   const initialDraftRef = useRef(getInitialDraft())
-  const { state: tableState, applyChange, undo, redo } = useUndoableTableState(
-    initialDraftRef.current.tableState,
-  )
+  const {
+    workbook,
+    activeState: tableState,
+    applyChange,
+    setActiveSheet,
+    replaceWorkbook,
+    addSheet,
+    deleteSheet,
+    renameSheet,
+    undo,
+    redo,
+  } = useWorkbookState(initialDraftRef.current.workbook)
   const resetTableEditRef = useRef<(() => void) | null>(null)
   const [inputTab, setInputTab] = useState<InputTab>('table')
   const [chartConfig, setChartConfig] = useState<ChartConfig>(initialDraftRef.current.chartConfig)
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null)
   const [lastSavedAt, setLastSavedAt] = useState<number>(initialDraftRef.current.savedAt)
 
   const resetTableEdit = useCallback(() => {
@@ -48,15 +62,48 @@ export default function App() {
     return done
   }, [redo, resetTableEdit])
 
+  const handleSelectSheet = useCallback(
+    (id: string) => {
+      setActiveSheet(id)
+      resetTableEdit()
+    },
+    [setActiveSheet, resetTableEdit],
+  )
+
+  const handleApplyTemplate = useCallback(
+    (template: ChartTemplate, withSampleData: boolean) => {
+      setChartConfig({ ...template.config })
+      setActiveTemplateId(template.id)
+      if (withSampleData) {
+        applyChange(createTableState(template.sampleData.map((row) => [...row])))
+        resetTableEdit()
+        setInputTab('table')
+      }
+    },
+    [applyChange, resetTableEdit],
+  )
+
+  const handleChartConfigChange = useCallback((next: ChartConfig) => {
+    setChartConfig(next)
+    setActiveTemplateId(null)
+  }, [])
+
+  const handleChartTypeChange = useCallback(
+    (type: ChartConfig['type']) => {
+      handleChartConfigChange({ ...chartConfig, type })
+    },
+    [chartConfig, handleChartConfigChange],
+  )
+
   useTableHistoryShortcuts(performUndo, performRedo, resetTableEdit, inputTab === 'table')
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      saveProjectDraft(tableState, chartConfig)
+      saveProjectDraft(workbook, chartConfig)
       setLastSavedAt(Date.now())
     }, 400)
     return () => window.clearTimeout(timer)
-  }, [tableState, chartConfig])
+  }, [workbook, chartConfig])
 
   const parsed = useMemo(() => parseTableData(tableState.data), [tableState.data])
   const validationError = useMemo(() => validateTableData(tableState.data), [tableState.data])
@@ -110,16 +157,34 @@ export default function App() {
           <div className="panel-body">
             {inputTab === 'table' ? (
               <DataTable
+                key={workbook.activeSheetId}
                 state={tableState}
                 onChange={applyChange}
                 onUndo={performUndo}
                 onRedo={performRedo}
                 resetEditRef={resetTableEditRef}
+                sheetTabs={
+                  <WorkbookTabs
+                    sheets={workbook.sheets.map((sheet) => ({ id: sheet.id, name: sheet.name }))}
+                    activeId={workbook.activeSheetId}
+                    onSelect={handleSelectSheet}
+                    onAdd={() => {
+                      addSheet()
+                      resetTableEdit()
+                    }}
+                    onDelete={(id) => {
+                      deleteSheet(id)
+                      resetTableEdit()
+                    }}
+                    onRename={renameSheet}
+                  />
+                }
               />
             ) : (
               <ExcelUpload
-                onImport={(nextState) => {
-                  applyChange(nextState)
+                onImportSheets={(sheets) => {
+                  replaceWorkbook(sheets)
+                  resetTableEdit()
                   setInputTab('table')
                 }}
               />
@@ -128,7 +193,7 @@ export default function App() {
 
           <div className="data-hint">
             <strong>数据格式：</strong>第一列为分类，其余列为数值；单元格支持 Excel 公式（如 =SUM(B2:B7)）。
-            支持 Ctrl+C/V/X 复制粘贴、方向键与 Tab 导航。
+            支持 Ctrl+C/V/X 复制粘贴；底部标签可切换工作表，点击 + 添加，双击重命名，右键删除。
           </div>
         </section>
 
@@ -138,12 +203,14 @@ export default function App() {
           </div>
 
           <div className="panel-body chart-panel-body">
-            <ChartTypeSelector
-              value={chartConfig.type}
-              onChange={(type) => setChartConfig({ ...chartConfig, type })}
+            <ChartTemplateLibrary
+              activeTemplateId={activeTemplateId}
+              onApply={handleApplyTemplate}
             />
 
-            <ChartSettings config={chartConfig} onChange={setChartConfig} />
+            <ChartTypeSelector value={chartConfig.type} onChange={handleChartTypeChange} />
+
+            <ChartSettings config={chartConfig} onChange={handleChartConfigChange} />
 
             <div className="preview-section">
               <h3>图表预览</h3>

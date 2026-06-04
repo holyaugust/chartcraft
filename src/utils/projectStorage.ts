@@ -1,12 +1,17 @@
 import type { ChartConfig, ChartType, ColorSchemeId } from '../types'
-import { DEFAULT_TABLE, createTableState, type TableState } from '../types'
+import type { TableState } from '../types'
+import {
+  createDefaultWorkbook,
+  createWorkbookFromTableState,
+  type WorkbookState,
+} from '../types/workbook'
 
 export const PROJECT_STORAGE_KEY = 'chartcraft-project-draft'
-const STORAGE_VERSION = 1
+const STORAGE_VERSION = 2
 
 export interface ProjectDraft {
   version: number
-  tableState: TableState
+  workbook: WorkbookState
   chartConfig: ChartConfig
   savedAt: number
 }
@@ -20,6 +25,11 @@ export const DEFAULT_CHART_CONFIG: ChartConfig = {
   showGrid: true,
   smooth: true,
   stacked: false,
+  showDataLabels: false,
+  xAxisTitle: '',
+  yAxisTitle: '',
+  yAxis2Title: '',
+  dualAxis: false,
   colorScheme: 'default',
   barStyle: 'rounded',
   lineStyle: 'solid',
@@ -29,7 +39,7 @@ export const DEFAULT_CHART_CONFIG: ChartConfig = {
   radarStyle: 'circle',
 }
 
-const CHART_TYPES: ChartType[] = ['bar', 'line', 'pie', 'area', 'scatter', 'radar', 'donut']
+const CHART_TYPES: ChartType[] = ['bar', 'line', 'pie', 'area', 'scatter', 'radar', 'donut', 'combo']
 const COLOR_SCHEMES: ColorSchemeId[] = [
   'default',
   'ocean',
@@ -47,6 +57,42 @@ function isTableState(value: unknown): value is TableState {
   return Array.isArray(state.data) && state.data.every((row) => Array.isArray(row))
 }
 
+function sanitizeTableState(raw: TableState): TableState {
+  return {
+    data: raw.data.map((row) => row.map((cell) => String(cell ?? ''))),
+    meta: {
+      alignments: raw.meta?.alignments ?? {},
+      cellStyles: raw.meta?.cellStyles ?? {},
+      merges: raw.meta?.merges ?? [],
+    },
+  }
+}
+
+function isWorkbookState(value: unknown): value is WorkbookState {
+  if (!value || typeof value !== 'object') return false
+  const workbook = value as WorkbookState
+  if (!Array.isArray(workbook.sheets) || workbook.sheets.length === 0) return false
+  if (typeof workbook.activeSheetId !== 'string') return false
+  return workbook.sheets.every(
+    (sheet) =>
+      typeof sheet.id === 'string' &&
+      typeof sheet.name === 'string' &&
+      isTableState(sheet.state),
+  )
+}
+
+function sanitizeWorkbook(raw: WorkbookState): WorkbookState {
+  const sheets = raw.sheets.map((sheet) => ({
+    id: sheet.id,
+    name: sheet.name,
+    state: sanitizeTableState(sheet.state),
+  }))
+  const activeSheetId = sheets.some((sheet) => sheet.id === raw.activeSheetId)
+    ? raw.activeSheetId
+    : sheets[0].id
+  return { sheets, activeSheetId }
+}
+
 function sanitizeChartConfig(raw: unknown): ChartConfig {
   const config = (raw && typeof raw === 'object' ? raw : {}) as Partial<ChartConfig>
   return {
@@ -62,6 +108,11 @@ function sanitizeChartConfig(raw: unknown): ChartConfig {
     showGrid: config.showGrid !== false,
     smooth: config.smooth !== false,
     stacked: Boolean(config.stacked),
+    showDataLabels: Boolean(config.showDataLabels),
+    xAxisTitle: typeof config.xAxisTitle === 'string' ? config.xAxisTitle : '',
+    yAxisTitle: typeof config.yAxisTitle === 'string' ? config.yAxisTitle : '',
+    yAxis2Title: typeof config.yAxis2Title === 'string' ? config.yAxis2Title : '',
+    dualAxis: Boolean(config.dualAxis),
     legendItemGap:
       typeof config.legendItemGap === 'number' ? config.legendItemGap : DEFAULT_CHART_CONFIG.legendItemGap,
   }
@@ -70,7 +121,7 @@ function sanitizeChartConfig(raw: unknown): ChartConfig {
 export function createDefaultProjectDraft(): ProjectDraft {
   return {
     version: STORAGE_VERSION,
-    tableState: createTableState(DEFAULT_TABLE.map((row) => [...row])),
+    workbook: createDefaultWorkbook(),
     chartConfig: DEFAULT_CHART_CONFIG,
     savedAt: Date.now(),
   }
@@ -81,32 +132,37 @@ export function loadProjectDraft(): ProjectDraft | null {
     const raw = localStorage.getItem(PROJECT_STORAGE_KEY)
     if (!raw) return null
 
-    const parsed = JSON.parse(raw) as Partial<ProjectDraft>
-    if (!isTableState(parsed.tableState)) return null
+    const parsed = JSON.parse(raw) as Partial<ProjectDraft> & { tableState?: TableState }
 
-    return {
-      version: STORAGE_VERSION,
-      tableState: {
-        data: parsed.tableState.data.map((row) => row.map((cell) => String(cell ?? ''))),
-        meta: {
-          alignments: parsed.tableState.meta?.alignments ?? {},
-          cellStyles: parsed.tableState.meta?.cellStyles ?? {},
-          merges: parsed.tableState.meta?.merges ?? [],
-        },
-      },
-      chartConfig: sanitizeChartConfig(parsed.chartConfig),
-      savedAt: typeof parsed.savedAt === 'number' ? parsed.savedAt : Date.now(),
+    if (isWorkbookState(parsed.workbook)) {
+      return {
+        version: STORAGE_VERSION,
+        workbook: sanitizeWorkbook(parsed.workbook),
+        chartConfig: sanitizeChartConfig(parsed.chartConfig),
+        savedAt: typeof parsed.savedAt === 'number' ? parsed.savedAt : Date.now(),
+      }
     }
+
+    if (isTableState(parsed.tableState)) {
+      return {
+        version: STORAGE_VERSION,
+        workbook: createWorkbookFromTableState(sanitizeTableState(parsed.tableState)),
+        chartConfig: sanitizeChartConfig(parsed.chartConfig),
+        savedAt: typeof parsed.savedAt === 'number' ? parsed.savedAt : Date.now(),
+      }
+    }
+
+    return null
   } catch {
     return null
   }
 }
 
-export function saveProjectDraft(tableState: TableState, chartConfig: ChartConfig): void {
+export function saveProjectDraft(workbook: WorkbookState, chartConfig: ChartConfig): void {
   try {
     const draft: ProjectDraft = {
       version: STORAGE_VERSION,
-      tableState,
+      workbook,
       chartConfig,
       savedAt: Date.now(),
     }

@@ -9,12 +9,114 @@ import type {
   RadarStyleId,
   ScatterStyleId,
 } from '../types'
-import { alphaColor, getColors, lightenColor } from './colorSchemes'
+import { alphaColor, getColors, getSeriesColors, lightenColor } from './colorSchemes'
+import {
+  buildAreaDataLabel,
+  buildBarDataLabel,
+  buildLineDataLabel,
+  buildRadarDataLabel,
+  buildScatterDataLabel,
+} from './chartLabels'
 
-function baseOption(config: ChartConfig): EChartsOption {
+function usesDualAxis(config: ChartConfig, seriesCount: number): boolean {
+  return seriesCount > 1 && (config.type === 'combo' || config.dualAxis)
+}
+
+function resolveChartColors(config: ChartConfig, seriesCount: number) {
+  return getSeriesColors(config.colorScheme, seriesCount, config.type)
+}
+
+const AXIS_TITLE_STYLE = {
+  color: '#475569',
+  fontSize: 13,
+  fontWeight: 600,
+} as const
+
+function hasAxisTitle(title: string | undefined): boolean {
+  return Boolean(title?.trim())
+}
+
+function buildCategoryAxis(categories: string[], title: string) {
+  const name = title.trim() || undefined
+  return {
+    type: 'category' as const,
+    data: categories,
+    name,
+    nameLocation: 'middle' as const,
+    nameGap: name ? 42 : 0,
+    nameTextStyle: AXIS_TITLE_STYLE,
+    axisLine: { show: true, lineStyle: { color: '#cbd5e1' } },
+    axisTick: { alignWithLabel: true },
+    axisLabel: { color: '#64748b', margin: 10 },
+  }
+}
+
+function buildValueAxis(
+  config: ChartConfig,
+  title: string,
+  position: 'left' | 'right' = 'left',
+  showSplitLine = true,
+) {
+  const name = title.trim() || undefined
+  const isRight = position === 'right'
+
+  return {
+    type: 'value' as const,
+    position,
+    name,
+    nameLocation: 'middle' as const,
+    nameRotate: name ? (isRight ? -90 : 90) : 0,
+    nameGap: name ? 56 : 0,
+    nameTextStyle: AXIS_TITLE_STYLE,
+    axisLine: { show: true, lineStyle: { color: '#e2e8f0' } },
+    axisTick: { show: false },
+    splitLine: {
+      show: config.showGrid && showSplitLine,
+      lineStyle: { color: '#f1f5f9', type: 'dashed' as const },
+    },
+    axisLabel: {
+      color: '#64748b',
+      margin: isRight ? 14 : 8,
+    },
+  }
+}
+
+function applyCartesianLayout(option: EChartsOption, config: ChartConfig, dual: boolean) {
+  if (!option.grid || Array.isArray(option.grid)) return
+
+  const hasXTitle = hasAxisTitle(config.xAxisTitle)
+  const hasYTitle = hasAxisTitle(config.yAxisTitle)
+  const hasY2Title = hasAxisTitle(config.yAxis2Title)
+
+  option.grid = {
+    ...option.grid,
+    left: hasYTitle ? 64 : '3%',
+    right: dual || hasY2Title ? 64 : '4%',
+    bottom: hasXTitle
+      ? config.showLegend
+        ? '20%'
+        : '14%'
+      : config.showLegend
+        ? config.showDataLabels
+          ? '16%'
+          : '14%'
+        : config.showDataLabels
+          ? '10%'
+          : '8%',
+    top: config.subtitle ? '18%' : '14%',
+    containLabel: !hasYTitle && !hasY2Title,
+  }
+}
+
+function resolveYAxisIndex(config: ChartConfig, seriesIndex: number, seriesCount: number): number {
+  if (!usesDualAxis(config, seriesCount)) return 0
+  return seriesIndex === 0 ? 0 : 1
+}
+
+function baseOption(config: ChartConfig, colors?: string[]): EChartsOption {
   return {
     backgroundColor: 'transparent',
-    color: getColors(config.colorScheme),
+    color: colors ?? resolveChartColors(config, 6),
     title: {
       text: config.title,
       subtext: config.subtitle,
@@ -200,7 +302,7 @@ function buildPieItemStyle(style: PieStyleId, color: string) {
   }
 }
 
-function buildPieSeriesExtras(style: PieStyleId, donut: boolean) {
+function buildPieSeriesExtras(style: PieStyleId, donut: boolean, showDataLabels: boolean) {
   const extras: Record<string, unknown> = {}
 
   if (style === 'rose') {
@@ -211,8 +313,8 @@ function buildPieSeriesExtras(style: PieStyleId, donut: boolean) {
     extras.radius = donut ? ['42%', '68%'] : ['0%', '68%']
   } else if (style === 'minimal') {
     extras.radius = donut ? ['45%', '62%'] : ['0%', '62%']
-    extras.label = { show: false }
-    extras.labelLine = { show: false }
+    extras.label = { show: showDataLabels }
+    extras.labelLine = { show: showDataLabels }
   } else {
     extras.radius = donut ? ['42%', '68%'] : ['0%', '68%']
   }
@@ -314,39 +416,54 @@ function buildRadarSeriesStyle(style: RadarStyleId, color: string) {
   }
 }
 
+function buildCartesianYAxes(config: ChartConfig, parsed: ParsedChartData) {
+  const dual = usesDualAxis(config, parsed.series.length)
+  const leftTitle = config.yAxisTitle.trim() || (dual ? '' : parsed.series[0]?.name ?? '')
+  const rightTitle = dual ? config.yAxis2Title.trim() : ''
+
+  if (!dual) {
+    return buildValueAxis(config, leftTitle, 'left')
+  }
+
+  return [
+    buildValueAxis(config, leftTitle, 'left', true),
+    buildValueAxis(config, rightTitle, 'right', false),
+  ]
+}
+
 function buildBarSeries(
   parsed: ParsedChartData,
   config: ChartConfig,
+  colors: string[],
 ): EChartsOption['series'] {
-  const colors = getColors(config.colorScheme)
   const isCapsule = config.barStyle === 'capsule'
+  const dual = usesDualAxis(config, parsed.series.length)
 
-  return parsed.series.map((s, index) => ({
-    name: s.name,
-    type: 'bar' as const,
-    data: s.data,
-    stack: config.stacked ? 'total' : undefined,
-    barWidth: isCapsule ? '36%' : undefined,
-    barGap: isCapsule ? '20%' : undefined,
-    emphasis: { focus: 'series' as const },
-    itemStyle: buildBarItemStyle(config.barStyle, colors[index % colors.length]),
-  }))
+  return parsed.series.map((s, index) => {
+    const color = colors[index % colors.length]
+    return {
+      name: s.name,
+      type: 'bar' as const,
+      data: s.data,
+      yAxisIndex: resolveYAxisIndex(config, index, parsed.series.length),
+      stack: config.stacked && !dual ? 'total' : undefined,
+      barWidth: isCapsule ? '36%' : undefined,
+      barGap: isCapsule ? '20%' : undefined,
+      emphasis: { focus: 'series' as const },
+      itemStyle: buildBarItemStyle(config.barStyle, color),
+      label: buildBarDataLabel(config, color),
+    }
+  })
 }
 
 function barOption(parsed: ParsedChartData, config: ChartConfig): EChartsOption {
-  const option = baseOption(config)
-  option.xAxis = {
-    type: 'category',
-    data: parsed.categories,
-    axisLine: { lineStyle: { color: '#cbd5e1' } },
-    axisLabel: { color: '#64748b' },
-  }
-  option.yAxis = {
-    type: 'value',
-    splitLine: { show: config.showGrid, lineStyle: { color: '#f1f5f9', type: 'dashed' } },
-    axisLabel: { color: '#64748b' },
-  }
-  option.series = buildBarSeries(parsed, config)
+  const colors = resolveChartColors(config, parsed.series.length)
+  const option = baseOption(config, colors)
+  const dual = usesDualAxis(config, parsed.series.length)
+  option.xAxis = buildCategoryAxis(parsed.categories, config.xAxisTitle)
+  option.yAxis = buildCartesianYAxes(config, parsed)
+  applyCartesianLayout(option, config, dual)
+  option.series = buildBarSeries(parsed, config, colors)
   return option
 }
 
@@ -355,19 +472,12 @@ function barLineAreaOption(
   config: ChartConfig,
   chartType: 'line' | 'area',
 ): EChartsOption {
-  const colors = getColors(config.colorScheme)
-  const option = baseOption(config)
-  option.xAxis = {
-    type: 'category',
-    data: parsed.categories,
-    axisLine: { lineStyle: { color: '#cbd5e1' } },
-    axisLabel: { color: '#64748b' },
-  }
-  option.yAxis = {
-    type: 'value',
-    splitLine: { show: config.showGrid, lineStyle: { color: '#f1f5f9', type: 'dashed' } },
-    axisLabel: { color: '#64748b' },
-  }
+  const colors = resolveChartColors(config, parsed.series.length)
+  const option = baseOption(config, colors)
+  const dual = usesDualAxis(config, parsed.series.length)
+  option.xAxis = buildCategoryAxis(parsed.categories, config.xAxisTitle)
+  option.yAxis = buildCartesianYAxes(config, parsed)
+  applyCartesianLayout(option, config, dual)
 
   if (chartType === 'line') {
     option.series = parsed.series.map((s, index) => {
@@ -376,10 +486,12 @@ function barLineAreaOption(
         name: s.name,
         type: 'line' as const,
         data: s.data,
+        yAxisIndex: resolveYAxisIndex(config, index, parsed.series.length),
         smooth: config.smooth && config.lineStyle !== 'step',
-        stack: config.stacked ? 'total' : undefined,
+        stack: config.stacked && !dual ? 'total' : undefined,
         lineStyle: buildLineStyle(config.lineStyle, color),
         itemStyle: { color },
+        label: buildLineDataLabel(config, color, index),
         emphasis: { focus: 'series' as const },
         ...buildLineSeriesExtras(config.lineStyle),
       }
@@ -394,11 +506,13 @@ function barLineAreaOption(
       name: s.name,
       type: 'line' as const,
       data: s.data,
+      yAxisIndex: resolveYAxisIndex(config, index, parsed.series.length),
       smooth: config.smooth && areaStyle !== 'step',
-      stack: config.stacked ? 'total' : undefined,
+      stack: config.stacked && !dual ? 'total' : undefined,
       lineStyle: buildLineStyle(areaStyle === 'outline' ? 'bold' : 'solid', color),
       areaStyle: buildAreaStyle(areaStyle, color, index),
       itemStyle: { color },
+      label: buildAreaDataLabel(config, color, index),
       emphasis: { focus: 'series' as const },
       ...buildAreaLineExtras(areaStyle),
     }
@@ -406,9 +520,56 @@ function barLineAreaOption(
   return option
 }
 
+function comboOption(parsed: ParsedChartData, config: ChartConfig): EChartsOption {
+  const colors = resolveChartColors(config, parsed.series.length)
+  const option = baseOption(config, colors)
+
+  option.xAxis = buildCategoryAxis(parsed.categories, config.xAxisTitle)
+  option.yAxis = buildCartesianYAxes(config, parsed)
+  applyCartesianLayout(option, config, parsed.series.length > 1)
+
+  if (parsed.series.length === 0) {
+    option.series = []
+    return option
+  }
+
+  const [first, ...rest] = parsed.series
+  const barColor = colors[0]
+
+  option.series = [
+    {
+      name: first.name,
+      type: 'bar' as const,
+      data: first.data,
+      yAxisIndex: 0,
+      barWidth: config.barStyle === 'capsule' ? '36%' : undefined,
+      itemStyle: buildBarItemStyle(config.barStyle, barColor),
+      label: buildBarDataLabel(config, barColor),
+      emphasis: { focus: 'series' as const },
+    },
+    ...rest.map((s, index) => {
+      const color = colors[(index + 1) % colors.length]
+      return {
+        name: s.name,
+        type: 'line' as const,
+        data: s.data,
+        yAxisIndex: 1,
+        smooth: config.smooth && config.lineStyle !== 'step',
+        lineStyle: buildLineStyle(config.lineStyle, color),
+        itemStyle: { color },
+        label: buildLineDataLabel(config, color, index),
+        emphasis: { focus: 'series' as const },
+        ...buildLineSeriesExtras(config.lineStyle),
+      }
+    }),
+  ]
+
+  return option
+}
+
 function pieOption(parsed: ParsedChartData, config: ChartConfig, donut = false): EChartsOption {
   const colors = getColors(config.colorScheme)
-  const option = baseOption(config)
+  const option = baseOption(config, colors)
   option.tooltip = { trigger: 'item', formatter: '{b}: {c} ({d}%)' }
   option.legend = {
     show: config.showLegend,
@@ -429,7 +590,8 @@ function pieOption(parsed: ParsedChartData, config: ChartConfig, donut = false):
     }
   })
 
-  const pieExtras = buildPieSeriesExtras(pieStyle, donut)
+  const pieExtras = buildPieSeriesExtras(pieStyle, donut, config.showDataLabels)
+  const showPieLabels = config.showDataLabels && pieStyle !== 'minimal'
 
   option.series = [
     {
@@ -439,11 +601,10 @@ function pieOption(parsed: ParsedChartData, config: ChartConfig, donut = false):
       emphasis: {
         itemStyle: { shadowBlur: 12, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.15)' },
       },
-      label:
-        pieStyle === 'minimal'
-          ? { show: false }
-          : { color: '#475569', formatter: '{b}\n{d}%' },
-      labelLine: pieStyle === 'minimal' ? { show: false } : undefined,
+      label: showPieLabels
+        ? { show: true, color: '#475569', formatter: '{b}\n{c}\n{d}%' }
+        : { show: false },
+      labelLine: showPieLabels ? { show: true } : { show: false },
       ...pieExtras,
     },
   ]
@@ -451,12 +612,12 @@ function pieOption(parsed: ParsedChartData, config: ChartConfig, donut = false):
 }
 
 function scatterOption(parsed: ParsedChartData, config: ChartConfig): EChartsOption {
-  const colors = getColors(config.colorScheme)
+  const colors = resolveChartColors(config, parsed.scatterPoints?.length ?? 1)
   const points = parsed.scatterPoints?.map((p) => ({ name: p.name, value: p.value })) ?? []
   const values = points.map((p) => p.value)
   const scatterStyle = config.scatterStyle
 
-  const option = baseOption(config)
+  const option = baseOption(config, colors)
   option.tooltip = {
     trigger: 'item',
     formatter: (params: unknown) => {
@@ -464,18 +625,22 @@ function scatterOption(parsed: ParsedChartData, config: ChartConfig): EChartsOpt
       return `${p.name}<br/>X: ${p.value[0]}<br/>Y: ${p.value[1]}`
     },
   }
+  const xTitle = config.xAxisTitle.trim() || parsed.series[0]?.name || ''
+  const yTitle = config.yAxisTitle.trim() || parsed.series[1]?.name || parsed.series[0]?.name || ''
+
   option.xAxis = {
-    type: 'value',
-    name: parsed.series[0]?.name,
-    splitLine: { show: config.showGrid, lineStyle: { color: '#f1f5f9', type: 'dashed' } },
-    axisLabel: { color: '#64748b' },
+    ...buildValueAxis(config, xTitle, 'left'),
+    nameLocation: 'middle' as const,
+    nameRotate: 0,
+    nameGap: hasAxisTitle(xTitle) ? 42 : 0,
   }
   option.yAxis = {
-    type: 'value',
-    name: parsed.series[1]?.name ?? parsed.series[0]?.name,
-    splitLine: { show: config.showGrid, lineStyle: { color: '#f1f5f9', type: 'dashed' } },
-    axisLabel: { color: '#64748b' },
+    ...buildValueAxis(config, yTitle, 'left'),
+    nameLocation: 'middle' as const,
+    nameRotate: hasAxisTitle(yTitle) ? 90 : 0,
+    nameGap: hasAxisTitle(yTitle) ? 56 : 0,
   }
+  applyCartesianLayout(option, config, false)
   option.series = [
     {
       type: 'scatter',
@@ -485,6 +650,7 @@ function scatterOption(parsed: ParsedChartData, config: ChartConfig): EChartsOpt
         ...point,
         itemStyle: { color: colors[index % colors.length] },
       })),
+      label: buildScatterDataLabel(config),
       emphasis: { scale: scatterStyle === 'bubble' ? 1.15 : 1.4 },
     },
   ]
@@ -492,11 +658,11 @@ function scatterOption(parsed: ParsedChartData, config: ChartConfig): EChartsOpt
 }
 
 function radarOption(parsed: ParsedChartData, config: ChartConfig): EChartsOption {
-  const colors = getColors(config.colorScheme)
+  const colors = resolveChartColors(config, parsed.series.length)
   const radarStyle = config.radarStyle
   const primaryColor = colors[0]
 
-  const option = baseOption(config)
+  const option = baseOption(config, colors)
   option.tooltip = { trigger: 'item' }
   option.radar = {
     indicator: parsed.categories.map((name) => ({
@@ -521,6 +687,7 @@ function radarOption(parsed: ParsedChartData, config: ChartConfig): EChartsOptio
         return {
           name: s.name,
           value: s.data,
+          label: buildRadarDataLabel(config),
           ...buildRadarSeriesStyle(radarStyle, color),
         }
       }),
@@ -537,6 +704,8 @@ export function buildChartOption(parsed: ParsedChartData, config: ChartConfig): 
       return barLineAreaOption(parsed, config, 'line')
     case 'area':
       return barLineAreaOption(parsed, config, 'area')
+    case 'combo':
+      return comboOption(parsed, config)
     case 'pie':
       return pieOption(parsed, config, false)
     case 'donut':
