@@ -40,6 +40,35 @@ export function shouldSkipProofreadIssue(original: string, suggestion: string): 
   return isWhitespaceOnlyChange(original, suggestion)
 }
 
+const TRAILING_PUNCT_CHARS = new Set([
+  '。', '！', '？', '；', '，', '、', '：', ':', '.', '!', '?', ',', ';',
+  '」', '』', '）', ')', '"', '"', '\u2018', '\u2019',
+])
+
+function isTrailingPunctuationChar(char: string): boolean {
+  return TRAILING_PUNCT_CHARS.has(char)
+}
+
+/** 建议末尾是标点且原文后续也是标点时，去掉建议尾部，避免「。，」「。。」等连用 */
+export function trimDuplicateTrailingPunctuation(
+  text: string,
+  end: number,
+  suggestion: string,
+): string {
+  if (!suggestion || end >= text.length) return suggestion
+
+  let result = suggestion
+  while (
+    result.length > 0 &&
+    end < text.length &&
+    isTrailingPunctuationChar(result[result.length - 1]) &&
+    isTrailingPunctuationChar(text[end])
+  ) {
+    result = result.slice(0, -1)
+  }
+  return result
+}
+
 interface TextReplacement {
   start: number
   end: number
@@ -286,7 +315,8 @@ export function applyFixableIssues(text: string, issues: DocumentIssue[]): strin
 
   let result = text
   for (const { issue, start, end } of resolved) {
-    result = result.slice(0, start) + issue.suggestion + result.slice(end)
+    const suggestion = trimDuplicateTrailingPunctuation(result, end, issue.suggestion)
+    result = result.slice(0, start) + suggestion + result.slice(end)
   }
   return result
 }
@@ -297,7 +327,8 @@ export function applySingleFix(text: string, issue: DocumentIssue): string {
   const range = resolveIssueRange(text, issue)
   if (!range) return text
 
-  return text.slice(0, range.start) + issue.suggestion + text.slice(range.end)
+  const suggestion = trimDuplicateTrailingPunctuation(text, range.end, issue.suggestion)
+  return text.slice(0, range.start) + suggestion + text.slice(range.end)
 }
 
 /** 撤销单条采纳：将正文中的 suggestion 还原为 original */

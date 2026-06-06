@@ -4,7 +4,6 @@ import {
   Save,
   Upload,
   Sparkles,
-  LayoutTemplate,
   Loader2,
   AlertCircle,
   Brain,
@@ -84,6 +83,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
   const editorRef = useRef<HTMLTextAreaElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
   const importedTextRef = useRef<string>('')
+  const importedRawTextRef = useRef<string>('')
   const locateTokenRef = useRef(0)
   const undoPastRef = useRef<DocumentUndoSnapshot[]>([])
 
@@ -171,7 +171,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
       .then(({ visibleText }) => {
         if (cancelled) return
 
-        const sourceText = importedTextRef.current
+        const sourceText = importedRawTextRef.current || importedTextRef.current
         const sourceNorm = normalizeDocxPlainText(sourceText)
         const previewNorm = normalizeDocxPlainText(visibleText)
         const sourceCjk = countCjkChars(sourceText)
@@ -308,13 +308,15 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
 
     try {
       const { text, warnings, arrayBuffer, fileName, hasTables } = await importDocxFile(file)
-      setContent(text)
-      importedTextRef.current = text
+      const formatted = formatDocument(text)
+      setContent(formatted)
+      importedTextRef.current = formatted
+      importedRawTextRef.current = text
       setDocxBuffer(arrayBuffer)
       setDocxFileName(fileName)
       setTextDriftedFromDocx(false)
       setPreviewTextMismatch(false)
-      setViewMode('preview')
+      setViewMode('text')
       setPreviewError(null)
       resetProofreadSession()
       setIssues([])
@@ -326,10 +328,10 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
       const tableHint = hasTables ? '；表格在「文本编辑」中以 | 分隔列' : ''
       setStatusMessage(
         warnings.length > 0
-          ? `Word 已导入${tableHint}（${warnings.length} 条提示）`
+          ? `Word 已导入并已整理段落格式${tableHint}（${warnings.length} 条提示）`
           : hasTables
-            ? `Word 已导入：版式预览保留原格式；表格文本请切换到「文本编辑」（列以 | 分隔）`
-            : 'Word 已导入，默认显示版式预览；校对请切换到「文本编辑」',
+            ? 'Word 已导入并已整理段落格式；表格文本请切换到「文本编辑」（列以 | 分隔）'
+            : 'Word 已导入并已整理段落格式；可在「版式预览」查看原 Word 排版',
       )
     } catch (err) {
       setStatusIsError(true)
@@ -337,7 +339,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
     } finally {
       setBusy(false)
     }
-  }, [])
+  }, [resetProofreadSession])
 
   const handleFileChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -347,16 +349,6 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
     },
     [handleWordUpload],
   )
-
-  const handleFormatOnly = useCallback(() => {
-    if (!content.trim()) return
-    captureUndoSnapshot()
-    setContent(formatDocument(content))
-    setViewMode('text')
-    if (docxBuffer) setTextDriftedFromDocx(true)
-    setStatusIsError(false)
-    setStatusMessage('已完成自动排版')
-  }, [content, docxBuffer, captureUndoSnapshot])
 
   const handleApplyAll = useCallback(() => {
     const pending = issues.filter(
@@ -492,7 +484,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
       setStatusMessage('正在生成 Word 文档…')
       const { buffer, warnings, fileName } = await exportDocumentToDocx(content, {
         originalBuffer: docxBuffer,
-        originalFullText: importedTextRef.current,
+        originalFullText: importedRawTextRef.current || importedTextRef.current,
         fileName: docxFileName,
       })
 
@@ -592,10 +584,6 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
             >
               {busy ? <Loader2 size={14} className="spin" /> : <Brain size={14} />}
               AI 深度校对
-            </button>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={handleFormatOnly}>
-              <LayoutTemplate size={14} />
-              自动排版
             </button>
             <button
               type="button"

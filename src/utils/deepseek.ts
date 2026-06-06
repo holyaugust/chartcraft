@@ -1,5 +1,5 @@
 import type { DocumentIssue, IssueCategory } from './documentProofread'
-import { shouldSkipProofreadIssue } from './documentProofread'
+import { shouldSkipProofreadIssue, trimDuplicateTrailingPunctuation } from './documentProofread'
 
 const DEFAULT_DEV_URL = '/api/deepseek/v1/chat/completions'
 const DEFAULT_PROD_URL = 'https://api.deepseek.com/v1/chat/completions'
@@ -373,7 +373,11 @@ async function checkChunkAtOffset(
     occupied.push(localRange)
     const start = baseOffset + localRange.start
     const end = baseOffset + localRange.end
-    const suggestion = payload.suggestion ?? ''
+    const suggestion = trimDuplicateTrailingPunctuation(
+      fullText,
+      end,
+      payload.suggestion ?? '',
+    )
     const resolvedOriginal = fullText.slice(start, end)
     if (suggestion === resolvedOriginal) continue
     if (shouldSkipProofreadIssue(resolvedOriginal, suggestion)) continue

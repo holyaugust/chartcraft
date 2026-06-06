@@ -1,5 +1,5 @@
 import type { DocumentIssue, IssueCategory } from './documentProofread'
-import { shouldSkipProofreadIssue } from './documentProofread'
+import { shouldSkipProofreadIssue, trimDuplicateTrailingPunctuation } from './documentProofread'
 
 const DEFAULT_DEV_URL = '/api/languagetool/v2/check'
 const DEFAULT_PROD_URL = 'https://api.languagetool.org/v2/check'
@@ -130,7 +130,11 @@ function matchToIssue(text: string, match: LanguageToolMatch, baseOffset: number
   if (start < 0 || end > text.length || start >= end) return null
 
   const original = text.slice(start, end)
-  const suggestion = match.replacements[0]?.value ?? ''
+  const suggestion = trimDuplicateTrailingPunctuation(
+    text,
+    end,
+    match.replacements[0]?.value ?? '',
+  )
   const message = match.shortMessage?.trim() || match.message.trim()
   if (!message) return null
   if (shouldSkipProofreadIssue(original, suggestion)) return null
