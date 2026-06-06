@@ -1,27 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   FileText,
-  Save,
   Upload,
   Sparkles,
   Loader2,
   AlertCircle,
-  Brain,
   Eye,
   PenLine,
   FileDown,
   Wand2,
+  ChevronDown,
 } from 'lucide-react'
 import DocumentIssuePanel from './DocumentIssuePanel'
 import DocumentTextEditor from './DocumentTextEditor'
 import DocumentTemplateLibrary from './DocumentTemplateLibrary'
 import DocumentWriteModal from './DocumentWriteModal'
 import {
-  applyAllFixesFull,
   applyFixableIssues,
   applySingleFix,
   formatDocument,
-  proofreadDocumentFull,
   revertSingleFix,
   type DocumentIssue,
 } from '../utils/documentProofread'
@@ -88,7 +85,9 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
   const [textDriftedFromDocx, setTextDriftedFromDocx] = useState(false)
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null)
   const [showWriteModal, setShowWriteModal] = useState(false)
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<HTMLTextAreaElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
   const importedTextRef = useRef<string>('')
@@ -100,10 +99,6 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
 
   const resetProofreadSession = useCallback(() => {
     undoPastRef.current = []
-    setAdoptedIssueIds([])
-  }, [])
-
-  const clearAdoptedIssues = useCallback(() => {
     setAdoptedIssueIds([])
   }, [])
 
@@ -167,6 +162,27 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
   }, [content])
 
   useEffect(() => {
+    if (!exportMenuOpen) return
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (!exportMenuRef.current?.contains(event.target as Node)) {
+        setExportMenuOpen(false)
+      }
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setExportMenuOpen(false)
+    }
+
+    window.addEventListener('mousedown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [exportMenuOpen])
+
+  useEffect(() => {
     if (!docxBuffer || viewMode !== 'preview' || !previewRef.current) {
       return
     }
@@ -214,7 +230,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
     onSavedLabelChange(savedLabel)
   }, [savedLabel, onSavedLabelChange])
 
-  const runDeepSeekProofread = useCallback(async () => {
+  const runProofread = useCallback(async () => {
     if (!content.trim()) {
       setStatusIsError(true)
       setStatusMessage('请先输入或上传文档内容')
@@ -233,7 +249,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
     setStatusIsError(false)
 
     try {
-      setStatusMessage('DeepSeek 正在分析文档，请稍候…')
+      setStatusMessage('正在智能校对，请稍候…')
       const dsIssues = await checkWithDeepSeek(content)
       setIssues(dsIssues)
       resetProofreadSession()
@@ -242,73 +258,18 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
       setStatusIsError(false)
       setStatusMessage(
         dsIssues.length > 0
-          ? `DeepSeek 发现 ${dsIssues.length} 项建议，请在右侧查看并逐条确认`
-          : 'DeepSeek 未发现需要修改的问题',
+          ? `发现 ${dsIssues.length} 项建议，请在右侧查看并逐条确认`
+          : '未发现需要修改的问题',
       )
     } catch (err) {
       setStatusIsError(true)
-      setStatusMessage(err instanceof Error ? err.message : 'DeepSeek 校对失败')
+      setStatusMessage(err instanceof Error ? err.message : '智能校对失败')
       setIssues([])
       setShowIssues(false)
     } finally {
       setBusy(false)
     }
   }, [content, resetProofreadSession])
-
-  const runProofread = useCallback(async (text: string, autoApply: boolean) => {
-    if (!text.trim()) {
-      setStatusIsError(true)
-      setStatusMessage('请先输入或上传文档内容')
-      return
-    }
-
-    setBusy(true)
-    setStatusMessage(null)
-    setViewMode('text')
-
-    try {
-      if (autoApply) {
-        captureUndoSnapshot()
-        const result = await applyAllFixesFull(text)
-        clearAdoptedIssues()
-        setContent(result.formatted)
-        setIssues(result.languageToolIssues)
-        setShowIssues(result.languageToolIssues.length > 0)
-        setStatusIsError(!!result.languageToolError)
-        if (docxBuffer) setTextDriftedFromDocx(true)
-
-        const localCount = result.issues.length - result.languageToolIssues.length
-        const ltCount = result.languageToolIssues.length
-
-        if (result.languageToolError) {
-          setStatusMessage(`${result.languageToolError}（本地规则已处理 ${localCount} 项）`)
-        } else if (ltCount === 0 && localCount === 0) {
-          setStatusMessage('未发现需要修正的问题')
-        } else if (ltCount === 0) {
-          setStatusMessage(`已完成本地规则校对，共自动修正 ${localCount} 项`)
-        } else {
-          setStatusMessage(
-            `本地规则已自动修正 ${localCount} 项；LanguageTool 发现 ${ltCount} 项建议，请在右侧查看`,
-          )
-        }
-      } else {
-        const result = await proofreadDocumentFull(text, { autoFormat: false })
-        resetProofreadSession()
-        setIssues(result.issues)
-        setShowIssues(true)
-        setStatusIsError(!!result.languageToolError)
-        if (result.languageToolError) {
-          setStatusMessage(`${result.languageToolError}（本地检测 ${result.issues.length - result.languageToolIssues.length} 项）`)
-        } else {
-          setStatusMessage(
-            `检测完成，共 ${result.issues.length} 项（LanguageTool ${result.languageToolIssues.length} 项）`,
-          )
-        }
-      }
-    } finally {
-      setBusy(false)
-    }
-  }, [docxBuffer, captureUndoSnapshot, clearAdoptedIssues, resetProofreadSession])
 
   const handleWordUpload = useCallback(async (file: File) => {
     setBusy(true)
@@ -550,57 +511,85 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
     URL.revokeObjectURL(url)
   }, [content])
 
-  const handleExportDocx = useCallback(async () => {
-    if (!content.trim()) {
-      setStatusIsError(true)
-      setStatusMessage('文档内容为空，无法导出 Word')
-      return
-    }
-
-    setBusy(true)
-    setStatusMessage(null)
-    setStatusIsError(false)
-
-    try {
-      setStatusMessage('正在生成 Word 文档…')
-      const { buffer, warnings, fileName } = await exportDocumentToDocx(content, {
-        originalBuffer: docxBuffer,
-        originalFullText: importedRawTextRef.current || importedTextRef.current,
-        fileName: docxFileName,
-      })
-
-      const blob = new Blob([buffer], {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      })
-
-      const saved = await saveFile(blob, {
-        suggestedName: fileName,
-        description: 'Word 文档',
-        accept: {
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-        },
-      })
-
-      if (!saved) {
-        setStatusMessage(null)
+  const handleExportDocx = useCallback(
+    async (preferFormatted: boolean) => {
+      if (!content.trim()) {
+        setStatusIsError(true)
+        setStatusMessage('文档内容为空，无法导出 Word')
         return
       }
 
+      if (!preferFormatted && !docxBuffer) {
+        setStatusIsError(true)
+        setStatusMessage('请先上传 Word 文档，或使用「智能排版后导出 Word」')
+        return
+      }
+
+      setBusy(true)
+      setStatusMessage(null)
       setStatusIsError(false)
-      setStatusMessage(
-        warnings.length > 0
-          ? `Word 已导出：${fileName}（${warnings[0]}）`
-          : docxBuffer
-            ? `Word 已导出：${fileName}（已写回校对内容并保留原排版）`
-            : `Word 已导出：${fileName}`,
-      )
-    } catch (err) {
-      setStatusIsError(true)
-      setStatusMessage(err instanceof Error ? err.message : 'Word 导出失败')
-    } finally {
-      setBusy(false)
-    }
-  }, [content, docxBuffer, docxFileName])
+
+      try {
+        setStatusMessage(preferFormatted ? '正在智能排版并生成 Word…' : '正在保留原版式导出…')
+        const { buffer, warnings, fileName } = await exportDocumentToDocx(content, {
+          originalBuffer: docxBuffer,
+          originalFullText: importedRawTextRef.current || importedTextRef.current,
+          fileName: docxFileName,
+          preferFormatted,
+        })
+
+        const blob = new Blob([buffer], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        })
+
+        const saved = await saveFile(blob, {
+          suggestedName: fileName,
+          description: 'Word 文档',
+          accept: {
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+          },
+        })
+
+        if (!saved) {
+          setStatusMessage(null)
+          return
+        }
+
+        setStatusIsError(false)
+        if (preferFormatted) {
+          setStatusMessage(
+            warnings.length > 0
+              ? `智能排版 Word 已导出：${fileName}（${warnings[0]}）`
+              : `智能排版 Word 已导出：${fileName}`,
+          )
+        } else {
+          setStatusMessage(
+            warnings.length > 0
+              ? `保留原版式 Word 已导出：${fileName}（${warnings[0]}）`
+              : `保留原版式 Word 已导出：${fileName}（已写回校对内容并保留原排版）`,
+          )
+        }
+      } catch (err) {
+        setStatusIsError(true)
+        setStatusMessage(err instanceof Error ? err.message : 'Word 导出失败')
+      } finally {
+        setBusy(false)
+      }
+    },
+    [content, docxBuffer, docxFileName],
+  )
+
+  const handleExportMenuAction = useCallback(
+    (action: 'original-docx' | 'formatted-docx' | 'txt') => {
+      setExportMenuOpen(false)
+      if (action === 'txt') {
+        handleExportTxt()
+        return
+      }
+      void handleExportDocx(action === 'formatted-docx')
+    },
+    [handleExportDocx, handleExportTxt],
+  )
 
   const handleContentChange = useCallback(
     (value: string) => {
@@ -662,35 +651,67 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
               type="button"
               className="btn btn-sm btn-primary"
               disabled={busy}
-              onClick={() => runProofread(content, true)}
+              onClick={() => void runProofread()}
             >
-              <Sparkles size={14} />
+              {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
               智能校对
             </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-ghost"
-              disabled={busy}
-              onClick={() => void runDeepSeekProofread()}
-            >
-              {busy ? <Loader2 size={14} className="spin" /> : <Brain size={14} />}
-              AI 深度校对
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-primary"
-              disabled={busy}
-              onClick={() => void handleExportDocx()}
-            >
-              {busy ? <Loader2 size={14} className="spin" /> : <FileDown size={14} />}
-              导出 Word
-            </button>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={handleExportTxt}>
-              <Save size={14} />
-              导出 TXT
-            </button>
+            <div className="document-export-dropdown" ref={exportMenuRef}>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary document-export-trigger"
+                disabled={busy}
+                aria-expanded={exportMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setExportMenuOpen((open) => !open)}
+              >
+                {busy ? <Loader2 size={14} className="spin" /> : <FileDown size={14} />}
+                导出文件
+                <ChevronDown size={14} className={`document-export-chevron${exportMenuOpen ? ' open' : ''}`} />
+              </button>
+              {exportMenuOpen ? (
+                <div className="document-export-menu" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={busy || !docxBuffer}
+                    title={docxBuffer ? '写回上传的 Word 并保留原文件版式' : '请先上传 Word 文档'}
+                    onClick={() => handleExportMenuAction('original-docx')}
+                  >
+                    保留原版式导出
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={busy}
+                    title="按 GB/T 9704-2012 智能排版后生成 Word"
+                    onClick={() => handleExportMenuAction('formatted-docx')}
+                  >
+                    智能排版后导出 Word
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={busy}
+                    onClick={() => handleExportMenuAction('txt')}
+                  >
+                    导出 TXT
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
+
+        {docxBuffer ? (
+          <div className="document-export-hint" role="status">
+            导出菜单中「保留原版式导出」将写回原文件版式；「智能排版后导出 Word」按 GB/T 9704 重新排版。
+          </div>
+        ) : (
+          <div className="document-export-hint" role="status">
+            未上传 Word 时，请使用「智能排版后导出 Word」；上传后可选择「保留原版式导出」。
+          </div>
+        )}
 
         {statusMessage ? (
           <div className={`document-status-bar${statusIsError ? ' error' : ' success'}`}>
@@ -795,7 +816,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
 
             <div className="data-hint document-editor-hint">
               <strong>说明：</strong>左侧编辑文档；右侧选择 GB/T 9704 公文模板载入骨架。
-              校对结果在右侧显示；导出 Word 按 GB/T 9704 自动排版。
+              校对结果在右侧显示；「导出文件」可选保留原版式、智能排版 Word 或 TXT。
             </div>
           </div>
 
@@ -821,6 +842,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
               <DocumentTemplateLibrary
                 activeTemplateId={activeTemplateId}
                 onApply={handleApplyTemplate}
+                onSelect={(template) => setActiveTemplateId(template.id)}
               />
             )}
           </aside>
@@ -831,6 +853,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
         open={showWriteModal}
         onClose={() => setShowWriteModal(false)}
         currentEditorContent={content}
+        activeTemplateId={activeTemplateId}
         onGenerated={handleWriteGenerated}
       />
     </main>

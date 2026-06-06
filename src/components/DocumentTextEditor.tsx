@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { buildHighlightedHtml, scrollEditorToIssueRange, type TextHighlightRange } from '../utils/documentLocate'
+import { buildEditorDisplayHtml, scrollEditorToIssueRange, type TextHighlightRange } from '../utils/documentLocate'
 
 interface DocumentTextEditorProps {
   value: string
@@ -24,8 +24,8 @@ export default function DocumentTextEditor({
   const backdropRef = useRef<HTMLDivElement>(null)
   const textareaRef = editorRef ?? innerRef
 
-  const highlightedHtml = useMemo(
-    () => buildHighlightedHtml(value, highlightRange, aiHighlightRanges),
+  const displayHtml = useMemo(
+    () => buildEditorDisplayHtml(value, highlightRange, aiHighlightRanges),
     [value, highlightRange, aiHighlightRanges],
   )
 
@@ -82,11 +82,11 @@ export default function DocumentTextEditor({
       }`.trim()}
     >
       <div ref={backdropRef} className="document-editor-backdrop" aria-hidden="true">
-        <pre className="document-editor-backdrop-inner" dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+        <pre className="document-editor-backdrop-inner" dangerouslySetInnerHTML={{ __html: displayHtml }} />
       </div>
       <textarea
         ref={textareaRef}
-        className={`document-editor${highlightMode ? ' document-editor-highlighting' : ''}`}
+        className={`document-editor document-editor-ghost${highlightMode ? ' document-editor-highlighting' : ''}`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onScroll={syncBackdropScroll}

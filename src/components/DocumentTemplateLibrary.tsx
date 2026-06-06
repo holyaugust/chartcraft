@@ -14,6 +14,7 @@ type FilterKey = 'all' | DocumentTemplateCategory
 interface DocumentTemplateLibraryProps {
   activeTemplateId?: string | null
   onApply: (template: DocumentTemplate) => void
+  onSelect?: (template: DocumentTemplate) => void
 }
 
 const FILTER_OPTIONS: { id: FilterKey; label: string }[] = [
@@ -50,6 +51,7 @@ function TemplatePreview({ template }: { template: DocumentTemplate }) {
 export default function DocumentTemplateLibrary({
   activeTemplateId,
   onApply,
+  onSelect,
 }: DocumentTemplateLibraryProps) {
   const [filter, setFilter] = useState<FilterKey>('all')
 
@@ -93,6 +95,15 @@ export default function DocumentTemplateLibrary({
             <article
               key={template.id}
               className={`chart-template-card document-template-card ${isActive ? 'active' : ''}`}
+              onClick={() => onSelect?.(template)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  onSelect?.(template)
+                }
+              }}
             >
               <TemplatePreview template={template} />
               <div className="chart-template-card-body">
@@ -106,7 +117,10 @@ export default function DocumentTemplateLibrary({
                 <button
                   type="button"
                   className="btn btn-sm chart-template-apply"
-                  onClick={() => onApply(template)}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onApply(template)
+                  }}
                 >
                   使用模板
                 </button>

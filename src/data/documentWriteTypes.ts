@@ -199,3 +199,18 @@ export function resolveWriteTypeSelection(selection: DocumentWriteTypeSelection)
     label: type.label,
   }
 }
+
+/** 根据模板库 templateId 反查写公文类型选择（用于与右侧模板库联动） */
+export function findWriteTypeSelectionByTemplateId(templateId: string): DocumentWriteTypeSelection | null {
+  for (const type of DOCUMENT_WRITE_TYPES) {
+    if (type.subtypes?.length) {
+      const subtype = type.subtypes.find((item) => item.templateId === templateId)
+      if (subtype) {
+        return { typeId: type.id, subtypeId: subtype.id }
+      }
+    } else if (type.templateId === templateId) {
+      return { typeId: type.id, subtypeId: null }
+    }
+  }
+  return null
+}

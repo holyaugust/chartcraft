@@ -323,3 +323,48 @@ export function normalizeSignatureBlock(text: string): string {
 
   return body.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()
 }
+
+/** 编辑器 CSS 预览：是否与 Word 导出一致显示首行缩进 2 字符（不改变纯文本内容） */
+export function lineNeedsEditorFirstLineIndent(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed) return false
+
+  if (/^【/.test(trimmed)) return false
+  if (/^附件[：:]/u.test(trimmed)) return false
+  if (/^抄送[：:]|^分送[：:]/u.test(trimmed)) return false
+  if (/^表\d+/u.test(trimmed)) return false
+  if (/^单位[：:]/u.test(trimmed)) return false
+
+  if (/^[一二三四五六七八九十百零〇]+[、．.](?!(\d|．|\.))/u.test(trimmed)) return false
+  if (/^（[一二三四五六七八九十百零〇]+）/u.test(trimmed)) return false
+  if (/^（\d+）/.test(trimmed)) return false
+
+  if (/^\d+[．.、]\s/u.test(trimmed)) {
+    if (trimmed.length <= 48 && !/[；。！？]/.test(trimmed)) return false
+    return false
+  }
+
+  if (/：\s*$/u.test(trimmed) && trimmed.length <= 40) return false
+
+  if (isSignatureOrgLine(trimmed) || isSignatureDateLine(trimmed)) return false
+
+  if (
+    /(有限公司|集团)关于.*的(报告|请示)/u.test(trimmed) &&
+    trimmed.length <= 80
+  ) {
+    return false
+  }
+
+  if (
+    /^关于.*的(请示|报告|通知|通报|意见|函|决定|批复|议案|方案|说明|命令|公告|通告|公报|纪要)/u.test(
+      trimmed,
+    ) &&
+    trimmed.length <= 80
+  ) {
+    return false
+  }
+
+  if (/^.+会议纪要$/u.test(trimmed) && trimmed.length <= 40) return false
+
+  return true
+}

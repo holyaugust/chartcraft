@@ -1,4 +1,5 @@
 import type { DocumentIssue } from './documentProofread'
+import { lineNeedsEditorFirstLineIndent } from './documentFormatNormalize'
 
 function escapeHtml(text: string): string {
   return text
@@ -62,18 +63,19 @@ function variantClass(variant: HighlightVariant): string {
   return 'document-issue-highlight pending'
 }
 
-export function buildHighlightedHtml(
+function buildHighlightedSlice(
   content: string,
-  range: TextHighlightRange | null,
-  aiRanges: TextHighlightRange[] = [],
+  sliceStart: number,
+  sliceEnd: number,
+  segments: HighlightSegment[],
 ): string {
-  const segments = buildSegments(content, range, aiRanges)
-  if (segments.length === 0) return escapeHtml(content)
+  if (sliceStart >= sliceEnd) return ''
 
-  const points = new Set<number>([0, content.length])
+  const points = new Set<number>([sliceStart, sliceEnd])
   for (const segment of segments) {
-    points.add(segment.start)
-    points.add(segment.end)
+    if (segment.end <= sliceStart || segment.start >= sliceEnd) continue
+    points.add(Math.max(sliceStart, segment.start))
+    points.add(Math.min(sliceEnd, segment.end))
   }
 
   const sortedPoints = [...points].sort((a, b) => a - b)
@@ -94,6 +96,48 @@ export function buildHighlightedHtml(
   }
 
   return html
+}
+
+export function buildHighlightedHtml(
+  content: string,
+  range: TextHighlightRange | null,
+  aiRanges: TextHighlightRange[] = [],
+): string {
+  const segments = buildSegments(content, range, aiRanges)
+  if (segments.length === 0) return escapeHtml(content)
+  return buildHighlightedSlice(content, 0, content.length, segments)
+}
+
+/** 带 GB/T 首行缩进预览的编辑器 HTML（纯文本仍顶格存储） */
+export function buildEditorDisplayHtml(
+  content: string,
+  range: TextHighlightRange | null,
+  aiRanges: TextHighlightRange[] = [],
+): string {
+  if (!content) return ''
+
+  const segments = buildSegments(content, range, aiRanges)
+  const lines = content.split('\n')
+  let offset = 0
+  const htmlParts: string[] = []
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]
+    const lineStart = offset
+    const lineEnd = offset + line.length
+
+    const sliceHtml =
+      segments.length === 0
+        ? escapeHtml(line)
+        : buildHighlightedSlice(content, lineStart, lineEnd, segments)
+
+    const indentClass = lineNeedsEditorFirstLineIndent(line) ? ' document-editor-line--indent' : ''
+    htmlParts.push(`<span class="document-editor-line${indentClass}">${sliceHtml || '\u200b'}</span>`)
+
+    offset = lineEnd + 1
+  }
+
+  return htmlParts.join('')
 }
 
 /** 将 textarea 滚动到指定字符区间（兼容自动换行的长行，尽量居中显示） */

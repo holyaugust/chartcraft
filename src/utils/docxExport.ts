@@ -5,7 +5,7 @@ import {
   extractTableText,
   extractTextFromDocxXml,
 } from './docxTextExtract'
-import { createFormattedDocxFromPlainText, looksLikeOfficialDocument } from './docxFormattedExport'
+import { createFormattedDocxFromPlainText } from './docxFormattedExport'
 
 const WORD_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 
@@ -518,14 +518,14 @@ export function buildDocxExportFileName(sourceName?: string | null, suffix = '�
   return `${base}-${suffix}.docx`
 }
 
-/** 统一导出入口：有原 docx 则写回，否则按 GB/T 9704 排版新建 */
+/** 统一导出入口：有原 docx 时默认写回；无原文件时默认 GB/T 重排版 */
 export async function exportDocumentToDocx(
   editedText: string,
   options?: {
     originalBuffer?: ArrayBuffer | null
     originalFullText?: string
     fileName?: string | null
-    /** 即使上传了 Word，也按国标重排版导出（默认：无原文件或内容为公文结构时启用） */
+    /** true：按 GB/T 9704 重排版；false：写回原 docx。默认：无原文件时为 true，有原文件时为 false */
     preferFormatted?: boolean
   },
 ): Promise<DocxExportResult & { fileName: string }> {
@@ -534,9 +534,7 @@ export async function exportDocumentToDocx(
   }
 
   const exportName = buildDocxExportFileName(options?.fileName)
-  const useFormatted =
-    options?.preferFormatted ??
-    (!options?.originalBuffer || looksLikeOfficialDocument(editedText))
+  const useFormatted = options?.preferFormatted ?? !options?.originalBuffer
 
   if (options?.originalBuffer && !useFormatted) {
     const unchanged =

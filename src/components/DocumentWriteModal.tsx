@@ -1,20 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   X,
   Plus,
-  List,
   Loader2,
   ChevronDown,
   FileText,
   Trash2,
   Sparkles,
+  CircleHelp,
 } from 'lucide-react'
 import {
   DOCUMENT_WRITE_AUTO_TYPE,
   DOCUMENT_WRITE_TYPES,
+  findWriteTypeSelectionByTemplateId,
   resolveWriteTypeSelection,
   type DocumentWriteType,
 } from '../data/documentWriteTypes'
+import { getDocumentTemplateById } from '../data/documentTemplates'
 import {
   DEFAULT_WRITE_PROMPT,
   generateDocumentWithAi,
@@ -28,6 +31,7 @@ interface DocumentWriteModalProps {
   open: boolean
   onClose: () => void
   currentEditorContent?: string
+  activeTemplateId?: string | null
   onGenerated: (payload: {
     content: string
     templateId?: string | null
@@ -36,8 +40,7 @@ interface DocumentWriteModalProps {
   }) => void
 }
 
-const MAX_REFERENCE_FILES = 3
-const MAX_IMITATION_FILES = 2
+const MAX_REFERENCE_FILES = 1
 
 function createFileId(): string {
   return `wf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -142,6 +145,163 @@ function WriteTypePicker({
   )
 }
 
+const AUTO_REFERENCE_HELP =
+  '点击「开启」后，会把左侧编辑器里当前正文自动当作参考材料，一并发给 AI'
+
+const SAVE_MATERIALS_HELP = '勾选后，下次再打开弹窗会自动恢复当前提示词和所有设置'
+
+const HELP_POPOVER_GAP = 8
+
+function WriteHelpButton({
+  ariaLabel,
+  text,
+  disabled,
+}: {
+  ariaLabel: string
+  text: string
+  disabled?: boolean
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({ visibility: 'hidden' })
+
+  const updatePosition = useCallback(() => {
+    const button = buttonRef.current
+    const popover = popoverRef.current
+    if (!button || !popover) return
+
+    const rect = button.getBoundingClientRect()
+    const popoverRect = popover.getBoundingClientRect()
+    const popoverHeight = popoverRect.height || 72
+    const popoverWidth = popoverRect.width || 240
+    const spaceBelow = window.innerHeight - rect.bottom - HELP_POPOVER_GAP
+    const spaceAbove = rect.top - HELP_POPOVER_GAP
+    const openBelow = spaceBelow >= popoverHeight || spaceBelow >= spaceAbove
+
+    const top = openBelow
+      ? rect.bottom + HELP_POPOVER_GAP
+      : rect.top - HELP_POPOVER_GAP
+    const transform = openBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)'
+
+    const margin = 12
+    const halfWidth = Math.min(popoverWidth / 2, 140)
+    const left = Math.max(
+      margin + halfWidth,
+      Math.min(rect.left + rect.width / 2, window.innerWidth - margin - halfWidth),
+    )
+
+    setPopoverStyle({
+      position: 'fixed',
+      top,
+      left,
+      transform,
+      zIndex: 4000,
+      visibility: 'visible',
+    })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!helpOpen) return
+    updatePosition()
+    const raf = window.requestAnimationFrame(updatePosition)
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.cancelAnimationFrame(raf)
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [helpOpen, updatePosition, text])
+
+  useEffect(() => {
+    if (!helpOpen) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (buttonRef.current?.contains(target)) return
+      if (popoverRef.current?.contains(target)) return
+      setHelpOpen(false)
+    }
+
+    const timer = window.setTimeout(() => {
+      document.addEventListener('mousedown', handlePointerDown)
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener('mousedown', handlePointerDown)
+    }
+  }, [helpOpen])
+
+  return (
+    <div className="doc-write-help-wrap">
+      <button
+        ref={buttonRef}
+        type="button"
+        className="doc-write-help-btn"
+        aria-label={ariaLabel}
+        aria-expanded={helpOpen}
+        disabled={disabled}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          setHelpOpen((open) => {
+            if (open) return false
+            setPopoverStyle({ visibility: 'hidden' })
+            return true
+          })
+        }}
+      >
+        <CircleHelp size={14} />
+      </button>
+      {helpOpen
+        ? createPortal(
+            <div
+              ref={popoverRef}
+              className="doc-write-help-popover doc-write-help-popover-portal"
+              role="tooltip"
+              style={popoverStyle}
+            >
+              {text}
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  )
+}
+
+function AutoReferenceControl({
+  checked,
+  onChange,
+  disabled,
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="doc-write-auto-reference">
+      <label className="doc-write-toggle">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+          disabled={disabled}
+        />
+        <span className="doc-write-toggle-track" />
+        自动添加参考
+      </label>
+      <WriteHelpButton
+        ariaLabel="自动添加参考说明"
+        text={AUTO_REFERENCE_HELP}
+        disabled={disabled}
+      />
+    </div>
+  )
+}
+
 function ReferenceFileList({
   files,
   onRemove,
@@ -176,6 +336,7 @@ export default function DocumentWriteModal({
   open,
   onClose,
   currentEditorContent = '',
+  activeTemplateId = null,
   onGenerated,
 }: DocumentWriteModalProps) {
   const saved = loadWriteMaterials()
@@ -184,25 +345,42 @@ export default function DocumentWriteModal({
   const [subtypeId, setSubtypeId] = useState<string | null>(saved.subtypeId)
   const [autoReference, setAutoReference] = useState(saved.autoReference)
   const [saveMaterials, setSaveMaterials] = useState(saved.saveMaterials)
-  const [referenceFiles, setReferenceFiles] = useState<WriteReferenceFile[]>(saved.referenceFiles)
-  const [imitationFiles, setImitationFiles] = useState<WriteReferenceFile[]>(saved.imitationFiles)
+  const [referenceFiles, setReferenceFiles] = useState<WriteReferenceFile[]>(saved.referenceFiles.slice(0, MAX_REFERENCE_FILES))
+  const [referencePanelOpen, setReferencePanelOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const referenceInputRef = useRef<HTMLInputElement>(null)
-  const imitationInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!open) return
     const savedDraft = loadWriteMaterials()
     setPrompt(savedDraft.prompt || DEFAULT_WRITE_PROMPT)
-    setTypeId(savedDraft.typeId || 'auto')
-    setSubtypeId(savedDraft.subtypeId)
     setAutoReference(savedDraft.autoReference)
     setSaveMaterials(savedDraft.saveMaterials)
-    setReferenceFiles(savedDraft.referenceFiles)
-    setImitationFiles(savedDraft.imitationFiles)
+    setReferenceFiles(savedDraft.referenceFiles.slice(0, MAX_REFERENCE_FILES))
+    setReferencePanelOpen(savedDraft.referenceFiles.length > 0)
     setError(null)
-  }, [open])
+
+    if (activeTemplateId) {
+      const linked = findWriteTypeSelectionByTemplateId(activeTemplateId)
+      if (linked) {
+        setTypeId(linked.typeId)
+        setSubtypeId(linked.subtypeId ?? null)
+        return
+      }
+    }
+
+    setTypeId(savedDraft.typeId || 'auto')
+    setSubtypeId(savedDraft.subtypeId)
+  }, [open, activeTemplateId])
+
+  const linkedTemplate = activeTemplateId ? getDocumentTemplateById(activeTemplateId) : undefined
+  const linkedTypeLabel = useMemo(() => {
+    if (!activeTemplateId) return null
+    const selection = findWriteTypeSelectionByTemplateId(activeTemplateId)
+    if (!selection) return linkedTemplate?.name ?? null
+    return resolveWriteTypeSelection(selection).label
+  }, [activeTemplateId, linkedTemplate?.name])
 
   useEffect(() => {
     if (!open) return
@@ -219,44 +397,24 @@ export default function DocumentWriteModal({
       autoReference,
       saveMaterials,
       referenceFiles,
-      imitationFiles,
       typeId,
       subtypeId,
     })
-  }, [prompt, autoReference, saveMaterials, referenceFiles, imitationFiles, typeId, subtypeId])
+  }, [prompt, autoReference, saveMaterials, referenceFiles, typeId, subtypeId])
 
-  const handleUpload = useCallback(
-    async (files: FileList | null, kind: 'reference' | 'imitation') => {
-      if (!files?.length) return
-      setError(null)
+  const handleUploadReference = useCallback(async (files: FileList | null) => {
+    if (!files?.length) return
+    setError(null)
 
-      const max = kind === 'reference' ? MAX_REFERENCE_FILES : MAX_IMITATION_FILES
-      const current = kind === 'reference' ? referenceFiles : imitationFiles
-      const remaining = max - current.length
-      if (remaining <= 0) {
-        setError(kind === 'reference' ? `参考文档最多 ${MAX_REFERENCE_FILES} 个` : `仿写文档最多 ${MAX_IMITATION_FILES} 个`)
-        return
-      }
-
-      const toAdd: WriteReferenceFile[] = []
-      for (const file of Array.from(files).slice(0, remaining)) {
-        try {
-          const text = await readWriteReferenceFile(file)
-          toAdd.push({ id: createFileId(), name: file.name, text })
-        } catch (err) {
-          setError(err instanceof Error ? err.message : '文件读取失败')
-        }
-      }
-
-      if (toAdd.length === 0) return
-      if (kind === 'reference') {
-        setReferenceFiles((prev) => [...prev, ...toAdd])
-      } else {
-        setImitationFiles((prev) => [...prev, ...toAdd])
-      }
-    },
-    [imitationFiles, referenceFiles],
-  )
+    const file = files[0]
+    try {
+      const text = await readWriteReferenceFile(file)
+      setReferenceFiles([{ id: createFileId(), name: file.name, text }])
+      setReferencePanelOpen(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '文件读取失败')
+    }
+  }, [])
 
   const runGenerate = useCallback(
     async (mode: DocumentWriteMode) => {
@@ -274,16 +432,17 @@ export default function DocumentWriteModal({
       persistDraft()
 
       try {
-        const referenceTexts = referenceFiles.map((file) => file.text)
+        const referenceTexts: string[] = []
         if (autoReference && currentEditorContent.trim()) {
-          referenceTexts.unshift(`【当前编辑器内容】\n${currentEditorContent.trim()}`)
+          referenceTexts.push(`【当前编辑器内容】\n${currentEditorContent.trim()}`)
         }
 
         const result = await generateDocumentWithAi({
           prompt,
           typeSelection: { typeId, subtypeId },
+          activeTemplateId,
           referenceTexts,
-          imitationTexts: imitationFiles.map((file) => file.text),
+          imitationTexts: referenceFiles.map((file) => file.text),
           mode,
         })
 
@@ -306,9 +465,9 @@ export default function DocumentWriteModal({
       typeId,
       subtypeId,
       referenceFiles,
-      imitationFiles,
       autoReference,
       currentEditorContent,
+      activeTemplateId,
       persistDraft,
       onGenerated,
       onClose,
@@ -339,6 +498,13 @@ export default function DocumentWriteModal({
         </header>
 
         <div className="doc-write-body">
+          {linkedTemplate ? (
+            <div className="doc-write-template-link" role="status">
+              已关联右侧模板：<strong>{linkedTemplate.name}</strong>
+              {linkedTypeLabel ? `（${linkedTypeLabel}）` : ''}
+            </div>
+          ) : null}
+
           <textarea
             className="doc-write-prompt"
             value={prompt}
@@ -352,27 +518,13 @@ export default function DocumentWriteModal({
             <div className="doc-write-toolbar-left">
               <button
                 type="button"
-                className="doc-write-icon-btn"
-                title="重置为默认提示"
+                className={`doc-write-icon-btn${referencePanelOpen ? ' active' : ''}`}
+                title={referencePanelOpen ? '收起参考文档' : '展开参考文档'}
+                aria-expanded={referencePanelOpen}
                 disabled={busy}
-                onClick={() => setPrompt(DEFAULT_WRITE_PROMPT)}
+                onClick={() => setReferencePanelOpen((value) => !value)}
               >
                 <Plus size={16} />
-              </button>
-              <button
-                type="button"
-                className="doc-write-icon-btn"
-                title="插入大纲占位"
-                disabled={busy}
-                onClick={() =>
-                  setPrompt((prev) =>
-                    prev.includes('大纲')
-                      ? prev
-                      : `${prev.trim()}\n\n请先生成包含「一、二、三」层级的大纲要点。`,
-                  )
-                }
-              >
-                <List size={16} />
               </button>
               <WriteTypePicker
                 typeId={typeId}
@@ -383,16 +535,12 @@ export default function DocumentWriteModal({
                 }}
               />
             </div>
+            <AutoReferenceControl
+              checked={autoReference}
+              onChange={setAutoReference}
+              disabled={busy}
+            />
             <div className="doc-write-toolbar-right">
-              <button
-                type="button"
-                className="btn btn-sm doc-write-btn-outline"
-                disabled={busy}
-                onClick={() => void runGenerate('outline')}
-              >
-                {busy ? <Loader2 size={14} className="spin" /> : null}
-                生成大纲
-              </button>
               <button
                 type="button"
                 className="btn btn-sm btn-primary doc-write-btn-primary"
@@ -400,94 +548,63 @@ export default function DocumentWriteModal({
                 onClick={() => void runGenerate('full')}
               >
                 {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
-                生成全文
+                生成内容
               </button>
             </div>
           </div>
 
           {error ? <p className="doc-write-error">{error}</p> : null}
 
-          <div className="doc-write-materials">
-            <section className="doc-write-material-block">
-              <div className="doc-write-material-head">
-                <h3>参考文档</h3>
-                <label className="doc-write-toggle">
-                  <input
-                    type="checkbox"
-                    checked={autoReference}
-                    onChange={(event) => setAutoReference(event.target.checked)}
-                    disabled={busy}
+          {referencePanelOpen ? (
+            <div className="doc-write-materials doc-write-materials-single">
+              <section className="doc-write-material-block">
+                <div className="doc-write-material-head">
+                  <h3>参考文档</h3>
+                </div>
+                <input
+                  ref={referenceInputRef}
+                  type="file"
+                  accept=".docx,.txt,.md"
+                  hidden
+                  onChange={(event) => {
+                    void handleUploadReference(event.target.files)
+                    event.target.value = ''
+                  }}
+                />
+                <button
+                  type="button"
+                  className="doc-write-upload-zone"
+                  disabled={busy}
+                  onClick={() => referenceInputRef.current?.click()}
+                >
+                  <ReferenceFileList
+                    files={referenceFiles}
+                    onRemove={(id) => setReferenceFiles((prev) => prev.filter((file) => file.id !== id))}
+                    emptyLabel="点击上传参考文档（.docx / .txt，最多 1 个，AI 将参照其结构与文风仿写）"
                   />
-                  <span className="doc-write-toggle-track" />
-                  自动添加参考
-                </label>
-              </div>
-              <input
-                ref={referenceInputRef}
-                type="file"
-                accept=".docx,.txt,.md"
-                multiple
-                hidden
-                onChange={(event) => {
-                  void handleUpload(event.target.files, 'reference')
-                  event.target.value = ''
-                }}
-              />
-              <button
-                type="button"
-                className="doc-write-upload-zone"
-                disabled={busy || referenceFiles.length >= MAX_REFERENCE_FILES}
-                onClick={() => referenceInputRef.current?.click()}
-              >
-                <ReferenceFileList
-                  files={referenceFiles}
-                  onRemove={(id) => setReferenceFiles((prev) => prev.filter((file) => file.id !== id))}
-                  emptyLabel={`点击上传参考文档（.docx / .txt，最多 ${MAX_REFERENCE_FILES} 个）`}
-                />
-              </button>
-            </section>
-
-            <section className="doc-write-material-block">
-              <div className="doc-write-material-head">
-                <h3>仿写文档</h3>
-              </div>
-              <input
-                ref={imitationInputRef}
-                type="file"
-                accept=".docx,.txt,.md"
-                multiple
-                hidden
-                onChange={(event) => {
-                  void handleUpload(event.target.files, 'imitation')
-                  event.target.value = ''
-                }}
-              />
-              <button
-                type="button"
-                className="doc-write-upload-zone"
-                disabled={busy || imitationFiles.length >= MAX_IMITATION_FILES}
-                onClick={() => imitationInputRef.current?.click()}
-              >
-                <ReferenceFileList
-                  files={imitationFiles}
-                  onRemove={(id) => setImitationFiles((prev) => prev.filter((file) => file.id !== id))}
-                  emptyLabel={`点击上传仿写范文（最多 ${MAX_IMITATION_FILES} 个，AI 将模仿文风）`}
-                />
-              </button>
-            </section>
-          </div>
+                </button>
+              </section>
+            </div>
+          ) : null}
         </div>
 
         <footer className="doc-write-footer">
-          <label className="doc-write-save-check">
-            <input
-              type="checkbox"
-              checked={saveMaterials}
-              onChange={(event) => setSaveMaterials(event.target.checked)}
+          <div className="doc-write-save-row">
+            <label className="doc-write-save-check">
+              <input
+                type="checkbox"
+                checked={saveMaterials}
+                onChange={(event) => setSaveMaterials(event.target.checked)}
+                disabled={busy}
+              />
+              保存素材至下次创作
+            </label>
+            <WriteHelpButton
+              ariaLabel="保存素材至下次创作说明"
+              text={SAVE_MATERIALS_HELP}
               disabled={busy}
             />
-            保存素材至下次创作
-          </label>
+          </div>
         </footer>
       </div>
     </div>

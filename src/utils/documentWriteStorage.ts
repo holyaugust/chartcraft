@@ -11,7 +11,6 @@ export interface WriteMaterialsDraft {
   autoReference: boolean
   saveMaterials: boolean
   referenceFiles: WriteReferenceFile[]
-  imitationFiles: WriteReferenceFile[]
   typeId: string
   subtypeId: string | null
 }
@@ -21,9 +20,18 @@ const DEFAULT_MATERIALS: WriteMaterialsDraft = {
   autoReference: true,
   saveMaterials: true,
   referenceFiles: [],
-  imitationFiles: [],
   typeId: 'auto',
   subtypeId: null,
+}
+
+function normalizeReferenceFiles(parsed: Partial<WriteMaterialsDraft>): WriteReferenceFile[] {
+  const refs = Array.isArray(parsed.referenceFiles) ? parsed.referenceFiles : []
+  const legacyImitation = Array.isArray(
+    (parsed as Partial<WriteMaterialsDraft & { imitationFiles?: WriteReferenceFile[] }>).imitationFiles,
+  )
+    ? (parsed as { imitationFiles: WriteReferenceFile[] }).imitationFiles
+    : []
+  return [...refs, ...legacyImitation].slice(0, 1)
 }
 
 export function loadWriteMaterials(): WriteMaterialsDraft {
@@ -34,8 +42,7 @@ export function loadWriteMaterials(): WriteMaterialsDraft {
     return {
       ...DEFAULT_MATERIALS,
       ...parsed,
-      referenceFiles: Array.isArray(parsed.referenceFiles) ? parsed.referenceFiles : [],
-      imitationFiles: Array.isArray(parsed.imitationFiles) ? parsed.imitationFiles : [],
+      referenceFiles: normalizeReferenceFiles(parsed),
     }
   } catch {
     return { ...DEFAULT_MATERIALS }

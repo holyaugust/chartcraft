@@ -1,5 +1,5 @@
 import { resolveIssueRange } from './documentLocate'
-import { normalizeDocumentStructure } from './documentFormatNormalize'
+import { normalizeDocumentStructure, stripLeadingIndent } from './documentFormatNormalize'
 
 export type IssueCategory = 'typo' | 'grammar' | 'punctuation' | 'style' | 'format'
 
@@ -232,12 +232,11 @@ export function formatDocument(text: string): string {
       (/^第[一二三四五六七八九十\d]+[章节部分]/u.test(line) && line.length <= 30) ||
       (/^[一二三四五六七八九十\d]+[、.．]/u.test(line) && line.length <= 40)
 
-    const isList = /^(\d+[.．、]|[•·\-*]|\([0-9]+\))\s*/u.test(line)
-
     if (isTitle) {
       line = line.replace(/\s+/g, '')
-    } else if (!isList && !line.startsWith('　　')) {
-      line = `　　${line.replace(/^[ 　]+/, '')}`
+    } else {
+      // 首行缩进由 Word 导出排版（firstLineIndentChars）负责，不在纯文本中加全角空格
+      line = stripLeadingIndent(line)
     }
 
     formattedLines.push(line)
@@ -300,11 +299,6 @@ export function proofreadDocument(text: string, options?: { autoFormat?: boolean
   return { issues, formatted }
 }
 
-export function applyAllFixes(text: string): { text: string; issues: DocumentIssue[] } {
-  const result = proofreadDocument(text, { autoFormat: true })
-  return { text: result.formatted, issues: result.issues }
-}
-
 export function applyFixableIssues(text: string, issues: DocumentIssue[]): string {
   const fixable = issues.filter((issue) => issue.autoFixable && issue.start !== issue.end && issue.original)
   const resolved = fixable
@@ -346,67 +340,4 @@ export function revertSingleFix(text: string, issue: DocumentIssue): string {
   if (!range) return text
 
   return text.slice(0, range.start) + issue.original + text.slice(range.end)
-}
-
-/** 合并多来源问题，去掉重叠区间 */
-export function mergeDocumentIssues(issueGroups: DocumentIssue[][]): DocumentIssue[] {
-  const flat = issueGroups.flat().sort((a, b) => a.start - b.start || a.end - b.end)
-  const merged: DocumentIssue[] = []
-
-  for (const issue of flat) {
-    const last = merged[merged.length - 1]
-    if (last && issue.start < last.end) continue
-    if (shouldSkipProofreadIssue(issue.original, issue.suggestion)) continue
-    const duplicate = merged.some(
-      (item) =>
-        item.start === issue.start &&
-        item.end === issue.end &&
-        item.original === issue.original &&
-        item.suggestion === issue.suggestion,
-    )
-    if (!duplicate) merged.push(issue)
-  }
-
-  return merged
-}
-
-export interface FullProofreadResult extends ProofreadResult {
-  languageToolIssues: DocumentIssue[]
-  languageToolError?: string
-}
-
-/** 本地规则校对 + LanguageTool 在线检测 */
-export async function proofreadDocumentFull(
-  text: string,
-  options?: { autoFormat?: boolean; skipLanguageTool?: boolean },
-): Promise<FullProofreadResult> {
-  const autoFormat = options?.autoFormat ?? true
-  const local = proofreadDocument(text, { autoFormat })
-
-  if (options?.skipLanguageTool) {
-    return { ...local, languageToolIssues: [] }
-  }
-
-  try {
-    const { checkWithLanguageTool } = await import('./languageTool')
-    const ltIssues = await checkWithLanguageTool(local.formatted)
-    return {
-      issues: mergeDocumentIssues([local.issues, ltIssues]),
-      formatted: local.formatted,
-      languageToolIssues: ltIssues,
-    }
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'LanguageTool 服务暂时不可用，仅完成本地规则校对'
-    return {
-      issues: local.issues,
-      formatted: local.formatted,
-      languageToolIssues: [],
-      languageToolError: message,
-    }
-  }
-}
-
-export async function applyAllFixesFull(text: string): Promise<FullProofreadResult> {
-  return proofreadDocumentFull(text, { autoFormat: false })
 }

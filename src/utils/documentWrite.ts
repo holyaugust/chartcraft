@@ -11,6 +11,8 @@ export interface DocumentWriteRequest {
   title?: string
   requirements?: string
   typeSelection: DocumentWriteTypeSelection
+  /** 文档工作区右侧当前选中的模板 ID */
+  activeTemplateId?: string | null
   referenceTexts?: string[]
   imitationTexts?: string[]
   mode: DocumentWriteMode
@@ -32,6 +34,27 @@ export function parseWritePromptFields(prompt: string): { title: string; require
     title: titleMatch?.[1]?.trim() ?? '',
     requirements: reqMatch?.[1]?.trim() ?? '',
   }
+}
+
+/** 用户是否在需求中明确提到要基于模板写作 */
+export function promptMentionsSelectedTemplate(prompt: string): boolean {
+  return /基于.{0,12}模板|按.{0,8}模板|参照.{0,8}模板|当前.{0,8}模板|所选模板|选定的模板|目前选择.{0,12}模板/u.test(
+    prompt,
+  )
+}
+
+function resolveEffectiveTemplateId(request: DocumentWriteRequest): string | undefined {
+  const fromType = resolveWriteTypeSelection(request.typeSelection).templateId
+  if (fromType) return fromType
+
+  const activeId = request.activeTemplateId?.trim()
+  if (!activeId) return undefined
+
+  if (request.typeSelection.typeId === 'auto' || promptMentionsSelectedTemplate(request.prompt)) {
+    return activeId
+  }
+
+  return undefined
 }
 
 function buildSystemPrompt(mode: DocumentWriteMode): string {
@@ -65,7 +88,8 @@ function buildUserPrompt(request: DocumentWriteRequest): string {
     request.requirements?.trim() || parsed.requirements || '文风严谨，语言简洁凝练，符合国企公文规范'
 
   const resolved = resolveWriteTypeSelection(request.typeSelection)
-  const template = resolved.templateId ? getDocumentTemplateById(resolved.templateId) : undefined
+  const effectiveTemplateId = resolveEffectiveTemplateId(request)
+  const template = effectiveTemplateId ? getDocumentTemplateById(effectiveTemplateId) : undefined
 
   const sections: string[] = [
     `写作需求：${request.prompt.trim()}`,
@@ -74,6 +98,10 @@ function buildUserPrompt(request: DocumentWriteRequest): string {
     `写作要求：${requirements}`,
     `公文类型：${resolved.label}`,
   ]
+
+  if (template) {
+    sections.push(`参照模板：${template.name}（${template.id}）`)
+  }
 
   if (resolved.subtype?.sceneHint) {
     sections.push(`场景说明：${resolved.subtype.sceneHint}`)
@@ -98,10 +126,10 @@ function buildUserPrompt(request: DocumentWriteRequest): string {
   }
 
   if (request.imitationTexts?.length) {
-    sections.push('', '仿写范文（请模仿其结构、语气与行文节奏，内容须重写）：')
+    sections.push('', '参考文档（请参照其结构、层次与文风进行仿写，内容须重写）：')
     request.imitationTexts.forEach((text, index) => {
-      const excerpt = text.length > 4000 ? `${text.slice(0, 4000)}\n…（已截断）` : text
-      sections.push(`【范文${index + 1}】\n${excerpt}`)
+      const excerpt = text.length > 6000 ? `${text.slice(0, 6000)}\n…（已截断）` : text
+      sections.push(`【参考文档${index + 1}】\n${excerpt}`)
     })
   }
 
@@ -124,16 +152,16 @@ export async function generateDocumentWithAi(request: DocumentWriteRequest): Pro
 
   const content = request.mode === 'full' ? normalizeDocumentStructure(raw) : raw
 
-  const resolved = resolveWriteTypeSelection(request.typeSelection)
+  const effectiveTemplateId = resolveEffectiveTemplateId(request)
 
   return {
     content,
-    templateId: resolved.templateId,
+    templateId: effectiveTemplateId,
     mode: request.mode,
   }
 }
 
-/** 从上传文件读取参考/仿写文本 */
+/** 从上传文件读取参考文档文本 */
 export async function readWriteReferenceFile(file: File): Promise<string> {
   const lower = file.name.toLowerCase()
   if (lower.endsWith('.docx')) {
