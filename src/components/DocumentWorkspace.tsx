@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import DocumentIssuePanel from './DocumentIssuePanel'
 import DocumentTextEditor from './DocumentTextEditor'
+import DocumentTemplateLibrary from './DocumentTemplateLibrary'
 import {
   applyAllFixesFull,
   applyFixableIssues,
@@ -30,6 +31,7 @@ import type { TextHighlightRange } from '../utils/documentLocate'
 import { getIssueCategoryLabel } from '../utils/documentProofread'
 import { exportDocumentToDocx } from '../utils/docxExport'
 import { saveFile } from '../utils/saveFile'
+import type { DocumentTemplate } from '../data/documentTemplates'
 
 const DOCUMENT_STORAGE_KEY = 'chartcraft-document-draft'
 
@@ -79,6 +81,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
   const [previewReady, setPreviewReady] = useState(false)
   const [previewTextMismatch, setPreviewTextMismatch] = useState(false)
   const [textDriftedFromDocx, setTextDriftedFromDocx] = useState(false)
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const editorRef = useRef<HTMLTextAreaElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
@@ -325,6 +328,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
       setLocateHint(null)
       setHighlightRange(null)
       setStatusIsError(false)
+      setActiveTemplateId(null)
       const tableHint = hasTables ? '；表格在「文本编辑」中以 | 分隔列' : ''
       setStatusMessage(
         warnings.length > 0
@@ -348,6 +352,42 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
       if (file) void handleWordUpload(file)
     },
     [handleWordUpload],
+  )
+
+  const applyDocumentTemplate = useCallback(
+    (template: DocumentTemplate) => {
+      const formatted = formatDocument(template.content)
+      setContent(formatted)
+      importedTextRef.current = formatted
+      importedRawTextRef.current = ''
+      setDocxBuffer(null)
+      setDocxFileName(`${template.name}.docx`)
+      setTextDriftedFromDocx(false)
+      setViewMode('text')
+      setActiveTemplateId(template.id)
+      resetProofreadSession()
+      setIssues([])
+      setShowIssues(false)
+      setActiveIssueId(null)
+      setLocateHint(null)
+      setHighlightRange(null)
+      setStatusIsError(false)
+      setStatusMessage(`已载入「${template.name}」模板，请编辑【】占位内容后导出 Word`)
+    },
+    [resetProofreadSession],
+  )
+
+  const handleApplyTemplate = useCallback(
+    (template: DocumentTemplate) => {
+      if (content.trim()) {
+        const confirmed = window.confirm(
+          `将用「${template.name}」模板替换当前文本内容，是否继续？`,
+        )
+        if (!confirmed) return
+      }
+      applyDocumentTemplate(template)
+    },
+    [applyDocumentTemplate, content],
   )
 
   const handleApplyAll = useCallback(() => {
@@ -547,7 +587,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
             <FileText size={20} />
             <div>
               <h2>文档编辑</h2>
-              <p>Word 版式预览 · 文本校对 · 导出 Word</p>
+              <p>国企公文模板 · 版式预览 · 文本校对 · 导出 Word</p>
             </div>
           </div>
           <div className="document-toolbar-actions">
@@ -608,9 +648,11 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
           </div>
         ) : null}
 
-        <div className="document-workspace-body">
-          <div className="document-editor-shell">
-            <div className="document-view-tabs" role="tablist" aria-label="文档视图">
+        <div className="document-layout-split">
+          <div className="document-editor-column">
+            <div className="document-workspace-main">
+              <div className="document-editor-shell">
+                <div className="document-view-tabs" role="tablist" aria-label="文档视图">
               <button
                 type="button"
                 role="tab"
@@ -690,31 +732,40 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
                 />
               ) : null}
             </div>
+              </div>
+            </div>
+
+            <div className="data-hint document-editor-hint">
+              <strong>说明：</strong>左侧编辑文档；右侧选择 GB/T 9704 公文模板载入骨架。
+              校对结果在右侧显示；导出 Word 写回 .docx。
+            </div>
           </div>
 
-          {showIssues ? (
-            <DocumentIssuePanel
-              issues={issues}
-              activeIssueId={activeIssueId}
-              adoptedIssueIds={adoptedIssueIdSet}
-              busy={busy}
-              onLocate={handleLocateIssue}
-              onToggleAdopt={handleToggleAdopt}
-              onApplyAll={handleApplyAll}
-              onDismiss={() => {
-        setShowIssues(false)
-        setActiveIssueId(null)
-                setLocateHint(null)
-                setHighlightRange(null)
-                resetProofreadSession()
-              }}
-            />
-          ) : null}
-        </div>
-
-        <div className="data-hint">
-          <strong>说明：</strong>「版式预览」保留 Word 原排版；「文本编辑」用于校对与修改。
-          校对完成后点击「导出 Word」写回 .docx。采纳后可再次点击取消；支持 Ctrl+Z 撤销上一步。
+          <aside className="document-sidebar">
+            {showIssues ? (
+              <DocumentIssuePanel
+                issues={issues}
+                activeIssueId={activeIssueId}
+                adoptedIssueIds={adoptedIssueIdSet}
+                busy={busy}
+                onLocate={handleLocateIssue}
+                onToggleAdopt={handleToggleAdopt}
+                onApplyAll={handleApplyAll}
+                onDismiss={() => {
+                  setShowIssues(false)
+                  setActiveIssueId(null)
+                  setLocateHint(null)
+                  setHighlightRange(null)
+                  resetProofreadSession()
+                }}
+              />
+            ) : (
+              <DocumentTemplateLibrary
+                activeTemplateId={activeTemplateId}
+                onApply={handleApplyTemplate}
+              />
+            )}
+          </aside>
         </div>
       </section>
     </main>
