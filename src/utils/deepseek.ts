@@ -336,6 +336,62 @@ async function requestChatCompletion(userPrompt: string): Promise<string> {
   return content
 }
 
+export interface DeepSeekTextOptions {
+  systemPrompt: string
+  userPrompt: string
+  temperature?: number
+  maxTokens?: number
+}
+
+/** 通用 DeepSeek 文本生成（非 JSON 校对模式） */
+export async function requestDeepSeekPlainText(options: DeepSeekTextOptions): Promise<string> {
+  const apiUrl = getDeepSeekApiUrl()
+  const useProxy = apiUrl.startsWith('/api/')
+  const apiKey = (import.meta.env.VITE_DEEPSEEK_API_KEY as string | undefined)?.trim()
+
+  if (!useProxy && !apiKey) {
+    throw createDeepSeekError('未配置 DeepSeek API Key，请在 .env.local 中设置 VITE_DEEPSEEK_API_KEY')
+  }
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (!useProxy && apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`
+  }
+
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: getDeepSeekModel(),
+      messages: [
+        { role: 'system', content: options.systemPrompt },
+        { role: 'user', content: options.userPrompt },
+      ],
+      temperature: options.temperature ?? 0.5,
+      max_tokens: options.maxTokens ?? 8192,
+    }),
+  })
+
+  let data: ChatCompletionResponse
+  try {
+    data = (await response.json()) as ChatCompletionResponse
+  } catch {
+    throw createDeepSeekError('DeepSeek 响应不是有效 JSON，请检查网络或 API 配置')
+  }
+
+  if (!response.ok) {
+    const detail = data.error?.message ?? `HTTP ${response.status}`
+    throw createDeepSeekError(formatDeepSeekErrorMessage(detail), response.status)
+  }
+
+  const content = data.choices?.[0]?.message?.content
+  if (!content?.trim()) {
+    throw createDeepSeekError('DeepSeek 返回内容为空')
+  }
+
+  return content.trim()
+}
+
 async function checkChunkAtOffset(
   fullText: string,
   chunk: string,

@@ -5,6 +5,7 @@ interface DocumentTextEditorProps {
   value: string
   onChange: (value: string) => void
   highlightRange: TextHighlightRange | null
+  aiHighlightRanges?: TextHighlightRange[]
   className?: string
   placeholder?: string
   editorRef?: React.RefObject<HTMLTextAreaElement | null>
@@ -14,6 +15,7 @@ export default function DocumentTextEditor({
   value,
   onChange,
   highlightRange,
+  aiHighlightRanges = [],
   className = '',
   placeholder,
   editorRef,
@@ -23,9 +25,18 @@ export default function DocumentTextEditor({
   const textareaRef = editorRef ?? innerRef
 
   const highlightedHtml = useMemo(
-    () => buildHighlightedHtml(value, highlightRange),
-    [value, highlightRange],
+    () => buildHighlightedHtml(value, highlightRange, aiHighlightRanges),
+    [value, highlightRange, aiHighlightRanges],
   )
+
+  const hasAiHighlight = aiHighlightRanges.some((range) => range.start < range.end)
+  const highlightMode = highlightRange
+    ? highlightRange.adopted
+      ? 'proofread-adopted'
+      : 'proofread-pending'
+    : hasAiHighlight
+      ? 'ai-write'
+      : null
 
   const syncBackdropScroll = useCallback(() => {
     const textarea = textareaRef.current
@@ -61,11 +72,13 @@ export default function DocumentTextEditor({
   return (
     <div
       className={`document-editor-wrap ${className}${
-        highlightRange
-          ? highlightRange.adopted
+        highlightMode === 'proofread-pending'
+          ? ' is-highlighting is-highlighting-pending'
+          : highlightMode === 'proofread-adopted'
             ? ' is-highlighting is-highlighting-adopted'
-            : ' is-highlighting is-highlighting-pending'
-          : ''
+            : highlightMode === 'ai-write'
+              ? ' is-highlighting is-highlighting-ai'
+              : ''
       }`.trim()}
     >
       <div ref={backdropRef} className="document-editor-backdrop" aria-hidden="true">
@@ -73,7 +86,7 @@ export default function DocumentTextEditor({
       </div>
       <textarea
         ref={textareaRef}
-        className={`document-editor${highlightRange ? ' document-editor-highlighting' : ''}`}
+        className={`document-editor${highlightMode ? ' document-editor-highlighting' : ''}`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onScroll={syncBackdropScroll}

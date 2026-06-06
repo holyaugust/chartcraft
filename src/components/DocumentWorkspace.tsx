@@ -10,10 +10,12 @@ import {
   Eye,
   PenLine,
   FileDown,
+  Wand2,
 } from 'lucide-react'
 import DocumentIssuePanel from './DocumentIssuePanel'
 import DocumentTextEditor from './DocumentTextEditor'
 import DocumentTemplateLibrary from './DocumentTemplateLibrary'
+import DocumentWriteModal from './DocumentWriteModal'
 import {
   applyAllFixesFull,
   applyFixableIssues,
@@ -28,10 +30,12 @@ import { renderDocxPreview } from '../utils/docxPreview'
 import { countCjkChars, hasTableLikeRows, normalizeDocxPlainText } from '../utils/docxTextExtract'
 import { locateIssueInTextarea } from '../utils/documentLocate'
 import type { TextHighlightRange } from '../utils/documentLocate'
+import { computeAiWriteHighlightRanges } from '../utils/documentAiHighlight'
 import { getIssueCategoryLabel } from '../utils/documentProofread'
 import { exportDocumentToDocx } from '../utils/docxExport'
 import { saveFile } from '../utils/saveFile'
 import type { DocumentTemplate } from '../data/documentTemplates'
+import type { DocumentWriteMode } from '../utils/documentWrite'
 
 const DOCUMENT_STORAGE_KEY = 'chartcraft-document-draft'
 
@@ -73,6 +77,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
   const [activeIssueId, setActiveIssueId] = useState<string | null>(null)
   const [locateHint, setLocateHint] = useState<string | null>(null)
   const [highlightRange, setHighlightRange] = useState<TextHighlightRange | null>(null)
+  const [aiHighlightRanges, setAiHighlightRanges] = useState<TextHighlightRange[]>([])
   const [adoptedIssueIds, setAdoptedIssueIds] = useState<string[]>([])
   const [viewMode, setViewMode] = useState<DocumentViewMode>('text')
   const [docxBuffer, setDocxBuffer] = useState<ArrayBuffer | null>(null)
@@ -82,6 +87,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
   const [previewTextMismatch, setPreviewTextMismatch] = useState(false)
   const [textDriftedFromDocx, setTextDriftedFromDocx] = useState(false)
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null)
+  const [showWriteModal, setShowWriteModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const editorRef = useRef<HTMLTextAreaElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
@@ -390,6 +396,41 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
     [applyDocumentTemplate, content],
   )
 
+  const handleWriteGenerated = useCallback(
+    (payload: {
+      content: string
+      templateId?: string | null
+      mode: DocumentWriteMode
+      title: string
+    }) => {
+      const previousContent = content
+      const formatted = formatDocument(payload.content)
+      const highlights = computeAiWriteHighlightRanges(previousContent, formatted)
+      setContent(formatted)
+      setAiHighlightRanges(highlights)
+      importedTextRef.current = formatted
+      importedRawTextRef.current = ''
+      setDocxBuffer(null)
+      setDocxFileName(`${payload.title.replace(/[\\/:*?"<>|]/g, '') || '公文'}.docx`)
+      setTextDriftedFromDocx(false)
+      setViewMode('text')
+      setActiveTemplateId(payload.templateId ?? null)
+      resetProofreadSession()
+      setIssues([])
+      setShowIssues(false)
+      setActiveIssueId(null)
+      setLocateHint(null)
+      setHighlightRange(null)
+      setStatusIsError(false)
+      setStatusMessage(
+        payload.mode === 'outline'
+          ? `AI 已生成「${payload.title}」大纲，请编辑完善后再次生成全文或导出`
+          : `AI 已生成「${payload.title}」全文，请核对【】占位内容后导出 Word`,
+      )
+    },
+    [resetProofreadSession, content],
+  )
+
   const handleApplyAll = useCallback(() => {
     const pending = issues.filter(
       (issue) => issue.autoFixable && issue.start !== issue.end && !adoptedIssueIdSet.has(issue.id),
@@ -564,6 +605,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
   const handleContentChange = useCallback(
     (value: string) => {
       setContent(value)
+      setAiHighlightRanges([])
       if (issues.length > 0 || adoptedIssueIds.length > 0) {
         setIssues([])
         setShowIssues(false)
@@ -598,6 +640,15 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
               hidden
               onChange={handleFileChange}
             />
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              disabled={busy}
+              onClick={() => setShowWriteModal(true)}
+            >
+              <Wand2 size={14} />
+              写公文
+            </button>
             <button
               type="button"
               className="btn btn-sm btn-ghost"
@@ -716,6 +767,12 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
                 </div>
               ) : null}
 
+              {aiHighlightRanges.length > 0 && viewMode === 'text' && !highlightRange ? (
+                <div className="document-ai-highlight-hint" role="status">
+                  紫色高亮为 AI 本次生成/修改的内容；编辑文档后高亮自动消失。
+                </div>
+              ) : null}
+
               {locateHint && viewMode === 'text' ? (
                 <div className="document-locate-hint" role="status">
                   {locateHint}
@@ -727,6 +784,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
                   editorRef={editorRef}
                   value={content}
                   highlightRange={highlightRange}
+                  aiHighlightRanges={aiHighlightRanges}
                   onChange={handleContentChange}
                   placeholder="在此输入报告正文，或点击「上传 Word」导入 .docx 文档…"
                 />
@@ -737,7 +795,7 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
 
             <div className="data-hint document-editor-hint">
               <strong>说明：</strong>左侧编辑文档；右侧选择 GB/T 9704 公文模板载入骨架。
-              校对结果在右侧显示；导出 Word 写回 .docx。
+              校对结果在右侧显示；导出 Word 按 GB/T 9704 自动排版。
             </div>
           </div>
 
@@ -768,6 +826,13 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
           </aside>
         </div>
       </section>
+
+      <DocumentWriteModal
+        open={showWriteModal}
+        onClose={() => setShowWriteModal(false)}
+        currentEditorContent={content}
+        onGenerated={handleWriteGenerated}
+      />
     </main>
   )
 }

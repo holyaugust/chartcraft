@@ -1,4 +1,5 @@
 import { resolveIssueRange } from './documentLocate'
+import { normalizeDocumentStructure } from './documentFormatNormalize'
 
 export type IssueCategory = 'typo' | 'grammar' | 'punctuation' | 'style' | 'format'
 
@@ -203,7 +204,8 @@ function mergeNonOverlapping(replacements: TextReplacement[]): TextReplacement[]
 }
 
 export function formatDocument(text: string): string {
-  let result = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  let result = normalizeDocumentStructure(text)
+  result = result.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 
   result = result
     .split('\n')

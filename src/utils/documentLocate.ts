@@ -14,21 +14,86 @@ export interface TextHighlightRange {
   adopted?: boolean
 }
 
-export function buildHighlightedHtml(content: string, range: TextHighlightRange | null): string {
-  if (!range || range.start >= range.end) {
-    return escapeHtml(content)
-  }
+type HighlightVariant = 'proofread-pending' | 'proofread-adopted' | 'ai-write'
 
-  const { start, end, adopted = false } = range
+interface HighlightSegment {
+  start: number
+  end: number
+  variant: HighlightVariant
+}
+
+function clampRange(content: string, start: number, end: number): { start: number; end: number } {
   const safeStart = Math.max(0, Math.min(start, content.length))
   const safeEnd = Math.max(safeStart, Math.min(end, content.length))
-  const markClass = adopted ? 'document-issue-highlight adopted' : 'document-issue-highlight pending'
+  return { start: safeStart, end: safeEnd }
+}
 
-  return (
-    escapeHtml(content.slice(0, safeStart)) +
-    `<mark class="${markClass}">${escapeHtml(content.slice(safeStart, safeEnd))}</mark>` +
-    escapeHtml(content.slice(safeEnd))
-  )
+function buildSegments(
+  content: string,
+  range: TextHighlightRange | null,
+  aiRanges: TextHighlightRange[],
+): HighlightSegment[] {
+  const segments: HighlightSegment[] = []
+
+  if (range) {
+    const { start, end } = clampRange(content, range.start, range.end)
+    if (start < end) {
+      segments.push({
+        start,
+        end,
+        variant: range.adopted ? 'proofread-adopted' : 'proofread-pending',
+      })
+    }
+  }
+
+  for (const item of aiRanges) {
+    const { start, end } = clampRange(content, item.start, item.end)
+    if (start < end) {
+      segments.push({ start, end, variant: 'ai-write' })
+    }
+  }
+
+  return segments
+}
+
+function variantClass(variant: HighlightVariant): string {
+  if (variant === 'ai-write') return 'document-ai-write-highlight'
+  if (variant === 'proofread-adopted') return 'document-issue-highlight adopted'
+  return 'document-issue-highlight pending'
+}
+
+export function buildHighlightedHtml(
+  content: string,
+  range: TextHighlightRange | null,
+  aiRanges: TextHighlightRange[] = [],
+): string {
+  const segments = buildSegments(content, range, aiRanges)
+  if (segments.length === 0) return escapeHtml(content)
+
+  const points = new Set<number>([0, content.length])
+  for (const segment of segments) {
+    points.add(segment.start)
+    points.add(segment.end)
+  }
+
+  const sortedPoints = [...points].sort((a, b) => a - b)
+  let html = ''
+
+  for (let i = 0; i < sortedPoints.length - 1; i += 1) {
+    const start = sortedPoints[i]
+    const end = sortedPoints[i + 1]
+    if (start >= end) continue
+
+    const covering = segments.filter((segment) => segment.start <= start && segment.end >= end)
+    const active =
+      covering.find((segment) => segment.variant.startsWith('proofread')) ??
+      covering.find((segment) => segment.variant === 'ai-write')
+
+    const slice = escapeHtml(content.slice(start, end))
+    html += active ? `<mark class="${variantClass(active.variant)}">${slice}</mark>` : slice
+  }
+
+  return html
 }
 
 /** 将 textarea 滚动到指定字符区间（兼容自动换行的长行，尽量居中显示） */

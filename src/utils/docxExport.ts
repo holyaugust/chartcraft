@@ -5,6 +5,7 @@ import {
   extractTableText,
   extractTextFromDocxXml,
 } from './docxTextExtract'
+import { createFormattedDocxFromPlainText, looksLikeOfficialDocument } from './docxFormattedExport'
 
 const WORD_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 
@@ -517,13 +518,15 @@ export function buildDocxExportFileName(sourceName?: string | null, suffix = '�
   return `${base}-${suffix}.docx`
 }
 
-/** 统一导出入口：有原 docx 则写回，否则新建 */
+/** 统一导出入口：有原 docx 则写回，否则按 GB/T 9704 排版新建 */
 export async function exportDocumentToDocx(
   editedText: string,
   options?: {
     originalBuffer?: ArrayBuffer | null
     originalFullText?: string
     fileName?: string | null
+    /** 即使上传了 Word，也按国标重排版导出（默认：无原文件或内容为公文结构时启用） */
+    preferFormatted?: boolean
   },
 ): Promise<DocxExportResult & { fileName: string }> {
   if (!editedText.trim()) {
@@ -531,8 +534,11 @@ export async function exportDocumentToDocx(
   }
 
   const exportName = buildDocxExportFileName(options?.fileName)
+  const useFormatted =
+    options?.preferFormatted ??
+    (!options?.originalBuffer || looksLikeOfficialDocument(editedText))
 
-  if (options?.originalBuffer) {
+  if (options?.originalBuffer && !useFormatted) {
     const unchanged =
       options.originalFullText !== undefined && options.originalFullText === editedText.trim()
     if (unchanged) {
@@ -557,10 +563,12 @@ export async function exportDocumentToDocx(
     return { ...result, fileName: exportName }
   }
 
-  const buffer = await createDocxFromPlainText(editedText)
+  const buffer = await createFormattedDocxFromPlainText(editedText)
   return {
     buffer,
-    warnings: ['未上传 Word，已按纯文本生成新文档（不含原排版）'],
+    warnings: [
+      '已按 GB/T 9704-2012 国企公文格式排版（上报专项报告/请示通用版：小标宋标题、黑体主送、仿宋正文、28磅行距）',
+    ],
     fileName: exportName,
   }
 }
