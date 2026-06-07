@@ -57,23 +57,116 @@ function WriteTypePicker({
 }) {
   const [open, setOpen] = useState(false)
   const [hoverTypeId, setHoverTypeId] = useState<string | null>(null)
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({ visibility: 'hidden' })
   const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const resolved = resolveWriteTypeSelection({ typeId, subtypeId })
   const hoverType =
     DOCUMENT_WRITE_TYPES.find((item) => item.id === hoverTypeId) ??
     (typeId !== 'auto' ? DOCUMENT_WRITE_TYPES.find((item) => item.id === typeId) : null)
 
+  const updateMenuPosition = useCallback(() => {
+    const trigger = triggerRef.current
+    const menu = menuRef.current
+    if (!trigger || !menu) return
+
+    const rect = trigger.getBoundingClientRect()
+    const menuRect = menu.getBoundingClientRect()
+    const menuWidth = menuRect.width || 420
+    const gap = 6
+    const margin = 12
+    const autoRowHeight = 41
+
+    const spaceBelow = window.innerHeight - rect.bottom - gap - margin
+    const spaceAbove = rect.top - gap - margin
+    const openBelow = spaceBelow >= 200 || spaceBelow >= spaceAbove
+    const availableSplitHeight = Math.max(
+      120,
+      Math.min(360, (openBelow ? spaceBelow : spaceAbove) - autoRowHeight),
+    )
+    const menuHeight = autoRowHeight + availableSplitHeight
+
+    const top = openBelow
+      ? rect.bottom + gap
+      : Math.max(margin, rect.top - gap - menuHeight)
+
+    let left = rect.left
+    if (left + menuWidth > window.innerWidth - margin) {
+      left = window.innerWidth - margin - menuWidth
+    }
+    if (left < margin) left = margin
+
+    setMenuStyle({
+      position: 'fixed',
+      top,
+      left,
+      zIndex: 4000,
+      visibility: 'visible',
+      height: `${menuHeight}px`,
+      maxHeight: `${menuHeight}px`,
+      ['--doc-write-type-split-max' as string]: `${availableSplitHeight}px`,
+    })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open) return
+    updateMenuPosition()
+    const raf = window.requestAnimationFrame(updateMenuPosition)
+    window.addEventListener('resize', updateMenuPosition)
+    window.addEventListener('scroll', updateMenuPosition, true)
+    return () => {
+      window.cancelAnimationFrame(raf)
+      window.removeEventListener('resize', updateMenuPosition)
+      window.removeEventListener('scroll', updateMenuPosition, true)
+    }
+  }, [open, updateMenuPosition, hoverTypeId])
+
   useEffect(() => {
     if (!open) return
-    const handleClick = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false)
-      }
+    const menu = menuRef.current
+    if (!menu) return
+
+    const stopMenuWheelBubble = (event: WheelEvent) => {
+      event.stopPropagation()
     }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
+
+    menu.addEventListener('wheel', stopMenuWheelBubble, { capture: true })
+    return () => menu.removeEventListener('wheel', stopMenuWheelBubble, { capture: true })
   }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (rootRef.current?.contains(target)) return
+      if (menuRef.current?.contains(target)) return
+      setOpen(false)
+      setHoverTypeId(null)
+    }
+
+    const timer = window.setTimeout(() => {
+      document.addEventListener('mousedown', handlePointerDown)
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener('mousedown', handlePointerDown)
+    }
+  }, [open])
+
+  const stopColumnWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    event.stopPropagation()
+    const column = event.currentTarget
+    const { scrollTop, scrollHeight, clientHeight } = column
+    const delta = event.deltaY
+    const atTop = scrollTop <= 0 && delta < 0
+    const atBottom = scrollTop + clientHeight >= scrollHeight - 1 && delta > 0
+    if (!atTop && !atBottom) {
+      event.preventDefault()
+    }
+  }, [])
 
   const selectType = (type: DocumentWriteType, subtypeIdValue: string | null = null) => {
     onChange(type.id, subtypeIdValue)
@@ -85,62 +178,79 @@ function WriteTypePicker({
     <div className="doc-write-type-picker" ref={rootRef}>
       <span className="doc-write-type-label">公文类型</span>
       <button
+        ref={triggerRef}
         type="button"
         className="doc-write-type-trigger"
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="listbox"
+        onClick={(event) => {
+          event.stopPropagation()
+          setOpen((value) => {
+            if (value) return false
+            setMenuStyle({ visibility: 'hidden' })
+            return true
+          })
+        }}
       >
         {resolved.label}
         <ChevronDown size={14} />
       </button>
 
-      {open ? (
-        <div className="doc-write-type-menu">
-          <button
-            type="button"
-            className={`doc-write-type-item${typeId === 'auto' ? ' active' : ''}`}
-            onMouseEnter={() => setHoverTypeId(null)}
-            onClick={() => selectType(DOCUMENT_WRITE_AUTO_TYPE)}
-          >
-            自动识别
-          </button>
-          <div className="doc-write-type-menu-split">
-            <div className="doc-write-type-column">
-              {DOCUMENT_WRITE_TYPES.map((type) => (
-                <button
-                  key={type.id}
-                  type="button"
-                  className={`doc-write-type-item${typeId === type.id ? ' active' : ''}${hoverTypeId === type.id ? ' hover' : ''}`}
-                  onMouseEnter={() => setHoverTypeId(type.id)}
-                  onClick={() => {
-                    if (type.subtypes?.length) {
-                      selectType(type, type.subtypes[0].id)
-                    } else {
-                      selectType(type)
-                    }
-                  }}
-                >
-                  {type.label}
-                </button>
-              ))}
-            </div>
-            {hoverType?.subtypes?.length ? (
-              <div className="doc-write-type-subcolumn">
-                {hoverType.subtypes.map((subtype) => (
-                  <button
-                    key={subtype.id}
-                    type="button"
-                    className={`doc-write-type-subitem${typeId === hoverType.id && subtypeId === subtype.id ? ' active' : ''}`}
-                    onClick={() => selectType(hoverType, subtype.id)}
-                  >
-                    {subtype.label}
-                  </button>
-                ))}
+      {open
+        ? createPortal(
+            <div
+              ref={menuRef}
+              className="doc-write-type-menu doc-write-type-menu-portal"
+              role="listbox"
+              style={menuStyle}
+            >
+              <button
+                type="button"
+                className={`doc-write-type-item${typeId === 'auto' ? ' active' : ''}`}
+                onMouseEnter={() => setHoverTypeId(null)}
+                onClick={() => selectType(DOCUMENT_WRITE_AUTO_TYPE)}
+              >
+                自动识别
+              </button>
+              <div className="doc-write-type-menu-split">
+                <div className="doc-write-type-column" onWheel={stopColumnWheel}>
+                  {DOCUMENT_WRITE_TYPES.map((type) => (
+                    <button
+                      key={type.id}
+                      type="button"
+                      className={`doc-write-type-item${typeId === type.id ? ' active' : ''}${hoverTypeId === type.id ? ' hover' : ''}`}
+                      onMouseEnter={() => setHoverTypeId(type.id)}
+                      onClick={() => {
+                        if (type.subtypes?.length) {
+                          selectType(type, type.subtypes[0].id)
+                        } else {
+                          selectType(type)
+                        }
+                      }}
+                    >
+                      {type.label}
+                    </button>
+                  ))}
+                </div>
+                {hoverType?.subtypes?.length ? (
+                  <div className="doc-write-type-subcolumn" onWheel={stopColumnWheel}>
+                    {hoverType.subtypes.map((subtype) => (
+                      <button
+                        key={subtype.id}
+                        type="button"
+                        className={`doc-write-type-subitem${typeId === hoverType.id && subtypeId === subtype.id ? ' active' : ''}`}
+                        onClick={() => selectType(hoverType, subtype.id)}
+                      >
+                        {subtype.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   )
 }

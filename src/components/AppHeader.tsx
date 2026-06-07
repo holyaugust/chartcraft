@@ -1,6 +1,6 @@
-import { BarChart2, BarChart3, FileText } from 'lucide-react'
+import { BarChart2, BarChart3, FileText, Presentation } from 'lucide-react'
 
-export type WorkspaceId = 'chart' | 'document'
+export type WorkspaceId = 'chart' | 'document' | 'presentation'
 
 interface AppHeaderProps {
   workspace: WorkspaceId
@@ -18,7 +18,7 @@ export default function AppHeader({ workspace, onWorkspaceChange, savedLabel }: 
           </div>
           <div>
             <h1>ChartCraft</h1>
-            <p>数据可视化图表生成器</p>
+            <p>数据可视化 · 文档 · 汇报</p>
           </div>
         </div>
 
@@ -43,11 +43,21 @@ export default function AppHeader({ workspace, onWorkspaceChange, savedLabel }: 
           >
             <FileText size={22} strokeWidth={2} />
           </button>
+          <button
+            type="button"
+            className={`workspace-nav-btn${workspace === 'presentation' ? ' active' : ''}`}
+            title="汇报编辑"
+            aria-label="汇报编辑"
+            aria-current={workspace === 'presentation' ? 'page' : undefined}
+            onClick={() => onWorkspaceChange('presentation')}
+          >
+            <Presentation size={22} strokeWidth={2} />
+          </button>
         </nav>
       </div>
 
       {savedLabel ? (
-        <span className="autosave-hint" title="表格与图表配置会自动保存到浏览器">
+        <span className="autosave-hint" title="内容会自动保存到浏览器">
           已自动保存 {savedLabel}
         </span>
       ) : null}

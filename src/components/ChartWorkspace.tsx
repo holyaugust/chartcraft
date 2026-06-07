@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Table2, Upload } from 'lucide-react'
+import { BarChart3, Table2, Upload } from 'lucide-react'
 import DataTable from './DataTable'
 import ExcelUpload from './ExcelUpload'
 import WorkbookTabs from './WorkbookTabs'
@@ -23,13 +23,14 @@ type InputTab = 'table' | 'upload'
 
 interface ChartWorkspaceProps {
   onSavedLabelChange: (label: string) => void
+  onInsertToPresentation?: () => void
 }
 
 function getInitialDraft(): ProjectDraft {
   return loadProjectDraft() ?? createDefaultProjectDraft()
 }
 
-export default function ChartWorkspace({ onSavedLabelChange }: ChartWorkspaceProps) {
+export default function ChartWorkspace({ onSavedLabelChange, onInsertToPresentation }: ChartWorkspaceProps) {
   const initialDraftRef = useRef(getInitialDraft())
   const {
     workbook,
@@ -189,8 +190,20 @@ export default function ChartWorkspace({ onSavedLabelChange }: ChartWorkspacePro
       </section>
 
       <section className="panel panel-chart">
-        <div className="panel-header">
+        <div className="panel-header chart-panel-header-with-action">
           <h2>图表配置</h2>
+          {onInsertToPresentation ? (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              disabled={!parsed}
+              onClick={onInsertToPresentation}
+              title="将当前图表插入汇报 PPT"
+            >
+              <BarChart3 size={14} />
+              插入汇报 PPT
+            </button>
+          ) : null}
         </div>
 
         <div className="panel-body chart-panel-body">

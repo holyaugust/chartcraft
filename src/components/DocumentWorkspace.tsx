@@ -9,6 +9,7 @@ import {
   PenLine,
   FileDown,
   Wand2,
+  Presentation,
   ChevronDown,
 } from 'lucide-react'
 import DocumentIssuePanel from './DocumentIssuePanel'
@@ -61,9 +62,13 @@ function saveDocumentDraft(content: string) {
 
 interface DocumentWorkspaceProps {
   onSavedLabelChange: (label: string) => void
+  onOpenPresentation?: (documentText: string) => void
 }
 
-export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorkspaceProps) {
+export default function DocumentWorkspace({
+  onSavedLabelChange,
+  onOpenPresentation,
+}: DocumentWorkspaceProps) {
   const [content, setContent] = useState(loadDocumentDraft)
   const [lastSavedAt, setLastSavedAt] = useState<number>(Date.now())
   const [issues, setIssues] = useState<DocumentIssue[]>([])
@@ -637,6 +642,16 @@ export default function DocumentWorkspace({ onSavedLabelChange }: DocumentWorksp
             >
               <Wand2 size={14} />
               写公文
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              disabled={busy || !content.trim()}
+              title={content.trim() ? '携带当前正文前往汇报工作区' : '请先输入文档内容'}
+              onClick={() => onOpenPresentation?.(content)}
+            >
+              <Presentation size={14} />
+              生成汇报 PPT
             </button>
             <button
               type="button"
