@@ -5,6 +5,7 @@ import './App.css'
 
 const DocumentWorkspace = lazy(() => import('./components/DocumentWorkspace'))
 const PresentationWorkspace = lazy(() => import('./components/PresentationWorkspace'))
+const DiagramWorkspace = lazy(() => import('./components/DiagramWorkspace'))
 
 function WorkspaceFallback() {
   return (
@@ -12,6 +13,21 @@ function WorkspaceFallback() {
       加载工作区…
     </div>
   )
+}
+
+function workspaceFooter(workspace: WorkspaceId): string {
+  switch (workspace) {
+    case 'chart':
+      return '表格数据 · Excel 导入 · 多类型图表 · PNG 导出'
+    case 'document':
+      return '报告文档 · 本地自动保存'
+    case 'presentation':
+      return '汇报 PPT · 预览 · 写回 · 图表嵌入'
+    case 'flowchart':
+      return 'AI 流程图 · Mermaid · SVG/PNG 导出'
+    case 'mindmap':
+      return 'AI 思维导图 · Mermaid · SVG/PNG 导出'
+  }
 }
 
 export default function App() {
@@ -34,13 +50,6 @@ export default function App() {
     setWorkspace('presentation')
   }, [])
 
-  const footerText =
-    workspace === 'chart'
-      ? '表格数据 · Excel 导入 · 多类型图表 · PNG 导出'
-      : workspace === 'document'
-        ? '报告文档 · 本地自动保存'
-        : '汇报 PPT · 预览 · 写回 · 图表嵌入'
-
   return (
     <div className="app">
       <AppHeader
@@ -60,7 +69,7 @@ export default function App() {
             onSavedLabelChange={handleSavedLabelChange}
             onOpenPresentation={handleOpenPresentation}
           />
-        ) : (
+        ) : workspace === 'presentation' ? (
           <PresentationWorkspace
             onSavedLabelChange={handleSavedLabelChange}
             seedDocument={presentationSeed}
@@ -68,11 +77,17 @@ export default function App() {
             chartSeed={presentationChartSeed}
             onChartSeedConsumed={() => setPresentationChartSeed(false)}
           />
+        ) : (
+          <DiagramWorkspace
+            key={workspace}
+            kind={workspace}
+            onSavedLabelChange={handleSavedLabelChange}
+          />
         )}
       </Suspense>
 
       <footer className="app-footer">
-        <span>ChartCraft — {footerText}</span>
+        <span>ChartCraft — {workspaceFooter(workspace)}</span>
       </footer>
     </div>
   )

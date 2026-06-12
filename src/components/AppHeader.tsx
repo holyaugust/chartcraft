@@ -1,6 +1,6 @@
-import { BarChart2, BarChart3, FileText, Presentation } from 'lucide-react'
+import { BarChart2, BarChart3, Brain, FileText, GitBranch, Presentation } from 'lucide-react'
 
-export type WorkspaceId = 'chart' | 'document' | 'presentation'
+export type WorkspaceId = 'chart' | 'document' | 'presentation' | 'flowchart' | 'mindmap'
 
 interface AppHeaderProps {
   workspace: WorkspaceId
@@ -18,7 +18,7 @@ export default function AppHeader({ workspace, onWorkspaceChange, savedLabel }: 
           </div>
           <div>
             <h1>ChartCraft</h1>
-            <p>数据可视化 · 文档 · 汇报</p>
+            <p>数据 · 文档 · 汇报 · 流程图 · 思维导图</p>
           </div>
         </div>
 
@@ -52,6 +52,26 @@ export default function AppHeader({ workspace, onWorkspaceChange, savedLabel }: 
             onClick={() => onWorkspaceChange('presentation')}
           >
             <Presentation size={22} strokeWidth={2} />
+          </button>
+          <button
+            type="button"
+            className={`workspace-nav-btn${workspace === 'flowchart' ? ' active' : ''}`}
+            title="流程图"
+            aria-label="流程图"
+            aria-current={workspace === 'flowchart' ? 'page' : undefined}
+            onClick={() => onWorkspaceChange('flowchart')}
+          >
+            <GitBranch size={22} strokeWidth={2} />
+          </button>
+          <button
+            type="button"
+            className={`workspace-nav-btn${workspace === 'mindmap' ? ' active' : ''}`}
+            title="思维导图"
+            aria-label="思维导图"
+            aria-current={workspace === 'mindmap' ? 'page' : undefined}
+            onClick={() => onWorkspaceChange('mindmap')}
+          >
+            <Brain size={22} strokeWidth={2} />
           </button>
         </nav>
       </div>

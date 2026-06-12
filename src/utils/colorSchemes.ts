@@ -164,6 +164,11 @@ export function lightenColor(hex: string, amount = 0.35): string {
   return rgbToHex(r + (255 - r) * amount, g + (255 - g) * amount, b + (255 - b) * amount)
 }
 
+export function darkenColor(hex: string, amount = 0.15): string {
+  const [r, g, b] = hexToRgb(hex)
+  return rgbToHex(r * (1 - amount), g * (1 - amount), b * (1 - amount))
+}
+
 export function alphaColor(hex: string, alpha: number): string {
   const [r, g, b] = hexToRgb(hex)
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
