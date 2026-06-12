@@ -224,12 +224,26 @@ export function getSvgNodeText(group: Element): string {
 
 function collectEditableNodeGroups(svgEl: Element, kind: DiagramKind): Element[] {
   if (kind === 'mindmap') {
-    return [...svgEl.querySelectorAll('g[class*="mindmap-node"]')]
+    const fromClass = [...svgEl.querySelectorAll('g[class*="mindmap-node"]')]
+    if (fromClass.length > 0) return fromClass
+
+    return [...svgEl.querySelectorAll('g.section, g.node, g[class*="node"]')].filter((group) => {
+      const cls = group.getAttribute('class') ?? ''
+      if (/\bedge\b/.test(cls) || /\blabel\b/.test(cls)) return false
+      return group.querySelector('rect, circle, ellipse, path, polygon, foreignObject') != null
+    })
   }
 
-  return [...svgEl.querySelectorAll('g[class*="node"]')].filter((group) => {
+  const fromClass = [...svgEl.querySelectorAll('g[class*="node"]')].filter((group) => {
     const cls = group.getAttribute('class') ?? ''
     return /\bnode\b/.test(cls) && !/\bedge\b/.test(cls) && !/\blabel\b/.test(cls)
+  })
+  if (fromClass.length > 0) return fromClass
+
+  return [...svgEl.querySelectorAll('g[id]')].filter((group) => {
+    const id = group.getAttribute('id') ?? ''
+    if (!/(?:flowchart-|graph-|[A-Za-z][A-Za-z0-9_]*-)\d+/.test(id)) return false
+    return group.querySelector('rect, polygon, path, circle, ellipse, foreignObject') != null
   })
 }
 
@@ -266,16 +280,129 @@ export function selectElementContents(element: HTMLElement): void {
   selection?.removeAllRanges()
   selection?.addRange(range)
 }
+
+export interface NodeEditLayout {
+  left: number
+  top: number
+  width: number
+  height: number
+  fontSize: number
+  fontFamily: string
+  fontWeight: string
+  color: string
+  textAlign: 'left' | 'center' | 'right'
+  text: string
+}
+
+/** 计算节点文字编辑浮层的位置与样式（相对预览容器） */
+export function computeNodeEditLayout(nodeGroup: Element, shell: HTMLElement): NodeEditLayout {
+  const shellRect = shell.getBoundingClientRect()
+  const labelEl = getInlineLabelElement(nodeGroup)
+  const targetRect = (labelEl ?? nodeGroup).getBoundingClientRect()
+
+  const left = targetRect.left - shellRect.left
+  const top = targetRect.top - shellRect.top
+  const width = Math.max(Math.ceil(targetRect.width) + 8, 56)
+  const height = Math.max(Math.ceil(targetRect.height) + 6, 28)
+
+  let fontSize = 14
+  let fontFamily = '"Microsoft YaHei", "PingFang SC", sans-serif'
+  let fontWeight = '600'
+  let color = '#1e293b'
+  let textAlign: 'left' | 'center' | 'right' = 'center'
+
+  if (labelEl) {
+    const cs = window.getComputedStyle(labelEl)
+    fontSize = Number.parseFloat(cs.fontSize) || fontSize
+    fontFamily = cs.fontFamily || fontFamily
+    fontWeight = cs.fontWeight || fontWeight
+    color = cs.color || color
+    const align = cs.textAlign
+    if (align === 'left' || align === 'right' || align === 'center') {
+      textAlign = align
+    }
+  } else {
+    const textEl = nodeGroup.querySelector('text')
+    if (textEl) {
+      fontSize = Number.parseFloat(textEl.getAttribute('font-size') ?? '') || fontSize
+      color = textEl.getAttribute('fill') ?? color
+      const anchor = textEl.getAttribute('text-anchor')
+      if (anchor === 'start') textAlign = 'left'
+      else if (anchor === 'end') textAlign = 'right'
+    }
+  }
+
+  const text =
+    nodeGroup.getAttribute('data-cc-label') ||
+    (labelEl ? readInlineLabelText(labelEl) : '') ||
+    getSvgNodeText(nodeGroup)
+
+  return { left, top, width, height, fontSize, fontFamily, fontWeight, color, textAlign, text }
+}
 export function findEditableNodeFromEvent(event: MouseEvent): Element | null {
   const pick = (el: Element | null | undefined) =>
-    el?.closest('[data-cc-node-id], [data-cc-line-index]') ??
-    el?.closest('[data-cc-editable]') ??
-    null
+    el ? resolveEditableNodeGroup(el) : null
 
   const fromTarget = pick(event.target as Element | null)
   if (fromTarget) return fromTarget
 
   return pick(document.elementFromPoint(event.clientX, event.clientY))
+}
+
+export function resolveDiagramNodeForEdit(
+  canvas: Element | null,
+  event: MouseEvent,
+  selected?: { nodeId?: string; lineIndex?: number } | null,
+): Element | null {
+  const fromEvent = findEditableNodeFromEvent(event)
+  if (fromEvent) return fromEvent
+
+  if (!canvas || !selected) return null
+
+  if (selected.nodeId) {
+    const byId = canvas.querySelector(`[data-cc-node-id="${CSS.escape(selected.nodeId)}"]`)
+    if (byId) return byId
+  }
+  if (selected.lineIndex != null && !Number.isNaN(selected.lineIndex)) {
+    const byLine = canvas.querySelector(`[data-cc-line-index="${selected.lineIndex}"]`)
+    if (byLine) return byLine
+  }
+
+  return null
+}
+
+export interface NodeEditTarget {
+  nodeId?: string
+  lineIndex?: number
+}
+
+/** 解析节点对应的源码编辑目标（含无 metadata 时的序号回退） */
+export function resolveNodeEditTarget(
+  nodeGroup: Element,
+  source: string,
+  kind: DiagramKind,
+): NodeEditTarget {
+  const nodeId = nodeGroup.getAttribute('data-cc-node-id') ?? undefined
+  if (nodeId) return { nodeId }
+
+  const lineIndexRaw = nodeGroup.getAttribute('data-cc-line-index')
+  if (lineIndexRaw != null) {
+    const lineIndex = Number.parseInt(lineIndexRaw, 10)
+    if (!Number.isNaN(lineIndex)) return { lineIndex }
+  }
+
+  const svgEl = nodeGroup.closest('svg') ?? nodeGroup
+  const groups = collectEditableNodeGroups(svgEl, kind)
+  const index = groups.indexOf(nodeGroup)
+  if (index < 0) return {}
+
+  if (kind === 'flowchart') {
+    const refs = parseFlowchartNodes(source)
+    return refs[index]?.id ? { nodeId: refs[index].id } : {}
+  }
+
+  const refs = parseMindmapNodes(source)
+  return refs[index]?.lineIndex != null ? { lineIndex: refs[index].lineIndex } : {}
 }
 
 function extractFlowchartNodeIdFromSvg(group: Element): string | null {
@@ -306,16 +433,13 @@ function tagEditableNode(group: Element, attrs: Record<string, string>): void {
   })
 }
 
-/** 为 SVG 节点附加可编辑元数据 */
-export function attachDiagramEditMetadata(svg: string, source: string, kind: DiagramKind): string {
-  if (typeof DOMParser === 'undefined') return svg
-
-  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
-  const svgEl = doc.documentElement
-  if (svgEl.querySelector('parsererror')) return svg
-
+function applyDiagramEditMetadataToElement(
+  svgEl: Element,
+  source: string,
+  kind: DiagramKind,
+): void {
   const nodeGroups = collectEditableNodeGroups(svgEl, kind)
-  if (nodeGroups.length === 0) return svg
+  if (nodeGroups.length === 0) return
 
   if (kind === 'flowchart') {
     const refs = parseFlowchartNodes(source)
@@ -338,9 +462,32 @@ export function attachDiagramEditMetadata(svg: string, source: string, kind: Dia
       tagEditableNode(group, {
         'data-cc-line-index': String(ref.lineIndex),
         'data-cc-label': ref.label,
+        ...(ref.isRoot ? { 'data-cc-is-root': 'true' } : {}),
       })
     })
   }
+}
+
+/** 为 SVG 节点附加可编辑元数据 */
+export function attachDiagramEditMetadata(svg: string, source: string, kind: DiagramKind): string {
+  if (typeof DOMParser === 'undefined') return svg
+
+  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml')
+  const svgEl = doc.documentElement
+  if (svgEl.querySelector('parsererror')) return svg
+
+  applyDiagramEditMetadataToElement(svgEl, source, kind)
 
   return new XMLSerializer().serializeToString(svgEl)
+}
+
+/** 在浏览器 DOM 中附加可编辑元数据（innerHTML 插入后调用） */
+export function attachDiagramEditMetadataToDom(
+  root: Element,
+  source: string,
+  kind: DiagramKind,
+): void {
+  const svgEl = root.tagName.toLowerCase() === 'svg' ? root : root.querySelector('svg')
+  if (!svgEl) return
+  applyDiagramEditMetadataToElement(svgEl, source, kind)
 }

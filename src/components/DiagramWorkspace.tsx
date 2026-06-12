@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   Code2,
@@ -23,6 +23,8 @@ import {
   type MindmapTemplate,
 } from '../data/mindmapTemplates'
 import DiagramColorSchemePicker from './DiagramColorSchemePicker'
+import DiagramInlineTextEditor from './DiagramInlineTextEditor'
+import DiagramNodeToolbar from './DiagramNodeToolbar'
 import FlowchartTemplateLibrary from './FlowchartTemplateLibrary'
 import MindmapTemplateLibrary from './MindmapTemplateLibrary'
 import { generateDiagramMermaid } from '../utils/diagramWrite'
@@ -30,19 +32,34 @@ import { DEFAULT_DIAGRAM_COLOR_SCHEME_ID, getDiagramColorTheme } from '../utils/
 import { getDiagramKindLabel, loadDiagramDraft, saveDiagramDraft } from '../utils/diagramStorage'
 import { renderMermaidToSvg, svgToPngBlob } from '../utils/diagramRender'
 import {
+  attachDiagramEditMetadataToDom,
+  computeNodeEditLayout,
   findEditableNodeFromEvent,
   getInlineLabelElement,
   getSvgNodeText,
   readInlineLabelText,
   resolveEditableNodeGroup,
+  resolveNodeEditTarget,
   selectElementContents,
   updateFlowchartNodeLabel,
   updateMindmapNodeLabel,
 } from '../utils/diagramSourceEdit'
+import {
+  addFlowchartBranch,
+  addFlowchartNodeDownstream,
+  addMindmapChild,
+  addMindmapSibling,
+  deleteFlowchartNode,
+  deleteMindmapNode,
+  getNodeSelectionFromElement,
+  isFlowchartDecision,
+  type DiagramNodeSelection,
+} from '../utils/diagramStructureEdit'
 import { readWriteReferenceFile } from '../utils/documentWrite'
 import { isDeepSeekConfigured } from '../utils/deepseek'
 import { saveFile } from '../utils/saveFile'
 import { loadDocumentDraftForPresentation } from '../utils/presentationStorage'
+import { useDiagramSourceHistory } from '../hooks/useDiagramSourceHistory'
 
 type ViewMode = 'preview' | 'source'
 
@@ -50,13 +67,17 @@ const PREVIEW_ZOOM_MIN = 40
 const PREVIEW_ZOOM_MAX = 200
 const PREVIEW_ZOOM_DEFAULT = 100
 const PAN_DRAG_THRESHOLD = 5
+const DOUBLE_CLICK_MS = 400
 
 interface InlineEditSession {
-  element: HTMLElement
+  mode: 'dom' | 'overlay'
+  element?: HTMLElement
   nodeId?: string
   lineIndex?: number
   originalText: string
-  cleanup: () => void
+  text: string
+  layout?: ReturnType<typeof computeNodeEditLayout>
+  cleanup?: () => void
 }
 
 interface DiagramWorkspaceProps {
@@ -67,7 +88,7 @@ interface DiagramWorkspaceProps {
 export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWorkspaceProps) {
   const initial = loadDiagramDraft(kind)
   const [title, setTitle] = useState(initial.title)
-  const [source, setSource] = useState(initial.source)
+  const { source, setSource, setSourceDebounced, undo, redo } = useDiagramSourceHistory(initial.source)
   const [prompt, setPrompt] = useState(initial.prompt)
   const [flowchartTemplateId, setFlowchartTemplateId] = useState(
     initial.flowchartTemplateId ?? DEFAULT_FLOWCHART_TEMPLATE_ID,
@@ -97,6 +118,15 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
   const panStartRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
   const panActiveRef = useRef(false)
   const inlineEditSessionRef = useRef<InlineEditSession | null>(null)
+  const [inlineEditState, setInlineEditState] = useState<InlineEditSession | null>(null)
+  const pointerDownNodeRef = useRef<Element | null>(null)
+  const selectedNodeRef = useRef<DiagramNodeSelection | null>(null)
+  const [selectedNode, setSelectedNode] = useState<DiagramNodeSelection | null>(null)
+  const [showNodeToolbar, setShowNodeToolbar] = useState(false)
+  const [toolbarPos, setToolbarPos] = useState({ left: 0, top: 0 })
+  const toolbarDelayRef = useRef<number | null>(null)
+  const suppressSelectionUntilRef = useRef(0)
+  const lastPointerClickRef = useRef<{ time: number; node: Element | null }>({ time: 0, node: null })
 
   const kindLabel = getDiagramKindLabel(kind)
   const activeFlowchartTemplate =
@@ -116,28 +146,57 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
     onSavedLabelChange(savedLabel)
   }, [savedLabel, onSavedLabelChange])
 
+  useEffect(() => {
+    selectedNodeRef.current = selectedNode
+  }, [selectedNode])
+
+  useEffect(() => {
+    if (!selectedNode || isInlineEditing) {
+      setShowNodeToolbar(false)
+      if (toolbarDelayRef.current != null) {
+        window.clearTimeout(toolbarDelayRef.current)
+        toolbarDelayRef.current = null
+      }
+      return
+    }
+
+    setShowNodeToolbar(false)
+    if (toolbarDelayRef.current != null) {
+      window.clearTimeout(toolbarDelayRef.current)
+    }
+    toolbarDelayRef.current = window.setTimeout(() => {
+      toolbarDelayRef.current = null
+      setShowNodeToolbar(true)
+    }, 450)
+
+    return () => {
+      if (toolbarDelayRef.current != null) {
+        window.clearTimeout(toolbarDelayRef.current)
+        toolbarDelayRef.current = null
+      }
+    }
+  }, [selectedNode, isInlineEditing])
+
   const finishInlineEdit = useCallback(
     (cancel = false) => {
       const session = inlineEditSessionRef.current
       if (!session) return
 
-      session.cleanup()
-      const { element, nodeId, lineIndex, originalText } = session
+      session.cleanup?.()
+      const { mode, element, nodeId, lineIndex, originalText, text } = session
       inlineEditSessionRef.current = null
+      setInlineEditState(null)
       setIsInlineEditing(false)
 
-      element.contentEditable = 'false'
-      element.classList.remove('diagram-node-inline-editing')
-      element.spellcheck = false
-
-      const nextText = cancel ? originalText : readInlineLabelText(element)
-      if (cancel || !nextText) {
-        element.textContent = originalText
-        return
+      if (mode === 'dom' && element) {
+        element.contentEditable = 'false'
+        element.classList.remove('diagram-node-inline-editing')
+        element.spellcheck = false
       }
 
-      if (nextText === originalText) {
-        element.textContent = originalText
+      const nextText = (cancel ? originalText : mode === 'dom' && element ? readInlineLabelText(element) : text).trim()
+      if (cancel || !nextText || nextText === originalText) {
+        if (mode === 'dom' && element) element.textContent = originalText
         return
       }
 
@@ -146,27 +205,162 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
       } else if (kind === 'mindmap' && lineIndex != null && !Number.isNaN(lineIndex)) {
         setSource((prev) => updateMindmapNodeLabel(prev, lineIndex, nextText))
       } else {
-        element.textContent = originalText
+        if (mode === 'dom' && element) element.textContent = originalText
         return
       }
 
       setStatusIsError(false)
       setStatusMessage('节点文字已更新')
     },
-    [kind],
+    [kind, setSource],
   )
 
   useEffect(() => {
     setPreviewPan({ x: 0, y: 0 })
+    setSelectedNode(null)
     const session = inlineEditSessionRef.current
     if (session) {
-      session.cleanup()
-      session.element.contentEditable = 'false'
-      session.element.classList.remove('diagram-node-inline-editing')
-      inlineEditSessionRef.current = null
-      setIsInlineEditing(false)
+      session.cleanup?.()
+      if (session.mode === 'dom' && session.element) {
+        session.element.contentEditable = 'false'
+        session.element.classList.remove('diagram-node-inline-editing')
+      }
     }
+    inlineEditSessionRef.current = null
+    setInlineEditState(null)
+    setIsInlineEditing(false)
   }, [svgMarkup])
+
+  useLayoutEffect(() => {
+    const canvas = previewRef.current
+    if (!canvas || !svgMarkup) return
+    attachDiagramEditMetadataToDom(canvas, source, kind)
+  }, [svgMarkup, source, kind])
+
+  useLayoutEffect(() => {
+    const canvas = previewRef.current
+    const shell = previewShellRef.current
+    if (!canvas || !shell || !selectedNode) return
+
+    canvas.querySelectorAll('.diagram-node-selected').forEach((node) => {
+      node.classList.remove('diagram-node-selected')
+    })
+
+    const selector = selectedNode.nodeId
+      ? `[data-cc-node-id="${selectedNode.nodeId}"]`
+      : `[data-cc-line-index="${selectedNode.lineIndex}"]`
+    const el = canvas.querySelector(selector)
+    if (!el) {
+      setSelectedNode(null)
+      return
+    }
+
+    el.classList.add('diagram-node-selected')
+    const shellRect = shell.getBoundingClientRect()
+    const nodeRect = el.getBoundingClientRect()
+    setToolbarPos({
+      left: nodeRect.left - shellRect.left + nodeRect.width / 2,
+      top: nodeRect.bottom - shellRect.top + 8,
+    })
+
+    return () => {
+      el.classList.remove('diagram-node-selected')
+    }
+  }, [selectedNode, svgMarkup, previewPan, previewZoom])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      const key = event.key.toLowerCase()
+      if (key !== 'z' && key !== 'y') return
+
+      const isRedo = key === 'y' || (key === 'z' && event.shiftKey)
+      const isUndo = key === 'z' && !event.shiftKey
+      if (!isUndo && !isRedo) return
+
+      if (inlineEditSessionRef.current) {
+        finishInlineEdit(true)
+      }
+
+      const handled = isRedo ? redo() : undo()
+      if (!handled) return
+
+      event.preventDefault()
+      setSelectedNode(null)
+      setStatusIsError(false)
+      setStatusMessage(isRedo ? '已重做' : '已撤销')
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [undo, redo, finishInlineEdit])
+
+  const applyStructureChange = useCallback(
+    (updater: (prev: string) => string, message: string) => {
+      if (inlineEditSessionRef.current) {
+        const session = inlineEditSessionRef.current
+        session.cleanup?.()
+        if (session.mode === 'dom' && session.element) {
+          session.element.contentEditable = 'false'
+          session.element.classList.remove('diagram-node-inline-editing')
+        }
+        inlineEditSessionRef.current = null
+        setInlineEditState(null)
+        setIsInlineEditing(false)
+      }
+      setSource((prev) => updater(prev))
+      setSelectedNode(null)
+      setStatusIsError(false)
+      setStatusMessage(message)
+    },
+    [],
+  )
+
+  const handleAddFlowchartStep = useCallback(() => {
+    const node = selectedNodeRef.current
+    if (!node?.nodeId) return
+    applyStructureChange(
+      (prev) => addFlowchartNodeDownstream(prev, node.nodeId!, 'step'),
+      '已添加步骤节点',
+    )
+  }, [applyStructureChange])
+
+  const handleAddFlowchartDecision = useCallback(() => {
+    const node = selectedNodeRef.current
+    if (!node?.nodeId) return
+    applyStructureChange(
+      (prev) => addFlowchartNodeDownstream(prev, node.nodeId!, 'decision'),
+      '已添加判断节点',
+    )
+  }, [applyStructureChange])
+
+  const handleAddFlowchartBranch = useCallback(() => {
+    const node = selectedNodeRef.current
+    if (!node?.nodeId) return
+    applyStructureChange((prev) => addFlowchartBranch(prev, node.nodeId!, 'step'), '已添加分支')
+  }, [applyStructureChange])
+
+  const handleAddMindmapChild = useCallback(() => {
+    const node = selectedNodeRef.current
+    if (node?.lineIndex == null) return
+    applyStructureChange((prev) => addMindmapChild(prev, node.lineIndex!), '已添加子节点')
+  }, [applyStructureChange])
+
+  const handleAddMindmapSibling = useCallback(() => {
+    const node = selectedNodeRef.current
+    if (node?.lineIndex == null || node.isRoot) return
+    applyStructureChange((prev) => addMindmapSibling(prev, node.lineIndex!), '已添加同级节点')
+  }, [applyStructureChange])
+
+  const handleDeleteSelectedNode = useCallback(() => {
+    const node = selectedNodeRef.current
+    if (!node || node.isRoot) return
+    if (kind === 'flowchart' && node.nodeId) {
+      applyStructureChange((prev) => deleteFlowchartNode(prev, node.nodeId!), '已删除节点')
+    } else if (kind === 'mindmap' && node.lineIndex != null) {
+      applyStructureChange((prev) => deleteMindmapNode(prev, node.lineIndex!), '已删除节点')
+    }
+  }, [kind, applyStructureChange])
 
   const previewZoomRef = useRef(previewZoom)
   const previewPanRef = useRef(previewPan)
@@ -209,7 +403,7 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0 || !svgMarkup || renderError || isInlineEditing) return
       const target = event.target as HTMLElement
-      if (target.closest('[contenteditable="true"], .diagram-node-inline-editing')) return
+      if (target.closest('[contenteditable="true"], .diagram-node-inline-editing, .diagram-inline-text-editor, .diagram-node-toolbar')) return
       panStartRef.current = {
         x: event.clientX,
         y: event.clientY,
@@ -218,6 +412,7 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
       }
       panActiveRef.current = false
       setIsPanning(false)
+      pointerDownNodeRef.current = resolveEditableNodeGroup(event.target as Element)
     },
     [svgMarkup, renderError, isInlineEditing, previewPan.x, previewPan.y],
   )
@@ -241,14 +436,13 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
     })
   }, [])
 
-  const endPreviewPan = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!panStartRef.current) return
-    panStartRef.current = null
-    panActiveRef.current = false
-    setIsPanning(false)
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
+  const getNodeClickKey = useCallback((node: Element) => {
+    return (
+      node.getAttribute('data-cc-node-id') ??
+      node.getAttribute('data-cc-line-index') ??
+      node.getAttribute('id') ??
+      getSvgNodeText(node)
+    )
   }, [])
 
   const startInlineEdit = useCallback(
@@ -257,81 +451,198 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
         finishInlineEdit(false)
       }
 
+      const shell = previewShellRef.current
       const nodeGroup = resolveEditableNodeGroup(target)
-      if (!nodeGroup) return
+      if (!nodeGroup || !shell) return
 
+      const editTarget = resolveNodeEditTarget(nodeGroup, source, kind)
       const labelEl = getInlineLabelElement(nodeGroup)
-      if (!labelEl) return
-
-      const nodeId = nodeGroup.getAttribute('data-cc-node-id') ?? undefined
-      const lineIndexRaw = nodeGroup.getAttribute('data-cc-line-index')
-      const lineIndex =
-        lineIndexRaw != null ? Number.parseInt(lineIndexRaw, 10) : undefined
       const originalText =
         nodeGroup.getAttribute('data-cc-label') ||
-        readInlineLabelText(labelEl) ||
-        getSvgNodeText(nodeGroup)
+        (labelEl ? readInlineLabelText(labelEl) : '') ||
+        getSvgNodeText(nodeGroup) ||
+        '节点'
 
-      labelEl.textContent = originalText
-      labelEl.contentEditable = 'true'
-      labelEl.spellcheck = false
-      labelEl.classList.add('diagram-node-inline-editing')
+      const nodeId = editTarget.nodeId
+      const lineIndex = editTarget.lineIndex
 
-      const onKeyDown = (event: KeyboardEvent) => {
-        if (event.key === 'Enter' && !event.shiftKey) {
-          event.preventDefault()
-          finishInlineEdit(false)
-        } else if (event.key === 'Escape') {
-          event.preventDefault()
-          finishInlineEdit(true)
-        }
-      }
+      if (labelEl) {
+        labelEl.textContent = originalText
+        labelEl.contentEditable = 'true'
+        labelEl.spellcheck = false
+        labelEl.classList.add('diagram-node-inline-editing')
 
-      const onBlur = () => {
-        window.setTimeout(() => {
-          if (inlineEditSessionRef.current?.element === labelEl) {
+        const onKeyDown = (event: KeyboardEvent) => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault()
             finishInlineEdit(false)
+          } else if (event.key === 'Escape') {
+            event.preventDefault()
+            finishInlineEdit(true)
           }
-        }, 0)
+        }
+
+        const onBlur = () => {
+          window.setTimeout(() => {
+            if (inlineEditSessionRef.current?.element !== labelEl) return
+            finishInlineEdit(false)
+          }, 0)
+        }
+
+        labelEl.addEventListener('keydown', onKeyDown)
+        labelEl.addEventListener('blur', onBlur)
+
+        inlineEditSessionRef.current = {
+          mode: 'dom',
+          element: labelEl,
+          nodeId,
+          lineIndex,
+          originalText,
+          text: originalText,
+          cleanup: () => {
+            labelEl.removeEventListener('keydown', onKeyDown)
+            labelEl.removeEventListener('blur', onBlur)
+          },
+        }
+        setInlineEditState(null)
+        setIsInlineEditing(true)
+        setSelectedNode(null)
+        setShowNodeToolbar(false)
+
+        window.requestAnimationFrame(() => {
+          labelEl.focus()
+          selectElementContents(labelEl)
+        })
+        return
       }
 
-      labelEl.addEventListener('keydown', onKeyDown)
-      labelEl.addEventListener('blur', onBlur)
-
-      inlineEditSessionRef.current = {
-        element: labelEl,
+      const layout = computeNodeEditLayout(nodeGroup, shell)
+      const session: InlineEditSession = {
+        mode: 'overlay',
         nodeId,
         lineIndex,
         originalText,
-        cleanup: () => {
-          labelEl.removeEventListener('keydown', onKeyDown)
-          labelEl.removeEventListener('blur', onBlur)
-        },
+        text: originalText,
+        layout: { ...layout, text: originalText },
       }
+      inlineEditSessionRef.current = session
+      setInlineEditState(session)
       setIsInlineEditing(true)
-
-      window.requestAnimationFrame(() => {
-        labelEl.focus()
-        selectElementContents(labelEl)
-      })
+      setSelectedNode(null)
+      setShowNodeToolbar(false)
     },
-    [finishInlineEdit],
+    [finishInlineEdit, source, kind],
+  )
+
+  const openInlineEditFromEvent = useCallback(
+    (event: MouseEvent | React.MouseEvent<HTMLDivElement>) => {
+      if (!svgMarkup || renderError) return false
+
+      const nativeEvent = 'nativeEvent' in event ? event.nativeEvent : event
+      const node = findEditableNodeFromEvent(nativeEvent)
+      if (!node) return false
+
+      nativeEvent.preventDefault()
+      nativeEvent.stopPropagation()
+      panStartRef.current = null
+      panActiveRef.current = false
+      pointerDownNodeRef.current = null
+      lastPointerClickRef.current = { time: 0, node: null }
+      setIsPanning(false)
+      setSelectedNode(null)
+      setShowNodeToolbar(false)
+      if (toolbarDelayRef.current != null) {
+        window.clearTimeout(toolbarDelayRef.current)
+        toolbarDelayRef.current = null
+      }
+      startInlineEdit(node)
+      return true
+    },
+    [svgMarkup, renderError, startInlineEdit],
   )
 
   const handlePreviewDoubleClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      if (!svgMarkup || renderError) return
-      const node = findEditableNodeFromEvent(event.nativeEvent)
-      if (!node) return
-      event.preventDefault()
-      event.stopPropagation()
+      openInlineEditFromEvent(event)
+    },
+    [openInlineEditFromEvent],
+  )
+
+  const endPreviewPan = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    if (target.closest('.diagram-node-toolbar, .diagram-inline-text-editor')) return
+
+    const clickedNode = pointerDownNodeRef.current
+    const wasPanning = panActiveRef.current
+
+    if (panStartRef.current) {
       panStartRef.current = null
       panActiveRef.current = false
       setIsPanning(false)
-      startInlineEdit(node)
-    },
-    [svgMarkup, renderError, startInlineEdit],
-  )
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    }
+
+    pointerDownNodeRef.current = null
+
+    if (!wasPanning && !isInlineEditing && clickedNode) {
+      const now = Date.now()
+      const prevClick = lastPointerClickRef.current
+      const nodeKey = getNodeClickKey(clickedNode)
+      const prevKey = prevClick.node ? getNodeClickKey(prevClick.node) : ''
+      const isDoubleClick =
+        now - prevClick.time < DOUBLE_CLICK_MS &&
+        prevKey !== '' &&
+        prevKey === nodeKey
+
+      if (isDoubleClick) {
+        lastPointerClickRef.current = { time: 0, node: null }
+        suppressSelectionUntilRef.current = now + 500
+        setSelectedNode(null)
+        setShowNodeToolbar(false)
+        if (toolbarDelayRef.current != null) {
+          window.clearTimeout(toolbarDelayRef.current)
+          toolbarDelayRef.current = null
+        }
+        startInlineEdit(clickedNode)
+        return
+      }
+
+      lastPointerClickRef.current = { time: now, node: clickedNode }
+    }
+
+    if (!wasPanning && !isInlineEditing) {
+      if (Date.now() < suppressSelectionUntilRef.current) return
+      if (clickedNode) {
+        const selection = getNodeSelectionFromElement(clickedNode)
+        if (selection) setSelectedNode(selection)
+      } else {
+        setSelectedNode(null)
+      }
+    }
+  }, [isInlineEditing, startInlineEdit, getNodeClickKey])
+
+  useEffect(() => {
+    const shell = previewShellRef.current
+    if (!shell || !svgMarkup || renderError) return
+
+    const onNativeDoubleClick = (event: MouseEvent) => {
+      if ((event.target as HTMLElement).closest('.diagram-node-toolbar, .diagram-inline-text-editor')) return
+      openInlineEditFromEvent(event)
+    }
+
+    shell.addEventListener('dblclick', onNativeDoubleClick, true)
+    return () => shell.removeEventListener('dblclick', onNativeDoubleClick, true)
+  }, [svgMarkup, renderError, openInlineEditFromEvent])
+
+  const handleInlineEditChange = useCallback((text: string) => {
+    const session = inlineEditSessionRef.current
+    if (!session) return
+    const next = { ...session, text }
+    inlineEditSessionRef.current = next
+    setInlineEditState(next)
+  }, [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -568,7 +879,7 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
                     isPanning ? ' diagram-preview-shell-dragging' : ''
                   }`}
                   style={{ background: previewBackground }}
-                  title="双击节点直接改字；按住左键拖拽平移，滚轮缩放"
+                  title="单击选中节点可增删；双击改字；Ctrl+Z 撤销；拖拽平移，滚轮缩放"
                   onDoubleClick={handlePreviewDoubleClick}
                   onPointerDown={handlePreviewPointerDown}
                   onPointerMove={handlePreviewPointerMove}
@@ -604,13 +915,50 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
                       <p>正在渲染…</p>
                     </div>
                   )}
+                  {inlineEditState?.mode === 'overlay' && inlineEditState.layout ? (
+                    <DiagramInlineTextEditor
+                      left={inlineEditState.layout.left}
+                      top={inlineEditState.layout.top}
+                      width={inlineEditState.layout.width}
+                      height={inlineEditState.layout.height}
+                      fontSize={inlineEditState.layout.fontSize}
+                      fontFamily={inlineEditState.layout.fontFamily}
+                      fontWeight={inlineEditState.layout.fontWeight}
+                      color={inlineEditState.layout.color}
+                      textAlign={inlineEditState.layout.textAlign}
+                      value={inlineEditState.text}
+                      onChange={handleInlineEditChange}
+                      onCommit={() => finishInlineEdit(false)}
+                      onCancel={() => finishInlineEdit(true)}
+                    />
+                  ) : null}
+                  {selectedNode && showNodeToolbar && viewMode === 'preview' && !renderError && !isInlineEditing ? (
+                    <DiagramNodeToolbar
+                      kind={kind}
+                      label={selectedNode.label}
+                      isRoot={selectedNode.isRoot}
+                      isDecision={
+                        kind === 'flowchart' && selectedNode.nodeId
+                          ? isFlowchartDecision(source, selectedNode.nodeId)
+                          : false
+                      }
+                      left={toolbarPos.left}
+                      top={toolbarPos.top}
+                      onAddStep={handleAddFlowchartStep}
+                      onAddDecision={handleAddFlowchartDecision}
+                      onAddBranch={handleAddFlowchartBranch}
+                      onAddChild={handleAddMindmapChild}
+                      onAddSibling={handleAddMindmapSibling}
+                      onDelete={handleDeleteSelectedNode}
+                    />
+                  ) : null}
                 </div>
               ) : (
                 <div className="document-editor-shell diagram-editor-shell">
                   <textarea
                     className="document-editor diagram-source-editor"
                     value={source}
-                    onChange={(event) => setSource(event.target.value)}
+                    onChange={(event) => setSourceDebounced(event.target.value)}
                     spellCheck={false}
                     placeholder={
                       kind === 'flowchart'
@@ -624,8 +972,8 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
             <div className="data-hint document-editor-hint">
               <strong>{kindLabel}：</strong>
               {kind === 'flowchart'
-                ? '右侧选择版式样式与配色，描述业务流程后 AI 生成；预览区双击节点直接改字，左键拖拽平移，滚轮缩放。'
-                : '右侧选择导图样式，从中心主题树形展开；预览区双击节点直接改字，左键拖拽平移，滚轮缩放。'}
+                ? '预览区单击节点可添加/删除步骤或判断；双击改字；Ctrl+Z 撤销、Ctrl+Y 重做；拖拽平移，滚轮缩放。'
+                : '预览区单击节点可添加/删除子节点或同级；双击改字；Ctrl+Z 撤销、Ctrl+Y 重做；拖拽平移，滚轮缩放。'}
             </div>
           </div>
 
