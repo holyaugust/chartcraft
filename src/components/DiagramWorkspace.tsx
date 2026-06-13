@@ -29,7 +29,7 @@ import DiagramNodeToolbar from './DiagramNodeToolbar'
 import FlowchartTemplateLibrary from './FlowchartTemplateLibrary'
 import MindmapTemplateLibrary from './MindmapTemplateLibrary'
 import { generateDiagramMermaid, modifyFlowchartNodeWithAi } from '../utils/diagramWrite'
-import { DEFAULT_DIAGRAM_COLOR_SCHEME_ID, getDiagramColorTheme } from '../utils/diagramColorSchemes'
+import { DEFAULT_DIAGRAM_COLOR_SCHEME_ID, getDiagramColorTheme, getMindmapPreviewBackground } from '../utils/diagramColorSchemes'
 import { getDiagramKindLabel, loadDiagramDraft, saveDiagramDraft } from '../utils/diagramStorage'
 import { renderMermaidToSvg, svgToPngBlob } from '../utils/diagramRender'
 import {
@@ -166,7 +166,7 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
     initial.mindmapTemplateId ?? DEFAULT_MINDMAP_TEMPLATE_ID,
   )
   const [colorSchemeId, setColorSchemeId] = useState<ColorSchemeId>(
-    initial.colorSchemeId ?? (kind === 'mindmap' ? 'sunset' : DEFAULT_DIAGRAM_COLOR_SCHEME_ID),
+    initial.colorSchemeId ?? (kind === 'mindmap' ? 'vivid' : DEFAULT_DIAGRAM_COLOR_SCHEME_ID),
   )
   const [viewMode, setViewMode] = useState<ViewMode>('preview')
   const [previewZoom, setPreviewZoom] = useState(PREVIEW_ZOOM_DEFAULT)
@@ -211,7 +211,7 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
     kind === 'mindmap' ? getMindmapTemplateById(mindmapTemplateId) : undefined
   const activeColorTheme = getDiagramColorTheme(colorSchemeId)
   const previewBackground =
-    kind === 'mindmap' ? '#ffffff' : activeColorTheme.previewBackground
+    kind === 'mindmap' ? getMindmapPreviewBackground(colorSchemeId) : activeColorTheme.previewBackground
 
   const savedLabel = useMemo(() => {
     const date = new Date(lastSavedAt)

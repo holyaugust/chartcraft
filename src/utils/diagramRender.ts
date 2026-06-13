@@ -22,9 +22,10 @@ const FLOWCHART_THEME_CSS = `
 `
 
 const MINDMAP_THEME_CSS = `
-  .node .label, .nodeLabel { font-weight: 600; }
+  .node .label, .nodeLabel { font-weight: 600; letter-spacing: 0.01em; }
   .mindmap-node { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
-  .edgePath path, .edgePaths path { stroke-linecap: round; }
+  .edgePath path, .edgePaths path { stroke-linecap: round; stroke-linejoin: round; }
+  .section-root .nodeLabel, .section-root text { font-weight: 700; }
 `
 
 async function getMermaid(kind: DiagramKind, colorSchemeId: ColorSchemeId, htmlLabels = true) {
@@ -44,9 +45,9 @@ async function getMermaid(kind: DiagramKind, colorSchemeId: ColorSchemeId, htmlL
         ...(kind === 'mindmap'
           ? {
               primaryColor: '#ffffff',
-              primaryBorderColor: '#e2e8f0',
+              primaryBorderColor: '#cbd5e1',
               lineColor: theme.themeVariables.lineColor,
-              fontSize: '14px',
+              fontSize: '15px',
             }
           : {}),
       },

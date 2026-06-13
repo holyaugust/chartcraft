@@ -23,6 +23,8 @@ import {
 } from '../utils/presentationWrite'
 import { buildPresentationFileName, exportPresentation } from '../utils/pptxExport'
 import { importPptxFile, type ImportedPptx } from '../utils/pptxImport'
+import { clearUploadedPptxDraft, loadUploadedPptxDraft, saveUploadedPptxDraft } from '../utils/pptxDraftStorage'
+import type { PresentationTemplateSlideHint } from '../utils/presentationWrite'
 import { getProjectChartTitle, renderProjectChartDataUrl } from '../utils/presentationChart'
 import { saveFile } from '../utils/saveFile'
 import {
@@ -85,6 +87,7 @@ export default function PresentationWorkspace({
   const [busy, setBusy] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [statusIsError, setStatusIsError] = useState(false)
+  const [pptxReady, setPptxReady] = useState(false)
 
   const template = useMemo(
     () => PRESENTATION_TEMPLATES.find((item) => item.id === templateId) ?? PRESENTATION_TEMPLATES[0],
@@ -108,6 +111,24 @@ export default function PresentationWorkspace({
   }, [seedDocument, documentDraft, uploadedPptxFileName, showGenerateModal])
 
   const activeSlide = outline?.slides[activeSlideIndex] ?? null
+
+  const templateSlideHints = useMemo<PresentationTemplateSlideHint[] | undefined>(() => {
+    if (!uploadedPptxRef.current) return undefined
+    return uploadedPptxRef.current.slides.map((slide) => ({
+      index: slide.index,
+      suggestedLayout: slide.suggestedLayout,
+      sampleTexts: slide.texts,
+      placeholderTypes: slide.placeholderTypes,
+    }))
+  }, [uploadedPptxFileName, pptxReady])
+
+  const slideCountMismatch = useMemo(() => {
+    if (!uploadedPptxRef.current || !outline) return null
+    const templateCount = uploadedPptxRef.current.slideCount
+    const outlineCount = outline.slides.length
+    if (templateCount === outlineCount) return null
+    return { templateCount, outlineCount }
+  }, [outline, uploadedPptxFileName, pptxReady])
 
   const savedLabel = useMemo(() => {
     const date = new Date(lastSavedAt)
@@ -150,6 +171,31 @@ export default function PresentationWorkspace({
     setShowGenerateModal(true)
     onSeedConsumed?.()
   }, [seedDocument, onSeedConsumed])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      if (uploadedPptxRef.current) {
+        setPptxReady(true)
+        return
+      }
+      const stored = await loadUploadedPptxDraft()
+      if (cancelled || !stored) return
+      try {
+        const imported = await importPptxFile(new File([stored.arrayBuffer], stored.fileName))
+        uploadedPptxRef.current = imported
+        setUploadedPptxFileName(imported.fileName)
+        setPptxReady(true)
+      } catch {
+        await clearUploadedPptxDraft()
+        setUploadedPptxFileName('')
+        setPptxReady(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const insertChartSlide = useCallback(async () => {
     setBusy(true)
@@ -219,8 +265,12 @@ export default function PresentationWorkspace({
       const imported = await importPptxFile(files[0])
       uploadedPptxRef.current = imported
       setUploadedPptxFileName(imported.fileName)
+      setPptxReady(true)
+      await saveUploadedPptxDraft(imported.fileName, imported.arrayBuffer)
       setStatusIsError(false)
-      setStatusMessage(`已加载 ${imported.fileName}（${imported.slideCount} 页），可写回原版式或作为 AI 参考`)
+      setStatusMessage(
+        `已加载 ${imported.fileName}（${imported.slideCount} 页）。请点「生成汇报」按模板页数生成大纲，导出时选「写回原版式」。`,
+      )
     } catch (err) {
       setStatusIsError(true)
       setStatusMessage(err instanceof Error ? err.message : 'PPT 上传失败')
@@ -232,6 +282,8 @@ export default function PresentationWorkspace({
   const clearUploadedPptx = useCallback(() => {
     uploadedPptxRef.current = null
     setUploadedPptxFileName('')
+    setPptxReady(false)
+    void clearUploadedPptxDraft()
   }, [])
 
   const handleExport = useCallback(
@@ -263,6 +315,7 @@ export default function PresentationWorkspace({
 
         const { blob, writeBackInfo } = await exportPresentation(resolved, template, {
           writeBackBuffer: mode === 'writeback' ? uploadedPptxRef.current?.arrayBuffer : undefined,
+          templateSlides: mode === 'writeback' ? uploadedPptxRef.current?.slides : undefined,
         })
 
         const fileName =
@@ -285,11 +338,14 @@ export default function PresentationWorkspace({
 
         setStatusIsError(false)
         if (writeBackInfo) {
-          const extra =
-            writeBackInfo.skippedCount > 0
-              ? `（大纲多 ${writeBackInfo.skippedCount} 页未写入，请用新建导出补齐）`
-              : ''
-          setStatusMessage(`已写回 ${writeBackInfo.updatedCount} 页：${fileName}${extra}`)
+          const parts: string[] = []
+          parts.push(`已写回 ${writeBackInfo.updatedCount}/${writeBackInfo.templateSlideCount} 页：${fileName}`)
+          if (writeBackInfo.skippedCount > 0) {
+            parts.push(`大纲比模板多 ${writeBackInfo.skippedCount} 页未写入`)
+          } else if (writeBackInfo.updatedCount < writeBackInfo.templateSlideCount) {
+            parts.push(`模板多 ${writeBackInfo.templateSlideCount - writeBackInfo.updatedCount} 页仍保留原示例文字`)
+          }
+          setStatusMessage(parts.join('；'))
         } else {
           setStatusMessage(`PPT 已导出：${fileName}`)
         }
@@ -380,7 +436,7 @@ export default function PresentationWorkspace({
               {exportMenuOpen ? (
                 <div className="presentation-export-menu" role="menu">
                   <button type="button" role="menuitem" disabled={busy} onClick={() => void handleExport('new')}>
-                    新建导出（ChartCraft 版式）
+                    新建导出（ChartCraft 简易版式）
                   </button>
                   <button
                     type="button"
@@ -388,7 +444,7 @@ export default function PresentationWorkspace({
                     disabled={busy || !uploadedPptxRef.current}
                     onClick={() => void handleExport('writeback')}
                   >
-                    写回原版式
+                    写回原版式（推荐）
                     {!uploadedPptxRef.current ? '（需先上传 pptx）' : ''}
                   </button>
                 </div>
@@ -433,8 +489,13 @@ export default function PresentationWorkspace({
               )}
             </div>
             <div className="data-hint document-editor-hint">
-              <strong>Phase 2：</strong>版式预览与导出一致；上传 pptx 可<strong>写回原版式</strong>（按页替换文字）；
-              「插入图表」读取图表工作区草稿。写回仅更新已有页数，超出页请用新建导出。
+              <strong>写回说明：</strong>左侧「版式预览」仍是 ChartCraft 简易样式，<strong>不代表</strong>上传模板效果；请上传 pptx → 生成汇报 → 导出时选「写回原版式」并在 PowerPoint 中打开查看。
+              {slideCountMismatch ? (
+                <>
+                  {' '}
+                  当前大纲 {slideCountMismatch.outlineCount} 页，模板 {slideCountMismatch.templateCount} 页，建议重新「生成汇报」以按模板对齐。
+                </>
+              ) : null}
             </div>
           </div>
 
@@ -462,7 +523,10 @@ export default function PresentationWorkspace({
               {uploadedPptxFileName ? (
                 <div className="presentation-uploaded-file">
                   <FileText size={14} />
-                  <span title={uploadedPptxFileName}>{uploadedPptxFileName}</span>
+                  <span title={uploadedPptxFileName}>
+                    {uploadedPptxFileName}
+                    {uploadedPptxRef.current ? `（${uploadedPptxRef.current.slideCount} 页）` : ''}
+                  </span>
                   <button type="button" className="doc-write-file-remove" aria-label="移除" disabled={busy} onClick={clearUploadedPptx}>
                     <Trash2 size={13} />
                   </button>
@@ -528,6 +592,7 @@ export default function PresentationWorkspace({
         templateId={templateId}
         sourceDocument={sourceDocument}
         initialPrompt={savedPrompt}
+        templateSlideHints={templateSlideHints}
         onGenerated={handleGenerated}
       />
     </main>

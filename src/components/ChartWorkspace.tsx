@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BarChart3, Table2, Upload } from 'lucide-react'
+import { Table2, Upload } from 'lucide-react'
 import DataTable from './DataTable'
 import ExcelUpload from './ExcelUpload'
 import WorkbookTabs from './WorkbookTabs'
@@ -7,6 +7,7 @@ import ChartTemplateLibrary from './ChartTemplateLibrary'
 import ChartTypeSelector from './ChartTypeSelector'
 import ChartSettings from './ChartSettings'
 import ChartPreview from './ChartPreview'
+import ChartAiPrompt from './ChartAiPrompt'
 import { useWorkbookState } from '../hooks/useWorkbookState'
 import { useTableHistoryShortcuts } from '../hooks/useUndoableTableState'
 import { type ChartConfig, createTableState } from '../types'
@@ -23,14 +24,13 @@ type InputTab = 'table' | 'upload'
 
 interface ChartWorkspaceProps {
   onSavedLabelChange: (label: string) => void
-  onInsertToPresentation?: () => void
 }
 
 function getInitialDraft(): ProjectDraft {
   return loadProjectDraft() ?? createDefaultProjectDraft()
 }
 
-export default function ChartWorkspace({ onSavedLabelChange, onInsertToPresentation }: ChartWorkspaceProps) {
+export default function ChartWorkspace({ onSavedLabelChange }: ChartWorkspaceProps) {
   const initialDraftRef = useRef(getInitialDraft())
   const {
     workbook,
@@ -121,8 +121,20 @@ export default function ChartWorkspace({ onSavedLabelChange, onInsertToPresentat
     onSavedLabelChange(savedLabel)
   }, [savedLabel, onSavedLabelChange])
 
+  const handleChartAiApply = useCallback(
+    (result: { tableState: typeof tableState; chartConfig: ChartConfig }) => {
+      applyChange(result.tableState)
+      setChartConfig(result.chartConfig)
+      setActiveTemplateId(null)
+      resetTableEdit()
+      setInputTab('table')
+    },
+    [applyChange, resetTableEdit],
+  )
+
   return (
-    <main className="app-main">
+    <div className="chart-workspace">
+      <main className="app-main">
       <section className="panel panel-data">
         <div className="panel-header">
           <h2>数据源</h2>
@@ -190,20 +202,8 @@ export default function ChartWorkspace({ onSavedLabelChange, onInsertToPresentat
       </section>
 
       <section className="panel panel-chart">
-        <div className="panel-header chart-panel-header-with-action">
+        <div className="panel-header">
           <h2>图表配置</h2>
-          {onInsertToPresentation ? (
-            <button
-              type="button"
-              className="btn btn-sm btn-ghost"
-              disabled={!parsed}
-              onClick={onInsertToPresentation}
-              title="将当前图表插入汇报 PPT"
-            >
-              <BarChart3 size={14} />
-              插入汇报 PPT
-            </button>
-          ) : null}
         </div>
 
         <div className="panel-body chart-panel-body">
@@ -229,6 +229,13 @@ export default function ChartWorkspace({ onSavedLabelChange, onInsertToPresentat
           </div>
         </div>
       </section>
-    </main>
+      </main>
+
+      <ChartAiPrompt
+        tableState={tableState}
+        chartConfig={chartConfig}
+        onApply={handleChartAiApply}
+      />
+    </div>
   )
 }

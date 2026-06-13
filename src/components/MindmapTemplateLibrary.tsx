@@ -23,23 +23,36 @@ const FILTER_OPTIONS: { id: FilterKey; label: string }[] = [
 ]
 
 function TemplatePreview({ template }: { template: MindmapTemplate }) {
-  const accent = template.accent
-  const [c1, c2] = template.branchColors
+  const colors = template.branchColors.slice(0, 4)
 
   return (
-    <div className="template-preview mindmap-template-preview" style={{ '--template-accent': accent } as CSSProperties}>
+    <div
+      className="template-preview mindmap-template-preview"
+      style={{ '--template-accent': template.accent } as CSSProperties}
+    >
       <svg viewBox="0 0 80 40" aria-hidden="true">
-        <rect x="34" y="16" width="12" height="8" rx="4" fill="currentColor" opacity="0.85" />
-        <line x1="34" y1="18" x2="22" y2="10" stroke={c1 ?? accent} strokeWidth="1.5" />
-        <line x1="34" y1="22" x2="22" y2="30" stroke={c2 ?? accent} strokeWidth="1.5" />
-        <rect x="6" y="6" width="14" height="7" rx="3" fill={c1 ?? accent} opacity="0.85" />
-        <rect x="6" y="27" width="14" height="7" rx="3" fill={c2 ?? accent} opacity="0.85" />
-        <line x1="20" y1="10" x2="4" y2="4" stroke={c1 ?? accent} strokeWidth="1" opacity="0.7" />
-        <line x1="20" y1="30" x2="4" y2="36" stroke={c2 ?? accent} strokeWidth="1" opacity="0.7" />
-        <rect x="52" y="10" width="10" height="5" rx="2" fill="currentColor" opacity="0.35" />
-        <rect x="52" y="25" width="10" height="5" rx="2" fill="currentColor" opacity="0.35" />
-        <line x1="46" y1="20" x2="52" y2="12" stroke="currentColor" strokeWidth="1" opacity="0.5" />
-        <line x1="46" y1="20" x2="52" y2="28" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+        <defs>
+          <radialGradient id={`mm-root-${template.id}`} cx="35%" cy="35%" r="70%">
+            <stop offset="0%" stopColor={colors[0]} stopOpacity="0.95" />
+            <stop offset="100%" stopColor={colors[1] ?? colors[0]} stopOpacity="1" />
+          </radialGradient>
+        </defs>
+        <circle cx="40" cy="20" r="7" fill={`url(#mm-root-${template.id})`} />
+        {colors.map((color, index) => {
+          const angle = (index / colors.length) * Math.PI * 2 - Math.PI / 2
+          const bx = 40 + Math.cos(angle) * 22
+          const by = 20 + Math.sin(angle) * 14
+          const lx = 40 + Math.cos(angle) * 34
+          const ly = 20 + Math.sin(angle) * 22
+          return (
+            <g key={color}>
+              <line x1="40" y1="20" x2={bx} y2={by} stroke={color} strokeWidth="1.8" opacity="0.9" />
+              <rect x={bx - 7} y={by - 3.5} width="14" height="7" rx="3.5" fill={color} opacity="0.92" />
+              <line x1={bx} y1={by} x2={lx} y2={ly} stroke={color} strokeWidth="1.2" opacity="0.65" />
+              <rect x={lx - 5} y={ly - 2.5} width="10" height="5" rx="2.5" fill={color} opacity="0.35" />
+            </g>
+          )
+        })}
       </svg>
     </div>
   )

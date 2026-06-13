@@ -5,6 +5,7 @@ import { generatePresentationOutline } from '../utils/presentationWrite'
 import { readWriteReferenceFile } from '../utils/documentWrite'
 import { isDeepSeekConfigured } from '../utils/deepseek'
 import type { PresentationOutline } from '../types/presentation'
+import type { PresentationTemplateSlideHint } from '../utils/presentationWrite'
 
 interface UploadedReference {
   id: string
@@ -33,6 +34,7 @@ interface PresentationGenerateModalProps {
   templateId: string
   sourceDocument?: string
   initialPrompt?: string
+  templateSlideHints?: PresentationTemplateSlideHint[]
   onGenerated: (payload: { outline: PresentationOutline; prompt: string }) => void
 }
 
@@ -44,6 +46,7 @@ export default function PresentationGenerateModal({
   templateId,
   sourceDocument = '',
   initialPrompt = '',
+  templateSlideHints,
   onGenerated,
 }: PresentationGenerateModalProps) {
   const [prompt, setPrompt] = useState(initialPrompt || DEFAULT_PROMPT)
@@ -97,6 +100,7 @@ export default function PresentationGenerateModal({
         prompt,
         templateId,
         sourceDocument: combinedReference,
+        templateSlideHints,
       })
       onGenerated({ outline, prompt })
       onClose()
@@ -105,7 +109,7 @@ export default function PresentationGenerateModal({
     } finally {
       setBusy(false)
     }
-  }, [prompt, templateId, useDocument, sourceDocument, uploadedReference, onGenerated, onClose])
+  }, [prompt, templateId, useDocument, sourceDocument, uploadedReference, templateSlideHints, onGenerated, onClose])
 
   if (!open) return null
 
@@ -136,6 +140,12 @@ export default function PresentationGenerateModal({
           {template ? (
             <div className="doc-write-template-link" role="status">
               当前模板：<strong>{template.name}</strong>（{template.suggestedStructure}）
+            </div>
+          ) : null}
+
+          {templateSlideHints?.length ? (
+            <div className="presentation-template-hint" role="status">
+              已识别模板 <strong>{templateSlideHints.length}</strong> 页，生成大纲将与模板页一一对齐写回。
             </div>
           ) : null}
 

@@ -46,6 +46,47 @@ function isTitlePlaceholder(ph: string | null): boolean {
   return ph === 'title' || ph === 'ctrTitle' || ph === '0'
 }
 
+function isSubTitlePlaceholder(ph: string | null): boolean {
+  return ph === 'subTitle' || ph === '1'
+}
+
+function isBodyPlaceholder(ph: string | null): boolean {
+  return ph === 'body' || ph === 'obj' || ph === '2'
+}
+
+export interface SlidePlaceholderSummary {
+  placeholderTypes: string[]
+  shapeCount: number
+  texts: string[]
+}
+
+export interface SlideTextWritePlan {
+  title?: string
+  subtitle?: string
+  bullets?: string[]
+  layout?: 'title' | 'section' | 'content' | 'closing' | 'chart'
+  /** 清空未写入的文本框（去除模板示例文字） */
+  clearUnused?: boolean
+}
+
+export function getSlidePlaceholderSummary(xml: string): SlidePlaceholderSummary {
+  const doc = new DOMParser().parseFromString(xml, 'application/xml')
+  if (doc.querySelector('parsererror')) {
+    return { placeholderTypes: [], shapeCount: 0, texts: [] }
+  }
+
+  const shapes = findTextShapes(doc.documentElement)
+  const placeholderTypes = shapes
+    .map((sp) => getPlaceholderType(sp))
+    .filter((value): value is string => Boolean(value))
+
+  return {
+    placeholderTypes,
+    shapeCount: shapes.length,
+    texts: extractTextsFromSlideXml(xml),
+  }
+}
+
 function findTextShapes(root: Element): Element[] {
   return elementsByLocalName(root, 'sp').filter((sp) => elementsByLocalName(sp, 'txBody').length > 0)
 }
@@ -221,19 +262,12 @@ function findTxBodyBlockByShapeId(
 
 function replaceParagraphText(pXml: string, text: string): string {
   const escaped = escapeXmlText(text)
-  if (/<a:t\b[^>]*>[\s\S]*?<\/a:t>/i.test(pXml)) {
-    return pXml.replace(
-      /(<a:t\b[^>]*>)([\s\S]*?)(<\/a:t>)/i,
-      (_, open, _old, close) => `${open}${escaped}${close}`,
-    )
-  }
-  if (/<\/a:p>\s*$/i.test(pXml)) {
-    return pXml.replace(
-      /<\/a:p>\s*$/i,
-      `<a:r><a:t xml:space="preserve">${escaped}</a:t></a:r></a:p>`,
-    )
-  }
-  return pXml
+  const openMatch = pXml.match(/<a:p\b[^>]*>/i)
+  if (!openMatch) return pXml
+
+  const pPrMatch = pXml.match(/<a:pPr\b[\s\S]*?<\/a:pPr>/i)
+  const pPr = pPrMatch?.[0] ?? ''
+  return `${openMatch[0]}${pPr}<a:r><a:t xml:space="preserve">${escaped}</a:t></a:r></a:p>`
 }
 
 function rebuildTxBodyXml(originalTxBodyXml: string, lines: string[]): string {
@@ -275,54 +309,99 @@ function pickPrimaryContentShape(contentShapes: Element[]): Element {
   return [...sorted].sort((a, b) => getShapeArea(b) - getShapeArea(a))[0]
 }
 
-/** 为每个文本框规划要写入的内容（按 DOM 中文本框顺序） */
-function planShapeLines(shapes: Element[], title: string | undefined, bullets: string[] | undefined): string[][] {
-  const planned: string[][] = shapes.map(() => [])
-  const safeTitle = String(title ?? '').trim()
-  const bodyLines = (bullets ?? []).map((line) => String(line ?? '').trim()).filter(Boolean)
+function findShapeIndexByPlaceholder(shapes: Element[], matcher: (ph: string | null) => boolean): number {
+  return shapes.findIndex((sp) => matcher(getPlaceholderType(sp)))
+}
 
-  const titleIndex = shapes.findIndex((sp) => isTitlePlaceholder(getPlaceholderType(sp)))
+function findBodyShapeIndex(shapes: Element[], reserved: Set<number>): number {
+  const bodyIndex = shapes.findIndex(
+    (sp, index) => !reserved.has(index) && isBodyPlaceholder(getPlaceholderType(sp)),
+  )
+  if (bodyIndex >= 0) return bodyIndex
 
-  const contentEntries = shapes
+  const candidates = shapes
     .map((sp, index) => ({ sp, index }))
-    .filter(({ index }) => index !== titleIndex)
+    .filter(({ index }) => !reserved.has(index))
+  if (candidates.length === 0) return -1
+
+  const primary = pickPrimaryContentShape(candidates.map((entry) => entry.sp))
+  const match = candidates.find((entry) => entry.sp === primary)
+  return match?.index ?? candidates[0].index
+}
+
+/** 为每个文本框规划要写入的内容（按 DOM 中文本框顺序） */
+function planShapeLines(shapes: Element[], plan: SlideTextWritePlan): string[][] {
+  const planned: string[][] = shapes.map(() => [])
+  const safeTitle = String(plan.title ?? '').trim()
+  const safeSubtitle = String(plan.subtitle ?? '').trim()
+  const bodyLines = (plan.bullets ?? []).map((line) => String(line ?? '').trim()).filter(Boolean)
+  const clearUnused = plan.clearUnused ?? false
+  const layout = plan.layout ?? 'content'
+
+  const titleIndex = findShapeIndexByPlaceholder(shapes, isTitlePlaceholder)
+  const subtitleIndex = findShapeIndexByPlaceholder(shapes, isSubTitlePlaceholder)
+  const reserved = new Set<number>()
+  if (titleIndex >= 0) reserved.add(titleIndex)
+  if (subtitleIndex >= 0) reserved.add(subtitleIndex)
 
   if (titleIndex >= 0 && safeTitle) {
     planned[titleIndex] = [safeTitle]
-  } else if (titleIndex < 0 && safeTitle && contentEntries.length === 0 && shapes.length > 0) {
+  } else if (titleIndex < 0 && safeTitle && shapes.length > 0) {
     planned[0] = [safeTitle]
+    reserved.add(0)
   }
 
-  if (bodyLines.length === 0) {
-    return planned
+  if (subtitleIndex >= 0 && safeSubtitle) {
+    planned[subtitleIndex] = [safeSubtitle]
+  } else if (layout === 'title' && safeSubtitle && subtitleIndex < 0) {
+    const bodyIndex = findBodyShapeIndex(shapes, reserved)
+    if (bodyIndex >= 0) {
+      planned[bodyIndex] = [safeSubtitle]
+      reserved.add(bodyIndex)
+    }
   }
 
-  const contentShapes = sortShapesByPosition(contentEntries.map((entry) => entry.sp))
-  if (contentShapes.length === 0) {
-    const fallbackIndex = titleIndex >= 0 ? titleIndex : 0
-    planned[fallbackIndex] = [...(planned[fallbackIndex] ?? []), ...bodyLines]
-    return planned
+  if (bodyLines.length > 0) {
+    const bodyIndex = findBodyShapeIndex(shapes, reserved)
+    if (bodyIndex >= 0) {
+      planned[bodyIndex] = bodyLines
+      reserved.add(bodyIndex)
+    } else if (titleIndex >= 0) {
+      planned[titleIndex] = [...(planned[titleIndex] ?? []), ...bodyLines]
+    } else if (shapes.length > 0) {
+      planned[0] = [...(planned[0] ?? []), ...bodyLines]
+    }
   }
 
-  // 所有要点写入主正文文本框（多段段落），避免拆散到图表旁小框
-  const primary = pickPrimaryContentShape(contentShapes)
-  const primaryIndex = contentEntries.find((entry) => entry.sp === primary)!.index
-  planned[primaryIndex] = bodyLines
+  if (clearUnused) {
+    for (let i = 0; i < planned.length; i += 1) {
+      if (planned[i].length === 0) {
+        planned[i] = ['']
+      }
+    }
+  }
 
   return planned
 }
 
-function patchTxBodiesInXml(xml: string, shapes: Element[], planned: string[][]): string {
+function patchTxBodiesInXml(
+  xml: string,
+  shapes: Element[],
+  planned: string[][],
+  clearUnused: boolean,
+): string {
   const spBlocks = getTextShapeTxBodyBlocks(xml)
   if (spBlocks.length === 0) return xml
 
   const patches: Array<{ start: number; end: number; newContent: string }> = []
 
   for (let i = 0; i < shapes.length; i += 1) {
-    const lines = (planned[i] ?? [])
+    const rawLines = planned[i] ?? []
+    const hasExplicitEmpty = clearUnused && rawLines.length === 1 && rawLines[0] === ''
+    const lines = rawLines
       .map((line) => String(line ?? '').trim())
-      .filter(Boolean)
-    if (lines.length === 0) continue
+      .filter((line) => line.length > 0)
+    if (lines.length === 0 && !hasExplicitEmpty) continue
 
     const shapeId = getShapeId(shapes[i])
     const block =
@@ -333,7 +412,7 @@ function patchTxBodiesInXml(xml: string, shapes: Element[], planned: string[][])
     patches.push({
       start: block.start,
       end: block.end,
-      newContent: rebuildTxBodyXml(block.content, lines),
+      newContent: rebuildTxBodyXml(block.content, hasExplicitEmpty ? [''] : lines),
     })
   }
 
@@ -355,7 +434,16 @@ export function applyTextsToSlideXml(
   xml: string,
   title: string | undefined,
   bullets: string[] | undefined = [],
+  options?: Omit<SlideTextWritePlan, 'title' | 'bullets'>,
 ): string {
+  return applySlideTextPlanToXml(xml, {
+    title,
+    bullets,
+    ...options,
+  })
+}
+
+export function applySlideTextPlanToXml(xml: string, plan: SlideTextWritePlan): string {
   const doc = new DOMParser().parseFromString(xml, 'application/xml')
   if (doc.querySelector('parsererror')) {
     return xml
@@ -364,11 +452,14 @@ export function applyTextsToSlideXml(
   const shapes = findTextShapes(doc.documentElement)
   if (shapes.length === 0) return xml
 
-  const planned = planShapeLines(shapes, title, bullets)
+  const clearUnused =
+    plan.clearUnused ??
+    (plan.layout === 'section' || plan.layout === 'closing' || plan.layout === 'title')
+  const planned = planShapeLines(shapes, { ...plan, clearUnused })
   const hasContent = planned.some((lines) => lines.length > 0)
   if (!hasContent) return xml
 
-  return patchTxBodiesInXml(xml, shapes, planned)
+  return patchTxBodiesInXml(xml, shapes, planned, clearUnused)
 }
 
 export function combineSlideTexts(slides: { texts: string[] }[]): string {

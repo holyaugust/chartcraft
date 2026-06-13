@@ -4,7 +4,6 @@ import ChartWorkspace from './components/ChartWorkspace'
 import './App.css'
 
 const DocumentWorkspace = lazy(() => import('./components/DocumentWorkspace'))
-const PresentationWorkspace = lazy(() => import('./components/PresentationWorkspace'))
 const DiagramWorkspace = lazy(() => import('./components/DiagramWorkspace'))
 
 function WorkspaceFallback() {
@@ -21,8 +20,6 @@ function workspaceFooter(workspace: WorkspaceId): string {
       return '表格数据 · Excel 导入 · 多类型图表 · PNG 导出'
     case 'document':
       return '报告文档 · 本地自动保存'
-    case 'presentation':
-      return '汇报 PPT · 预览 · 写回 · 图表嵌入'
     case 'flowchart':
       return 'AI 流程图 · Mermaid · SVG/PNG 导出'
     case 'mindmap':
@@ -33,21 +30,9 @@ function workspaceFooter(workspace: WorkspaceId): string {
 export default function App() {
   const [workspace, setWorkspace] = useState<WorkspaceId>('chart')
   const [savedLabel, setSavedLabel] = useState('')
-  const [presentationSeed, setPresentationSeed] = useState<string | null>(null)
-  const [presentationChartSeed, setPresentationChartSeed] = useState(false)
 
   const handleSavedLabelChange = useCallback((label: string) => {
     setSavedLabel(label)
-  }, [])
-
-  const handleOpenPresentation = useCallback((documentText: string) => {
-    setPresentationSeed(documentText)
-    setWorkspace('presentation')
-  }, [])
-
-  const handleInsertChartToPresentation = useCallback(() => {
-    setPresentationChartSeed(true)
-    setWorkspace('presentation')
   }, [])
 
   return (
@@ -60,23 +45,9 @@ export default function App() {
 
       <Suspense fallback={<WorkspaceFallback />}>
         {workspace === 'chart' ? (
-          <ChartWorkspace
-            onSavedLabelChange={handleSavedLabelChange}
-            onInsertToPresentation={handleInsertChartToPresentation}
-          />
+          <ChartWorkspace onSavedLabelChange={handleSavedLabelChange} />
         ) : workspace === 'document' ? (
-          <DocumentWorkspace
-            onSavedLabelChange={handleSavedLabelChange}
-            onOpenPresentation={handleOpenPresentation}
-          />
-        ) : workspace === 'presentation' ? (
-          <PresentationWorkspace
-            onSavedLabelChange={handleSavedLabelChange}
-            seedDocument={presentationSeed}
-            onSeedConsumed={() => setPresentationSeed(null)}
-            chartSeed={presentationChartSeed}
-            onChartSeedConsumed={() => setPresentationChartSeed(false)}
-          />
+          <DocumentWorkspace onSavedLabelChange={handleSavedLabelChange} />
         ) : (
           <DiagramWorkspace
             key={workspace}

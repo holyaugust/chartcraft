@@ -93,7 +93,7 @@ function sanitizeWorkbook(raw: WorkbookState): WorkbookState {
   return { sheets, activeSheetId }
 }
 
-function sanitizeChartConfig(raw: unknown): ChartConfig {
+export function sanitizeChartConfig(raw: unknown): ChartConfig {
   const config = (raw && typeof raw === 'object' ? raw : {}) as Partial<ChartConfig>
   return {
     ...DEFAULT_CHART_CONFIG,

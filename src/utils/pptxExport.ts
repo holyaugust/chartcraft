@@ -422,12 +422,19 @@ export function buildPresentationFileName(title: string): string {
 export async function exportPresentation(
   outline: PresentationOutline,
   template: PresentationTemplate,
-  options?: { writeBackBuffer?: ArrayBuffer },
-): Promise<{ blob: Blob; writeBackInfo?: { updatedCount: number; skippedCount: number } }> {
+  options?: { writeBackBuffer?: ArrayBuffer; templateSlides?: import('./pptxImport').ImportedPptxSlide[] },
+): Promise<{ blob: Blob; writeBackInfo?: { updatedCount: number; skippedCount: number; templateSlideCount: number } }> {
   if (options?.writeBackBuffer) {
     const { exportPptxWriteBack } = await import('./pptxImport')
-    const result = await exportPptxWriteBack(options.writeBackBuffer, outline)
-    return { blob: result.blob, writeBackInfo: { updatedCount: result.updatedCount, skippedCount: result.skippedCount } }
+    const result = await exportPptxWriteBack(options.writeBackBuffer, outline, options.templateSlides)
+    return {
+      blob: result.blob,
+      writeBackInfo: {
+        updatedCount: result.updatedCount,
+        skippedCount: result.skippedCount,
+        templateSlideCount: result.templateSlideCount,
+      },
+    }
   }
 
   const blob = await exportPresentationToPptx(outline, template)

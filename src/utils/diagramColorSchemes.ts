@@ -74,3 +74,13 @@ export const DEFAULT_DIAGRAM_COLOR_SCHEME_ID: ColorSchemeId = 'vivid'
 export function getDiagramColorTheme(id: ColorSchemeId): DiagramColorTheme {
   return DIAGRAM_COLOR_THEMES.find((theme) => theme.id === id) ?? DIAGRAM_COLOR_THEMES[0]
 }
+
+/** 思维导图预览区渐变背景 */
+export function getMindmapPreviewBackground(id: ColorSchemeId): string {
+  const colors = getColors(id)
+  const [c1, c2, c3] = colors
+  return `radial-gradient(circle at 12% 18%, ${lightenColor(c1, 0.82)} 0%, transparent 42%),
+    radial-gradient(circle at 88% 12%, ${lightenColor(c2, 0.84)} 0%, transparent 38%),
+    radial-gradient(circle at 72% 88%, ${lightenColor(c3, 0.86)} 0%, transparent 40%),
+    linear-gradient(145deg, #fafbff 0%, #ffffff 45%, #f8fafc 100%)`
+}

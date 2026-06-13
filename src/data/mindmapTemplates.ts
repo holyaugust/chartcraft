@@ -29,8 +29,8 @@ export const MINDMAP_TEMPLATES: MindmapTemplate[] = [
     description: '中心议题 + 多方案分支 + 路径/情形展开，适合并购、合作、业务决策',
     category: 'strategy',
     layoutLabel: '双方案树',
-    accent: '#dc2626',
-    branchColors: ['#dc2626', '#ea580c', '#2563eb', '#059669'],
+    accent: '#e11d48',
+    branchColors: ['#e11d48', '#f97316', '#2563eb', '#059669', '#9333ea', '#0891b2'],
     skeletonSource: `${LAYOUT_HEADER}mindmap
   root((核心议题))
     方案A
@@ -85,8 +85,8 @@ export const MINDMAP_TEMPLATES: MindmapTemplate[] = [
     description: '两个主方案并列展开，便于对比优劣与实施条件',
     category: 'strategy',
     layoutLabel: '对比树',
-    accent: '#2563eb',
-    branchColors: ['#2563eb', '#dc2626', '#059669'],
+    accent: '#4f46e5',
+    branchColors: ['#4f46e5', '#e11d48', '#059669', '#f59e0b', '#ec4899', '#06b6d4'],
     skeletonSource: `${LAYOUT_HEADER}mindmap
   root((决策主题))
     方案一
@@ -125,8 +125,8 @@ export const MINDMAP_TEMPLATES: MindmapTemplate[] = [
     description: '目标 → 阶段 → 任务 → 交付物，适合项目管理与 WBS',
     category: 'project',
     layoutLabel: 'WBS 树',
-    accent: '#059669',
-    branchColors: ['#059669', '#2563eb', '#ea580c', '#9333ea'],
+    accent: '#10b981',
+    branchColors: ['#10b981', '#3b82f6', '#f97316', '#a855f7', '#14b8a6', '#eab308'],
     skeletonSource: `${LAYOUT_HEADER}mindmap
   root((项目名称))
     目标
@@ -167,8 +167,8 @@ export const MINDMAP_TEMPLATES: MindmapTemplate[] = [
     description: '围绕一个主题多维度展开，适合学习笔记与知识整理',
     category: 'general',
     layoutLabel: '主题树',
-    accent: '#6366f1',
-    branchColors: ['#6366f1', '#ec4899', '#14b8a6', '#f59e0b'],
+    accent: '#8b5cf6',
+    branchColors: ['#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#6366f1', '#22d3ee'],
     skeletonSource: `${LAYOUT_HEADER}mindmap
   root((主题))
     概念
@@ -210,7 +210,7 @@ export const MINDMAP_TEMPLATES: MindmapTemplate[] = [
     category: 'general',
     layoutLabel: '会议树',
     accent: '#0ea5e9',
-    branchColors: ['#0ea5e9', '#6366f1', '#22c55e'],
+    branchColors: ['#0ea5e9', '#6366f1', '#22c55e', '#f97316', '#a855f7', '#f43f5e'],
     skeletonSource: `${LAYOUT_HEADER}mindmap
   root((会议主题))
     背景
@@ -248,7 +248,7 @@ export const MINDMAP_TEMPLATES: MindmapTemplate[] = [
     category: 'analysis',
     layoutLabel: '风险树',
     accent: '#f97316',
-    branchColors: ['#ef4444', '#f97316', '#eab308', '#64748b'],
+    branchColors: ['#ef4444', '#f97316', '#eab308', '#64748b', '#dc2626', '#fb7185'],
     skeletonSource: `${LAYOUT_HEADER}mindmap
   root((风险分析))
     市场风险
@@ -292,6 +292,10 @@ export function getMindmapBranchColors(
   _colorSchemeId: string,
   fallbackColors: string[],
 ): string[] {
-  if (template?.branchColors?.length) return template.branchColors
-  return fallbackColors.slice(0, 4)
+  const merged: string[] = []
+  for (const color of [...(template?.branchColors ?? []), ...fallbackColors]) {
+    const key = color.toLowerCase()
+    if (!merged.some((item) => item.toLowerCase() === key)) merged.push(color)
+  }
+  return merged.slice(0, 8)
 }

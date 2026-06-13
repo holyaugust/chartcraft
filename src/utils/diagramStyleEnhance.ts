@@ -123,6 +123,142 @@ export function getVividNodePalette(colorSchemeId: ColorSchemeId): string[] {
   return colors
 }
 
+function getMindmapNodeSection(group: Element): number | null {
+  const match = (group.getAttribute('class') ?? '').match(/section-(\d+)/)
+  return match ? Number.parseInt(match[1], 10) : null
+}
+
+function isMindmapRootNode(group: Element, index: number): boolean {
+  const cls = group.getAttribute('class') ?? ''
+  return index === 0 || /\broot\b/i.test(cls) || cls.includes('section-root')
+}
+
+function ensureMindmapSvgDefs(
+  doc: Document,
+  svgEl: SVGSVGElement,
+  palette: string[],
+): void {
+  let defs = svgEl.querySelector('defs')
+  if (!defs) {
+    defs = doc.createElementNS('http://www.w3.org/2000/svg', 'defs')
+    svgEl.insertBefore(defs, svgEl.firstChild)
+  }
+
+  if (!defs.querySelector('#cc-mindmap-shadow')) {
+    const filter = doc.createElementNS('http://www.w3.org/2000/svg', 'filter')
+    filter.setAttribute('id', 'cc-mindmap-shadow')
+    filter.setAttribute('x', '-25%')
+    filter.setAttribute('y', '-25%')
+    filter.setAttribute('width', '150%')
+    filter.setAttribute('height', '150%')
+
+    const shadow = doc.createElementNS('http://www.w3.org/2000/svg', 'feDropShadow')
+    shadow.setAttribute('dx', '0')
+    shadow.setAttribute('dy', '3')
+    shadow.setAttribute('stdDeviation', '4.5')
+    shadow.setAttribute('flood-color', palette[0] ?? '#6366f1')
+    shadow.setAttribute('flood-opacity', '0.28')
+    filter.appendChild(shadow)
+    defs.appendChild(filter)
+  }
+
+  if (!defs.querySelector('#cc-mindmap-glow')) {
+    const filter = doc.createElementNS('http://www.w3.org/2000/svg', 'filter')
+    filter.setAttribute('id', 'cc-mindmap-glow')
+    filter.setAttribute('x', '-40%')
+    filter.setAttribute('y', '-40%')
+    filter.setAttribute('width', '180%')
+    filter.setAttribute('height', '180%')
+
+    const glow = doc.createElementNS('http://www.w3.org/2000/svg', 'feDropShadow')
+    glow.setAttribute('dx', '0')
+    glow.setAttribute('dy', '0')
+    glow.setAttribute('stdDeviation', '6')
+    glow.setAttribute('flood-color', palette[1] ?? palette[0] ?? '#a855f7')
+    glow.setAttribute('flood-opacity', '0.45')
+    filter.appendChild(glow)
+    defs.appendChild(filter)
+  }
+
+  if (!defs.querySelector('#cc-mindmap-root-grad')) {
+    const rootGrad = doc.createElementNS('http://www.w3.org/2000/svg', 'radialGradient')
+    rootGrad.setAttribute('id', 'cc-mindmap-root-grad')
+    rootGrad.setAttribute('cx', '35%')
+    rootGrad.setAttribute('cy', '35%')
+    rootGrad.setAttribute('r', '75%')
+
+    ;[0.15, 0.55, 1].forEach((offset, index) => {
+      const stop = doc.createElementNS('http://www.w3.org/2000/svg', 'stop')
+      stop.setAttribute('offset', `${offset * 100}%`)
+      const base = palette[index % palette.length]
+      stop.setAttribute('stop-color', index === 0 ? lightenColor(base, 0.18) : index === 1 ? base : darkenColor(base, 0.12))
+      rootGrad.appendChild(stop)
+    })
+    defs.appendChild(rootGrad)
+  }
+
+  palette.forEach((color, index) => {
+    const branchGradId = `cc-mindmap-branch-grad-${index}`
+    if (defs!.querySelector(`#${branchGradId}`)) return
+
+    const gradient = doc.createElementNS('http://www.w3.org/2000/svg', 'linearGradient')
+    gradient.setAttribute('id', branchGradId)
+    gradient.setAttribute('x1', '0%')
+    gradient.setAttribute('y1', '0%')
+    gradient.setAttribute('x2', '100%')
+    gradient.setAttribute('y2', '100%')
+
+    const stop1 = doc.createElementNS('http://www.w3.org/2000/svg', 'stop')
+    stop1.setAttribute('offset', '0%')
+    stop1.setAttribute('stop-color', lightenColor(color, 0.14))
+
+    const stop2 = doc.createElementNS('http://www.w3.org/2000/svg', 'stop')
+    stop2.setAttribute('offset', '100%')
+    stop2.setAttribute('stop-color', color)
+
+    gradient.appendChild(stop1)
+    gradient.appendChild(stop2)
+    defs!.appendChild(gradient)
+
+    const leafGradId = `cc-mindmap-leaf-grad-${index}`
+    if (defs!.querySelector(`#${leafGradId}`)) return
+
+    const leafGrad = doc.createElementNS('http://www.w3.org/2000/svg', 'linearGradient')
+    leafGrad.setAttribute('id', leafGradId)
+    leafGrad.setAttribute('x1', '0%')
+    leafGrad.setAttribute('y1', '0%')
+    leafGrad.setAttribute('x2', '0%')
+    leafGrad.setAttribute('y2', '100%')
+
+    const leafStop1 = doc.createElementNS('http://www.w3.org/2000/svg', 'stop')
+    leafStop1.setAttribute('offset', '0%')
+    leafStop1.setAttribute('stop-color', lightenColor(color, 0.9))
+
+    const leafStop2 = doc.createElementNS('http://www.w3.org/2000/svg', 'stop')
+    leafStop2.setAttribute('offset', '100%')
+    leafStop2.setAttribute('stop-color', lightenColor(color, 0.78))
+
+    leafGrad.appendChild(leafStop1)
+    leafGrad.appendChild(leafStop2)
+    defs!.appendChild(leafGrad)
+  })
+}
+
+function applyMindmapTextStyle(
+  group: Element,
+  options: { fill: string; weight: string; isHtml?: boolean },
+): void {
+  group.querySelectorAll('text, tspan').forEach((textEl) => {
+    textEl.setAttribute('fill', options.fill)
+    textEl.setAttribute('font-weight', options.weight)
+  })
+  if (options.isHtml) {
+    group.querySelectorAll('foreignObject div, foreignObject span, foreignObject p').forEach((textEl) => {
+      textEl.setAttribute('style', `color:${options.fill};font-weight:${options.weight};`)
+    })
+  }
+}
+
 function getMindmapBranchPalette(
   colorSchemeId: ColorSchemeId,
   mindmapTemplate?: MindmapTemplate,
@@ -231,7 +367,7 @@ function enhanceFlowchartSvg(svg: string, colorSchemeId: ColorSchemeId): string 
   return new XMLSerializer().serializeToString(svgEl)
 }
 
-/** 思维导图：按分支着色，一级节点色块 + 同色连线，接近专业导图风格 */
+/** 思维导图：按分支着色，渐变节点 + 光晕 + 多级层次 */
 function enhanceMindmapSvg(
   svg: string,
   colorSchemeId: ColorSchemeId,
@@ -242,10 +378,7 @@ function enhanceMindmapSvg(
   const svgEl = doc.documentElement as unknown as SVGSVGElement
   if (svgEl.querySelector('parsererror')) return svg
 
-  ensureSvgDefs(doc, svgEl, palette, {
-    shadowColor: palette[0] ?? '#dc2626',
-    forMindmap: true,
-  })
+  ensureMindmapSvgDefs(doc, svgEl, palette)
 
   const nodeGroups = [
     ...svgEl.querySelectorAll('g.node'),
@@ -254,46 +387,83 @@ function enhanceMindmapSvg(
   ]
 
   const uniqueGroups = [...new Set(nodeGroups)]
+  const sectionHeadSeen = new Set<number>()
+  const sectionColors = new Map<number, string>()
+
   uniqueGroups.forEach((group, index) => {
-    const branchIndex = index === 0 ? 0 : 1 + ((index - 1) % Math.max(palette.length, 1))
+    const isRoot = isMindmapRootNode(group, index)
+    const section = getMindmapNodeSection(group)
+    let branchIndex = 0
+
+    if (!isRoot) {
+      if (section != null) {
+        if (!sectionColors.has(section)) {
+          sectionColors.set(section, palette[(sectionColors.size + 1) % palette.length])
+        }
+        branchIndex = palette.indexOf(sectionColors.get(section) ?? palette[0])
+        if (branchIndex < 0) branchIndex = section % palette.length
+      } else {
+        branchIndex = 1 + ((index - 1) % Math.max(palette.length - 1, 1))
+      }
+    }
+
     const color = palette[branchIndex % palette.length]
-    const isRoot = index === 0
+    const isBranchHead =
+      !isRoot && (section == null ? index <= palette.length : !sectionHeadSeen.has(section))
+    if (section != null) sectionHeadSeen.add(section)
+
+    const isPrimaryBranch = isRoot || isBranchHead
     const shape = group.querySelector('rect, polygon, path, circle, ellipse')
+    const hasHtmlLabel = group.querySelector('foreignObject') != null
 
     if (shape) {
       if (isRoot) {
-        shape.setAttribute('fill', darkenColor(color, 0.05))
-        shape.setAttribute('stroke', darkenColor(color, 0.25))
-        shape.setAttribute('stroke-width', '3')
-      } else if (index <= palette.length) {
-        shape.setAttribute('fill', color)
-        shape.setAttribute('stroke', darkenColor(color, 0.2))
-        shape.setAttribute('stroke-width', '2.5')
+        shape.setAttribute('fill', 'url(#cc-mindmap-root-grad)')
+        shape.setAttribute('stroke', darkenColor(color, 0.18))
+        shape.setAttribute('stroke-width', '3.5')
+        shape.setAttribute('filter', 'url(#cc-mindmap-glow)')
+        if (shape.tagName === 'circle' || shape.tagName === 'ellipse') {
+          shape.setAttribute('stroke-width', '4')
+        }
+      } else if (isPrimaryBranch) {
+        shape.setAttribute('fill', `url(#cc-mindmap-branch-grad-${branchIndex % palette.length})`)
+        shape.setAttribute('stroke', darkenColor(color, 0.15))
+        shape.setAttribute('stroke-width', '2.8')
         shape.setAttribute('filter', 'url(#cc-mindmap-shadow)')
         if (shape.tagName === 'rect') {
-          shape.setAttribute('rx', '10')
-          shape.setAttribute('ry', '10')
+          shape.setAttribute('rx', '12')
+          shape.setAttribute('ry', '12')
         }
       } else {
-        shape.setAttribute('fill', lightenColor(color, 0.88))
+        shape.setAttribute('fill', `url(#cc-mindmap-leaf-grad-${branchIndex % palette.length})`)
         shape.setAttribute('stroke', color)
-        shape.setAttribute('stroke-width', '1.5')
+        shape.setAttribute('stroke-width', '2')
         if (shape.tagName === 'rect') {
-          shape.setAttribute('rx', '6')
-          shape.setAttribute('ry', '6')
+          shape.setAttribute('rx', '8')
+          shape.setAttribute('ry', '8')
         }
       }
     }
 
-    group.querySelectorAll('text, tspan, foreignObject div, foreignObject span').forEach((textEl) => {
-      if (isRoot || index <= palette.length) {
-        textEl.setAttribute('fill', isRoot ? contrastLabelColor(darkenColor(color, 0.05)) : '#ffffff')
-        textEl.setAttribute('font-weight', isRoot ? '700' : '600')
-      } else {
-        textEl.setAttribute('fill', darkenColor(color, 0.35))
-        textEl.setAttribute('font-weight', '500')
-      }
-    })
+    if (isRoot) {
+      applyMindmapTextStyle(group, {
+        fill: '#ffffff',
+        weight: '700',
+        isHtml: hasHtmlLabel,
+      })
+    } else if (isPrimaryBranch) {
+      applyMindmapTextStyle(group, {
+        fill: '#ffffff',
+        weight: '600',
+        isHtml: hasHtmlLabel,
+      })
+    } else {
+      applyMindmapTextStyle(group, {
+        fill: darkenColor(color, 0.28),
+        weight: '500',
+        isHtml: hasHtmlLabel,
+      })
+    }
   })
 
   svgEl.querySelectorAll('path, line, polyline').forEach((edge, index) => {
@@ -301,11 +471,17 @@ function enhanceMindmapSvg(
     if (className.includes('edge') || edge.closest('g.edgePaths, g.edgePath, g.edge')) {
       const color = palette[(index + 1) % palette.length]
       edge.setAttribute('stroke', color)
-      edge.setAttribute('stroke-width', '2')
+      edge.setAttribute('stroke-width', index % 3 === 0 ? '3' : '2.4')
       edge.setAttribute('stroke-linecap', 'round')
       edge.setAttribute('fill', 'none')
-      edge.setAttribute('opacity', '0.85')
+      edge.setAttribute('opacity', '0.92')
     }
+  })
+
+  svgEl.querySelectorAll('marker path, marker polygon').forEach((marker, index) => {
+    const color = palette[index % palette.length]
+    marker.setAttribute('fill', color)
+    marker.setAttribute('stroke', color)
   })
 
   return new XMLSerializer().serializeToString(svgEl)

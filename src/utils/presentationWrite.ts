@@ -1,11 +1,19 @@
 import { getPresentationTemplateById } from '../data/presentationTemplates'
-import type { PresentationOutline, PresentationSlide } from '../types/presentation'
+import type { PresentationOutline, PresentationSlide, PresentationSlideLayout } from '../types/presentation'
 import { requestDeepSeekPlainText } from './deepseek'
+
+export interface PresentationTemplateSlideHint {
+  index: number
+  suggestedLayout: PresentationSlideLayout
+  sampleTexts: string[]
+  placeholderTypes: string[]
+}
 
 export interface PresentationWriteRequest {
   prompt: string
   templateId: string
   sourceDocument?: string
+  templateSlideHints?: PresentationTemplateSlideHint[]
 }
 
 function buildSystemPrompt(): string {
@@ -52,6 +60,24 @@ function buildUserPrompt(request: PresentationWriteRequest): string {
         ? `${request.sourceDocument.slice(0, 8000)}\n…（已截断）`
         : request.sourceDocument
     sections.push('', '参考材料（提炼要点写入幻灯片，勿照搬无关段落）：', excerpt)
+  }
+
+  if (request.templateSlideHints?.length) {
+    const hints = request.templateSlideHints
+    sections.push(
+      '',
+      `【重要】已上传 PPT 模板，共 ${hints.length} 页。你必须生成恰好 ${hints.length} 页 slides（不多不少）。`,
+      '每一页将按顺序写回对应模板页，请严格按下列页型与占位结构生成：',
+    )
+    hints.forEach((slide) => {
+      const sample = slide.sampleTexts.slice(0, 2).join(' / ') || '无示例文字'
+      sections.push(
+        `- 第 ${slide.index + 1} 页：layout 必须为 "${slide.suggestedLayout}"；占位符 ${slide.placeholderTypes.join(', ') || '未知'}；原模板示例：${sample}`,
+      )
+    })
+    sections.push(
+      '封面页 title 字段写 layout=title 的页标题；subtitle 写副标题；content 页写 bullets；section/closing 页通常只有 title、无 bullets 或仅 1 条。',
+    )
   }
 
   sections.push('', '请生成完整汇报 PPT 的 JSON 大纲。')

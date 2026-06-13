@@ -41,7 +41,7 @@ const DEFAULTS: Record<DiagramKind, DiagramDraft> = {
     prompt: '',
     title: '思维导图',
     mindmapTemplateId: DEFAULT_MINDMAP_TEMPLATE_ID,
-    colorSchemeId: 'sunset',
+    colorSchemeId: 'vivid',
   },
 }
 
