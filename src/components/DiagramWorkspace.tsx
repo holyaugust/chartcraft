@@ -23,16 +23,19 @@ import {
   type MindmapTemplate,
 } from '../data/mindmapTemplates'
 import DiagramColorSchemePicker from './DiagramColorSchemePicker'
+import DiagramFlowchartToolbar, { DiagramLinkPickBanner } from './DiagramFlowchartToolbar'
 import DiagramInlineTextEditor from './DiagramInlineTextEditor'
 import DiagramNodeToolbar from './DiagramNodeToolbar'
 import FlowchartTemplateLibrary from './FlowchartTemplateLibrary'
 import MindmapTemplateLibrary from './MindmapTemplateLibrary'
-import { generateDiagramMermaid } from '../utils/diagramWrite'
+import { generateDiagramMermaid, modifyFlowchartNodeWithAi } from '../utils/diagramWrite'
 import { DEFAULT_DIAGRAM_COLOR_SCHEME_ID, getDiagramColorTheme } from '../utils/diagramColorSchemes'
 import { getDiagramKindLabel, loadDiagramDraft, saveDiagramDraft } from '../utils/diagramStorage'
 import { renderMermaidToSvg, svgToPngBlob } from '../utils/diagramRender'
 import {
+  applyFlowchartLinkPickColorVars,
   attachDiagramEditMetadataToDom,
+  clearFlowchartLinkPickColorVars,
   computeNodeEditLayout,
   findEditableNodeFromEvent,
   getInlineLabelElement,
@@ -49,6 +52,7 @@ import {
   addFlowchartNodeDownstream,
   addMindmapChild,
   addMindmapSibling,
+  connectFlowchartNodes,
   deleteFlowchartNode,
   deleteMindmapNode,
   getNodeSelectionFromElement,
@@ -69,6 +73,65 @@ const PREVIEW_ZOOM_DEFAULT = 100
 const PAN_DRAG_THRESHOLD = 5
 const DOUBLE_CLICK_MS = 400
 
+const LINK_PICK_HOVER_CLASS = 'diagram-node-link-hover'
+const LINK_PICK_PICKED_CLASS = 'diagram-node-link-picked'
+const LINK_PICK_DISABLED_CLASS = 'diagram-node-link-disabled'
+
+function clearLinkPickTargetHighlight(el: Element | null) {
+  clearFlowchartLinkPickColorVars(el)
+  el?.classList.remove(LINK_PICK_HOVER_CLASS, LINK_PICK_PICKED_CLASS, LINK_PICK_DISABLED_CLASS)
+  el?.querySelectorAll('foreignObject div, foreignObject span, foreignObject p').forEach((labelEl) => {
+    labelEl.classList.remove(
+      'diagram-node-link-label-highlight',
+      'diagram-node-link-label-picked',
+      'diagram-node-link-label-disabled',
+    )
+  })
+}
+
+function resolveLinkPickNodeGroup(clientX: number, clientY: number): Element | null {
+  const group = resolveLinkPickTargetGroup(clientX, clientY)
+  if (!group) return null
+  return group.closest('g.node') ?? group
+}
+
+function applyLinkPickTargetHighlight(nodeGroup: Element, mode: 'hover' | 'picked' | 'disabled') {
+  nodeGroup.classList.remove(LINK_PICK_HOVER_CLASS, LINK_PICK_PICKED_CLASS, LINK_PICK_DISABLED_CLASS)
+  nodeGroup.classList.add(
+    mode === 'hover'
+      ? LINK_PICK_HOVER_CLASS
+      : mode === 'picked'
+        ? LINK_PICK_PICKED_CLASS
+        : LINK_PICK_DISABLED_CLASS,
+  )
+  applyFlowchartLinkPickColorVars(nodeGroup, mode)
+  nodeGroup.querySelectorAll('foreignObject div, foreignObject span, foreignObject p').forEach((labelEl) => {
+    labelEl.classList.remove(
+      'diagram-node-link-label-highlight',
+      'diagram-node-link-label-picked',
+      'diagram-node-link-label-disabled',
+    )
+    if (mode === 'hover') labelEl.classList.add('diagram-node-link-label-highlight')
+    if (mode === 'picked') {
+      labelEl.classList.add('diagram-node-link-label-highlight', 'diagram-node-link-label-picked')
+    }
+    if (mode === 'disabled') labelEl.classList.add('diagram-node-link-label-disabled')
+  })
+}
+
+function resolveLinkPickTargetGroup(clientX: number, clientY: number): Element | null {
+  const hit = document.elementFromPoint(clientX, clientY)
+  if (!hit) return null
+  if (
+    (hit as HTMLElement).closest(
+      '.diagram-link-pick-banner, .diagram-node-toolbar, .diagram-flowchart-toolbar, .diagram-inline-text-editor',
+    )
+  ) {
+    return null
+  }
+  return resolveEditableNodeGroup(hit)
+}
+
 interface InlineEditSession {
   mode: 'dom' | 'overlay'
   element?: HTMLElement
@@ -78,6 +141,12 @@ interface InlineEditSession {
   text: string
   layout?: ReturnType<typeof computeNodeEditLayout>
   cleanup?: () => void
+}
+
+interface FlowchartLinkPick {
+  fromNodeId: string
+  fromLabel: string
+  edgeLabel?: string
 }
 
 interface DiagramWorkspaceProps {
@@ -127,6 +196,13 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
   const toolbarDelayRef = useRef<number | null>(null)
   const suppressSelectionUntilRef = useRef(0)
   const lastPointerClickRef = useRef<{ time: number; node: Element | null }>({ time: 0, node: null })
+  const linkPickModeRef = useRef<FlowchartLinkPick | null>(null)
+  const linkPickHoverElRef = useRef<Element | null>(null)
+  const linkPickPickedElRef = useRef<Element | null>(null)
+  const [flowchartEdgeLabel, setFlowchartEdgeLabel] = useState('')
+  const [linkPickMode, setLinkPickMode] = useState<FlowchartLinkPick | null>(null)
+  const [nodeAiPrompt, setNodeAiPrompt] = useState('')
+  const [nodeAiBusy, setNodeAiBusy] = useState(false)
 
   const kindLabel = getDiagramKindLabel(kind)
   const activeFlowchartTemplate =
@@ -149,6 +225,85 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
   useEffect(() => {
     selectedNodeRef.current = selectedNode
   }, [selectedNode])
+
+  useEffect(() => {
+    linkPickModeRef.current = linkPickMode
+  }, [linkPickMode])
+
+  const clearLinkPickHover = useCallback(() => {
+    clearLinkPickTargetHighlight(linkPickHoverElRef.current)
+    linkPickHoverElRef.current = null
+  }, [])
+
+  const clearLinkPickHighlights = useCallback(() => {
+    clearLinkPickHover()
+    clearLinkPickTargetHighlight(linkPickPickedElRef.current)
+    linkPickPickedElRef.current = null
+  }, [clearLinkPickHover])
+
+  const updateLinkPickHover = useCallback(
+    (clientX: number, clientY: number, fromNodeId: string) => {
+      if (panActiveRef.current) {
+        clearLinkPickHover()
+        return
+      }
+      const nodeGroup = resolveLinkPickNodeGroup(clientX, clientY)
+      if (linkPickHoverElRef.current === nodeGroup) return
+
+      clearLinkPickTargetHighlight(linkPickHoverElRef.current)
+      linkPickHoverElRef.current = nodeGroup
+
+      if (!nodeGroup) return
+      const nodeId = nodeGroup.getAttribute('data-cc-node-id')
+      applyLinkPickTargetHighlight(
+        nodeGroup,
+        nodeId === fromNodeId ? 'disabled' : 'hover',
+      )
+    },
+    [clearLinkPickHover],
+  )
+
+  const markLinkPickTargetPicked = useCallback(
+    (nodeGroup: Element) => {
+      clearLinkPickHover()
+      clearLinkPickTargetHighlight(linkPickPickedElRef.current)
+      linkPickPickedElRef.current = nodeGroup
+      applyLinkPickTargetHighlight(nodeGroup, 'picked')
+    },
+    [clearLinkPickHover],
+  )
+
+  useEffect(() => {
+    if (!linkPickMode) return
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLinkPickMode(null)
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [linkPickMode])
+
+  useEffect(() => {
+    if (!linkPickMode) {
+      clearLinkPickHighlights()
+      return
+    }
+    const shell = previewShellRef.current
+    if (!shell) return
+
+    const fromNodeId = linkPickMode.fromNodeId
+    const onPointerMove = (event: PointerEvent) => {
+      updateLinkPickHover(event.clientX, event.clientY, fromNodeId)
+    }
+    const onPointerLeave = () => clearLinkPickHover()
+
+    shell.addEventListener('pointermove', onPointerMove)
+    shell.addEventListener('pointerleave', onPointerLeave)
+    return () => {
+      shell.removeEventListener('pointermove', onPointerMove)
+      shell.removeEventListener('pointerleave', onPointerLeave)
+      clearLinkPickHighlights()
+    }
+  }, [linkPickMode, updateLinkPickHover, clearLinkPickHover, clearLinkPickHighlights])
 
   useEffect(() => {
     if (!selectedNode || isInlineEditing) {
@@ -218,6 +373,8 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
   useEffect(() => {
     setPreviewPan({ x: 0, y: 0 })
     setSelectedNode(null)
+    linkPickHoverElRef.current = null
+    linkPickPickedElRef.current = null
     const session = inlineEditSessionRef.current
     if (session) {
       session.cleanup?.()
@@ -295,6 +452,11 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [undo, redo, finishInlineEdit])
 
+  const resolveFlowchartNodeId = useCallback(
+    (element: Element) => resolveNodeEditTarget(element, source, 'flowchart').nodeId,
+    [source],
+  )
+
   const applyStructureChange = useCallback(
     (updater: (prev: string) => string, message: string) => {
       if (inlineEditSessionRef.current) {
@@ -308,37 +470,91 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
         setInlineEditState(null)
         setIsInlineEditing(false)
       }
+      setLinkPickMode(null)
       setSource((prev) => updater(prev))
       setSelectedNode(null)
       setStatusIsError(false)
       setStatusMessage(message)
     },
-    [],
+    [setSource],
   )
+
+  const startFlowchartLinkPick = useCallback(() => {
+    const node = selectedNodeRef.current
+    if (!node?.nodeId) return
+    setShowNodeToolbar(false)
+    setLinkPickMode({
+      fromNodeId: node.nodeId,
+      fromLabel: node.label || node.nodeId,
+      edgeLabel: flowchartEdgeLabel.trim() || undefined,
+    })
+    setStatusIsError(false)
+    setStatusMessage(`请悬浮并单击目标节点（从「${node.label || node.nodeId}」出发）`)
+  }, [flowchartEdgeLabel])
 
   const handleAddFlowchartStep = useCallback(() => {
     const node = selectedNodeRef.current
     if (!node?.nodeId) return
+    const edgeLabel = flowchartEdgeLabel.trim() || undefined
     applyStructureChange(
-      (prev) => addFlowchartNodeDownstream(prev, node.nodeId!, 'step'),
-      '已添加步骤节点',
+      (prev) => addFlowchartNodeDownstream(prev, node.nodeId!, 'step', undefined, edgeLabel),
+      edgeLabel ? `已添加步骤（${edgeLabel}）` : '已添加步骤节点',
     )
-  }, [applyStructureChange])
+  }, [applyStructureChange, flowchartEdgeLabel])
 
   const handleAddFlowchartDecision = useCallback(() => {
     const node = selectedNodeRef.current
     if (!node?.nodeId) return
+    const edgeLabel = flowchartEdgeLabel.trim() || undefined
     applyStructureChange(
-      (prev) => addFlowchartNodeDownstream(prev, node.nodeId!, 'decision'),
-      '已添加判断节点',
+      (prev) => addFlowchartNodeDownstream(prev, node.nodeId!, 'decision', undefined, edgeLabel),
+      edgeLabel ? `已添加判断（${edgeLabel}）` : '已添加判断节点',
     )
-  }, [applyStructureChange])
+  }, [applyStructureChange, flowchartEdgeLabel])
 
   const handleAddFlowchartBranch = useCallback(() => {
     const node = selectedNodeRef.current
     if (!node?.nodeId) return
-    applyStructureChange((prev) => addFlowchartBranch(prev, node.nodeId!, 'step'), '已添加分支')
-  }, [applyStructureChange])
+    const edgeLabel = flowchartEdgeLabel.trim() || undefined
+    applyStructureChange(
+      (prev) => addFlowchartBranch(prev, node.nodeId!, 'step', undefined, edgeLabel),
+      edgeLabel ? `已添加分支（${edgeLabel}）` : '已添加分支',
+    )
+  }, [applyStructureChange, flowchartEdgeLabel])
+
+  const handleFlowchartAiModify = useCallback(async () => {
+    const node = selectedNodeRef.current
+    if (!node?.nodeId || !nodeAiPrompt.trim()) return
+    if (!isDeepSeekConfigured()) {
+      setStatusIsError(true)
+      setStatusMessage('未配置 DeepSeek：请在 .env.local 中设置 VITE_DEEPSEEK_API_KEY')
+      return
+    }
+
+    setNodeAiBusy(true)
+    setStatusMessage(null)
+    setStatusIsError(false)
+    try {
+      const next = await modifyFlowchartNodeWithAi({
+        source,
+        selectedNodeId: node.nodeId,
+        selectedNodeLabel: node.label || node.nodeId,
+        instruction: nodeAiPrompt,
+        flowchartTemplate: activeFlowchartTemplate,
+      })
+      setLinkPickMode(null)
+      setSource(next)
+      setSelectedNode(null)
+      setNodeAiPrompt('')
+      setStatusIsError(false)
+      setStatusMessage(`已按 AI 建议更新「${node.label || node.nodeId}」相关分支`)
+    } catch (err) {
+      setStatusIsError(true)
+      setStatusMessage(err instanceof Error ? err.message : 'AI 修改失败')
+    } finally {
+      setNodeAiBusy(false)
+    }
+  }, [nodeAiPrompt, source, activeFlowchartTemplate, setSource])
 
   const handleAddMindmapChild = useCallback(() => {
     const node = selectedNodeRef.current
@@ -403,7 +619,17 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0 || !svgMarkup || renderError || isInlineEditing) return
       const target = event.target as HTMLElement
-      if (target.closest('[contenteditable="true"], .diagram-node-inline-editing, .diagram-inline-text-editor, .diagram-node-toolbar')) return
+      if (
+        target.closest(
+          '[contenteditable="true"], .diagram-node-inline-editing, .diagram-inline-text-editor, .diagram-node-toolbar, .diagram-flowchart-toolbar, .diagram-link-pick-banner',
+        )
+      ) {
+        return
+      }
+
+      const clicked = resolveEditableNodeGroup(event.target as Element)
+      pointerDownNodeRef.current = clicked
+
       panStartRef.current = {
         x: event.clientX,
         y: event.clientY,
@@ -412,7 +638,6 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
       }
       panActiveRef.current = false
       setIsPanning(false)
-      pointerDownNodeRef.current = resolveEditableNodeGroup(event.target as Element)
     },
     [svgMarkup, renderError, isInlineEditing, previewPan.x, previewPan.y],
   )
@@ -426,6 +651,8 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
       if (Math.hypot(dx, dy) < PAN_DRAG_THRESHOLD) return
       panActiveRef.current = true
       setIsPanning(true)
+      clearLinkPickTargetHighlight(linkPickHoverElRef.current)
+      linkPickHoverElRef.current = null
       if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.setPointerCapture(event.pointerId)
       }
@@ -570,7 +797,7 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
 
   const endPreviewPan = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement
-    if (target.closest('.diagram-node-toolbar, .diagram-inline-text-editor')) return
+    if (target.closest('.diagram-node-toolbar, .diagram-flowchart-toolbar, .diagram-inline-text-editor, .diagram-link-pick-banner')) return
 
     const clickedNode = pointerDownNodeRef.current
     const wasPanning = panActiveRef.current
@@ -585,6 +812,29 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
     }
 
     pointerDownNodeRef.current = null
+
+    const activeLinkPick = linkPickModeRef.current
+    if (!wasPanning && !isInlineEditing && clickedNode && activeLinkPick) {
+      const nodeGroup = resolveEditableNodeGroup(clickedNode) ?? clickedNode
+      const targetNodeId = resolveFlowchartNodeId(nodeGroup)
+      if (targetNodeId && targetNodeId !== activeLinkPick.fromNodeId) {
+        const edgeLabel = activeLinkPick.edgeLabel
+        const targetLabel = nodeGroup.getAttribute('data-cc-label') || targetNodeId
+        markLinkPickTargetPicked(nodeGroup)
+        applyStructureChange(
+          (prev) => connectFlowchartNodes(prev, activeLinkPick.fromNodeId, targetNodeId, edgeLabel),
+          edgeLabel
+            ? `已连接：${activeLinkPick.fromLabel} --${edgeLabel}→ ${targetLabel}`
+            : `已连接到「${targetLabel}」`,
+        )
+        return
+      }
+      if (targetNodeId === activeLinkPick.fromNodeId) {
+        setStatusIsError(true)
+        setStatusMessage('不能连接到自身，请选择其他节点')
+      }
+      return
+    }
 
     if (!wasPanning && !isInlineEditing && clickedNode) {
       const now = Date.now()
@@ -621,7 +871,14 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
         setSelectedNode(null)
       }
     }
-  }, [isInlineEditing, startInlineEdit, getNodeClickKey])
+  }, [
+    isInlineEditing,
+    startInlineEdit,
+    getNodeClickKey,
+    applyStructureChange,
+    resolveFlowchartNodeId,
+    markLinkPickTargetPicked,
+  ])
 
   useEffect(() => {
     const shell = previewShellRef.current
@@ -784,14 +1041,18 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
   }, [svgMarkup, title, kindLabel])
 
   const handleExportPng = useCallback(async () => {
-    if (!svgMarkup) {
+    if (!source.trim()) {
       setStatusIsError(true)
       setStatusMessage('请先确保预览渲染成功')
       return
     }
     setBusy(true)
     try {
-      const blob = await svgToPngBlob(svgMarkup, 2, activeColorTheme.exportBackground)
+      const exportSvg = await renderMermaidToSvg(source, kind, colorSchemeId, activeMindmapTemplate, {
+        htmlLabels: false,
+        attachEditMetadata: false,
+      })
+      const blob = await svgToPngBlob(exportSvg, 2, activeColorTheme.exportBackground)
       const saved = await saveFile(blob, {
         suggestedName: `${title || kindLabel}.png`,
         description: 'PNG 图片',
@@ -807,7 +1068,7 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
     } finally {
       setBusy(false)
     }
-  }, [svgMarkup, title, kindLabel, activeColorTheme.exportBackground])
+  }, [source, kind, colorSchemeId, activeMindmapTemplate, title, kindLabel, activeColorTheme.exportBackground])
 
   return (
     <main className="app-main document-main diagram-main">
@@ -876,8 +1137,8 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
                   className={`diagram-preview-shell diagram-preview-panel${
                     kind === 'mindmap' ? ' diagram-preview-shell-mindmap' : ''
                   }${svgMarkup && !renderError ? ' diagram-preview-shell-pannable' : ''}${
-                    isPanning ? ' diagram-preview-shell-dragging' : ''
-                  }`}
+                    linkPickMode ? ' diagram-preview-shell-linking' : ''
+                  }${isPanning ? ' diagram-preview-shell-dragging' : ''}`}
                   style={{ background: previewBackground }}
                   title="单击选中节点可增删；双击改字；Ctrl+Z 撤销；拖拽平移，滚轮缩放"
                   onDoubleClick={handlePreviewDoubleClick}
@@ -915,6 +1176,12 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
                       <p>正在渲染…</p>
                     </div>
                   )}
+                  {linkPickMode ? (
+                    <DiagramLinkPickBanner
+                      message={`从「${linkPickMode.fromLabel}」连接到目标 — 悬浮高亮，单击选中${linkPickMode.edgeLabel ? `（标签：${linkPickMode.edgeLabel}）` : ''}`}
+                      onCancel={() => setLinkPickMode(null)}
+                    />
+                  ) : null}
                   {inlineEditState?.mode === 'overlay' && inlineEditState.layout ? (
                     <DiagramInlineTextEditor
                       left={inlineEditState.layout.left}
@@ -932,25 +1199,51 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
                       onCancel={() => finishInlineEdit(true)}
                     />
                   ) : null}
-                  {selectedNode && showNodeToolbar && viewMode === 'preview' && !renderError && !isInlineEditing ? (
-                    <DiagramNodeToolbar
-                      kind={kind}
-                      label={selectedNode.label}
-                      isRoot={selectedNode.isRoot}
-                      isDecision={
-                        kind === 'flowchart' && selectedNode.nodeId
-                          ? isFlowchartDecision(source, selectedNode.nodeId)
-                          : false
-                      }
-                      left={toolbarPos.left}
-                      top={toolbarPos.top}
-                      onAddStep={handleAddFlowchartStep}
-                      onAddDecision={handleAddFlowchartDecision}
-                      onAddBranch={handleAddFlowchartBranch}
-                      onAddChild={handleAddMindmapChild}
-                      onAddSibling={handleAddMindmapSibling}
-                      onDelete={handleDeleteSelectedNode}
-                    />
+                  {selectedNode &&
+                  showNodeToolbar &&
+                  viewMode === 'preview' &&
+                  !renderError &&
+                  !isInlineEditing &&
+                  !linkPickMode ? (
+                    kind === 'flowchart' ? (
+                      <DiagramFlowchartToolbar
+                        label={selectedNode.label}
+                        isDecision={
+                          selectedNode.nodeId
+                            ? isFlowchartDecision(source, selectedNode.nodeId)
+                            : false
+                        }
+                        left={toolbarPos.left}
+                        top={toolbarPos.top}
+                        selectionKey={selectedNode.nodeId ?? String(selectedNode.lineIndex ?? '')}
+                        edgeLabel={flowchartEdgeLabel}
+                        aiPrompt={nodeAiPrompt}
+                        aiBusy={nodeAiBusy}
+                        onEdgeLabelChange={setFlowchartEdgeLabel}
+                        onAddStep={handleAddFlowchartStep}
+                        onAddDecision={handleAddFlowchartDecision}
+                        onAddBranch={handleAddFlowchartBranch}
+                        onStartConnect={startFlowchartLinkPick}
+                        onAiPromptChange={setNodeAiPrompt}
+                        onAiModify={() => void handleFlowchartAiModify()}
+                        onDelete={handleDeleteSelectedNode}
+                      />
+                    ) : (
+                      <DiagramNodeToolbar
+                        kind={kind}
+                        label={selectedNode.label}
+                        isRoot={selectedNode.isRoot}
+                        isDecision={false}
+                        left={toolbarPos.left}
+                        top={toolbarPos.top}
+                        onAddStep={handleAddFlowchartStep}
+                        onAddDecision={handleAddFlowchartDecision}
+                        onAddBranch={handleAddFlowchartBranch}
+                        onAddChild={handleAddMindmapChild}
+                        onAddSibling={handleAddMindmapSibling}
+                        onDelete={handleDeleteSelectedNode}
+                      />
+                    )
                   ) : null}
                 </div>
               ) : (
@@ -972,7 +1265,7 @@ export default function DiagramWorkspace({ kind, onSavedLabelChange }: DiagramWo
             <div className="data-hint document-editor-hint">
               <strong>{kindLabel}：</strong>
               {kind === 'flowchart'
-                ? '预览区单击节点可添加/删除步骤或判断；双击改字；Ctrl+Z 撤销、Ctrl+Y 重做；拖拽平移，滚轮缩放。'
+                ? '预览区单击节点：选箭头标签后添加步骤/分支，或先加节点再「连接到」目标；AI 改分支；双击改字；Ctrl+Z 撤销。'
                 : '预览区单击节点可添加/删除子节点或同级；双击改字；Ctrl+Z 撤销、Ctrl+Y 重做；拖拽平移，滚轮缩放。'}
             </div>
           </div>

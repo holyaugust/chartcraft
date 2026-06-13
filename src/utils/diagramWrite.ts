@@ -142,3 +142,45 @@ export async function generateDiagramMermaid(input: {
 
   return normalizeMermaidSource(input.kind, raw, input.flowchartTemplate)
 }
+
+export async function modifyFlowchartNodeWithAi(input: {
+  source: string
+  selectedNodeId: string
+  selectedNodeLabel: string
+  instruction: string
+  flowchartTemplate?: FlowchartTemplate
+}): Promise<string> {
+  if (!input.instruction.trim()) {
+    throw new Error('请先描述要如何修改分支')
+  }
+
+  const systemPrompt = `你是 Mermaid 流程图编辑专家。用户选中了流程图中的一个节点，希望你按描述修改与该节点相关的分支、连线或下游结构。
+
+要求：
+1. 只输出完整的 Mermaid flowchart 代码，不要 markdown 代码块，不要解释
+2. 保留未涉及部分的节点 id 与整体结构，仅在必要时调整
+3. 判断分支请使用 -->|是|、-->|否| 等边标签
+4. 节点 id 用英文字母，中文写在方括号/花括号内
+5. 输出必须是合法且可渲染的 flowchart 语法`
+
+  const userPrompt = [
+    `选中节点：${input.selectedNodeId}（${input.selectedNodeLabel}）`,
+    '',
+    '修改要求：',
+    input.instruction.trim(),
+    '',
+    '当前完整 Mermaid 源码：',
+    input.source.trim(),
+    '',
+    '请返回修改后的完整 Mermaid flowchart 代码。',
+  ].join('\n')
+
+  const raw = await requestDeepSeekPlainText({
+    systemPrompt,
+    userPrompt,
+    temperature: 0.25,
+    maxTokens: 4096,
+  })
+
+  return normalizeMermaidSource('flowchart', raw, input.flowchartTemplate)
+}

@@ -4350,3 +4350,238 @@
   border-color: #fecaca;
   color: #dc2626;
 }
+
+.diagram-flowchart-toolbar {
+  max-width: min(480px, 96vw);
+  align-items: stretch;
+}
+
+.diagram-toolbar-drag-handle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #f8fafc;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.diagram-flowchart-toolbar-dragging .diagram-toolbar-drag-handle {
+  cursor: grabbing;
+}
+
+.diagram-node-toolbar-label-inline {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.diagram-flowchart-toolbar-block,
+.diagram-flowchart-ai-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.diagram-flowchart-toolbar .diagram-node-toolbar-actions {
+  width: 100%;
+  box-sizing: border-box;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.diagram-flowchart-toolbar .diagram-node-toolbar-btn {
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+  padding: 6px 4px;
+}
+
+.diagram-flowchart-toolbar-caption {
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.02em;
+}
+
+.diagram-edge-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.diagram-edge-label-btn {
+  padding: 3px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.diagram-edge-label-btn.active {
+  background: #eef2ff;
+  border-color: #6366f1;
+  color: #4338ca;
+  font-weight: 600;
+}
+
+.diagram-edge-label-input {
+  flex: 1;
+  min-width: 72px;
+  padding: 3px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.diagram-flowchart-ai-input {
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.diagram-flowchart-ai-btn {
+  align-self: flex-end;
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4338ca;
+}
+
+.diagram-link-pick-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(67, 56, 202, 0.94);
+  color: #fff;
+  font-size: 12px;
+  box-shadow: 0 8px 24px rgba(67, 56, 202, 0.35);
+  max-width: min(92%, 560px);
+}
+
+.diagram-link-pick-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.diagram-preview-shell-linking {
+  cursor: grab;
+}
+
+.diagram-preview-shell-linking .diagram-node-editable:not(.diagram-node-link-hover):not(.diagram-node-link-picked):hover rect,
+.diagram-preview-shell-linking .diagram-node-editable:not(.diagram-node-link-hover):not(.diagram-node-link-picked):hover polygon,
+.diagram-preview-shell-linking .diagram-node-editable:not(.diagram-node-link-hover):not(.diagram-node-link-picked):hover path,
+.diagram-preview-shell-linking .diagram-node-editable:not(.diagram-node-link-hover):not(.diagram-node-link-picked):hover circle,
+.diagram-preview-shell-linking .diagram-node-editable:not(.diagram-node-link-hover):not(.diagram-node-link-picked):hover ellipse {
+  stroke-width: inherit;
+  filter: none;
+}
+
+.diagram-preview-shell-linking g.node.diagram-node-link-hover,
+.diagram-preview-shell-linking g.node.diagram-node-link-picked {
+  filter: drop-shadow(0 0 9px var(--link-pick-glow-soft, rgba(99, 102, 241, 0.48)));
+}
+
+.diagram-preview-shell-linking g.node.diagram-node-link-picked {
+  filter: drop-shadow(0 0 14px var(--link-pick-glow, rgba(99, 102, 241, 0.78)));
+}
+
+.diagram-preview-shell-linking .diagram-node-link-hover,
+.diagram-preview-shell-linking .diagram-node-link-hover foreignObject,
+.diagram-preview-shell-linking .diagram-node-link-hover foreignObject * {
+  cursor: pointer !important;
+}
+
+.diagram-preview-shell-linking .diagram-node-link-disabled,
+.diagram-preview-shell-linking .diagram-node-link-disabled foreignObject,
+.diagram-preview-shell-linking .diagram-node-link-disabled foreignObject * {
+  cursor: not-allowed !important;
+}
+
+.diagram-preview-shell-linking foreignObject .diagram-node-link-label-highlight,
+.diagram-preview-shell-linking foreignObject div.diagram-node-link-label-highlight,
+.diagram-preview-shell-linking foreignObject span.diagram-node-link-label-highlight,
+.diagram-preview-shell-linking foreignObject p.diagram-node-link-label-highlight {
+  outline: 2px solid var(--link-pick-accent, #6366f1) !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 14px var(--link-pick-glow, rgba(99, 102, 241, 0.78)) !important;
+}
+
+.diagram-preview-shell-linking foreignObject .diagram-node-link-label-picked {
+  box-shadow: 0 0 18px var(--link-pick-glow, rgba(99, 102, 241, 0.9)) !important;
+}
+
+.diagram-preview-shell-linking foreignObject .diagram-node-link-label-disabled {
+  opacity: 0.72;
+}
+
+.diagram-preview-shell-linking g.node.diagram-node-link-hover rect,
+.diagram-preview-shell-linking g.node.diagram-node-link-hover polygon,
+.diagram-preview-shell-linking g.node.diagram-node-link-hover path,
+.diagram-preview-shell-linking g.node.diagram-node-link-hover circle,
+.diagram-preview-shell-linking g.node.diagram-node-link-hover ellipse,
+.diagram-preview-shell-linking g.node.diagram-node-link-picked rect,
+.diagram-preview-shell-linking g.node.diagram-node-link-picked polygon,
+.diagram-preview-shell-linking g.node.diagram-node-link-picked path,
+.diagram-preview-shell-linking g.node.diagram-node-link-picked circle,
+.diagram-preview-shell-linking g.node.diagram-node-link-picked ellipse {
+  stroke: var(--link-pick-accent, #6366f1) !important;
+  stroke-width: 3px !important;
+}
+
+.diagram-preview-shell-linking g.node.diagram-node-link-picked rect,
+.diagram-preview-shell-linking g.node.diagram-node-link-picked polygon,
+.diagram-preview-shell-linking g.node.diagram-node-link-picked path,
+.diagram-preview-shell-linking g.node.diagram-node-link-picked circle,
+.diagram-preview-shell-linking g.node.diagram-node-link-picked ellipse {
+  stroke-width: 3.5px !important;
+}
+
+.diagram-preview-shell-linking g.node.diagram-node-link-disabled rect,
+.diagram-preview-shell-linking g.node.diagram-node-link-disabled polygon,
+.diagram-preview-shell-linking g.node.diagram-node-link-disabled path,
+.diagram-preview-shell-linking g.node.diagram-node-link-disabled circle,
+.diagram-preview-shell-linking g.node.diagram-node-link-disabled ellipse {
+  opacity: 0.72;
+}
+
+.diagram-preview-shell-linking.diagram-preview-shell-dragging,
+.diagram-preview-shell-linking.diagram-preview-shell-dragging .diagram-preview-canvas {
+  cursor: grabbing;
+}

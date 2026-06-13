@@ -1,4 +1,5 @@
 import type { DiagramKind } from '../types/diagram'
+import { alphaColor, darkenColor } from './colorSchemes'
 
 function stripFrontmatter(source: string): string {
   return source.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '')
@@ -248,10 +249,11 @@ function collectEditableNodeGroups(svgEl: Element, kind: DiagramKind): Element[]
 }
 
 export function resolveEditableNodeGroup(target: Element): Element | null {
-  return (
+  const tagged =
     target.closest('[data-cc-node-id], [data-cc-line-index]') ??
     target.closest('g[class*="mindmap-node"], g[class*="node"]')
-  )
+  if (!tagged) return null
+  return tagged.closest('g.node') ?? tagged
 }
 
 /** 获取节点内可直接编辑的标签元素（优先 Mermaid HTML 标签） */
@@ -490,4 +492,85 @@ export function attachDiagramEditMetadataToDom(
   const svgEl = root.tagName.toLowerCase() === 'svg' ? root : root.querySelector('svg')
   if (!svgEl) return
   applyDiagramEditMetadataToElement(svgEl, source, kind)
+}
+
+function normalizePaintToHex(color: string | null | undefined): string | null {
+  if (!color) return null
+  const trimmed = color.trim()
+  if (trimmed === 'none' || trimmed === 'transparent') return null
+  if (/^#[0-9a-fA-F]{6}$/i.test(trimmed)) return trimmed.toLowerCase()
+  if (/^#[0-9a-fA-F]{3}$/i.test(trimmed)) {
+    const h = trimmed.slice(1)
+    return `#${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}`.toLowerCase()
+  }
+  const rgb = trimmed.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i)
+  if (!rgb) return null
+  const toHex = (value: number) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0')
+  return `#${toHex(Number(rgb[1]))}${toHex(Number(rgb[2]))}${toHex(Number(rgb[3]))}`
+}
+
+function resolveSvgPaintColor(paint: string | null, svgRoot: Element | null): string | null {
+  if (!paint) return null
+  const gradMatch = paint.match(/url\(#([^)]+)\)/)
+  if (gradMatch && svgRoot) {
+    const grad = svgRoot.querySelector(`#${CSS.escape(gradMatch[1])}`)
+    const stop =
+      grad?.querySelector('stop[offset="100%"]') ??
+      grad?.querySelector('stop:last-of-type') ??
+      grad?.querySelector('stop')
+    return normalizePaintToHex(stop?.getAttribute('stop-color'))
+  }
+  return normalizePaintToHex(paint)
+}
+
+/** 读取流程图节点主色，用于连线目标高亮 */
+export function resolveFlowchartNodeAccentColor(nodeGroup: Element): string {
+  const svgRoot = nodeGroup.closest('svg')
+  const shape = nodeGroup.querySelector('rect, polygon, path, circle, ellipse')
+  if (shape) {
+    const fromFill = resolveSvgPaintColor(shape.getAttribute('fill'), svgRoot)
+    if (fromFill) return fromFill
+    const fromStroke = resolveSvgPaintColor(shape.getAttribute('stroke'), svgRoot)
+    if (fromStroke) return fromStroke
+    if (typeof getComputedStyle !== 'undefined') {
+      const computed = getComputedStyle(shape as Element)
+      const fromComputedFill = resolveSvgPaintColor(computed.fill, svgRoot)
+      if (fromComputedFill) return fromComputedFill
+      const fromComputedStroke = normalizePaintToHex(computed.stroke)
+      if (fromComputedStroke) return fromComputedStroke
+    }
+  }
+
+  const labelEl = nodeGroup.querySelector('foreignObject div, foreignObject span, foreignObject p')
+  if (labelEl instanceof HTMLElement && typeof getComputedStyle !== 'undefined') {
+    const style = getComputedStyle(labelEl)
+    const fromBg =
+      normalizePaintToHex(style.backgroundColor) ?? normalizePaintToHex(style.borderTopColor)
+    if (fromBg) return fromBg
+  }
+
+  return '#6366f1'
+}
+
+export function applyFlowchartLinkPickColorVars(
+  nodeGroup: Element,
+  mode: 'hover' | 'picked' | 'disabled',
+): void {
+  if (!(nodeGroup instanceof HTMLElement || nodeGroup instanceof SVGElement)) return
+  if (mode === 'disabled') {
+    clearFlowchartLinkPickColorVars(nodeGroup)
+    return
+  }
+  const accent = resolveFlowchartNodeAccentColor(nodeGroup)
+  const stroke = darkenColor(accent, mode === 'picked' ? 0.18 : 0.10)
+  nodeGroup.style.setProperty('--link-pick-accent', stroke)
+  nodeGroup.style.setProperty('--link-pick-glow', alphaColor(accent, mode === 'picked' ? 0.9 : 0.78))
+  nodeGroup.style.setProperty('--link-pick-glow-soft', alphaColor(accent, mode === 'picked' ? 0.6 : 0.48))
+}
+
+export function clearFlowchartLinkPickColorVars(nodeGroup: Element | null): void {
+  if (!nodeGroup || !(nodeGroup instanceof HTMLElement || nodeGroup instanceof SVGElement)) return
+  nodeGroup.style.removeProperty('--link-pick-accent')
+  nodeGroup.style.removeProperty('--link-pick-glow')
+  nodeGroup.style.removeProperty('--link-pick-glow-soft')
 }

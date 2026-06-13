@@ -73,6 +73,22 @@ function buildFlowchartNodeExpr(nodeId: string, nodeType: 'step' | 'decision', l
   return `${nodeId}[${fmt}]`
 }
 
+function formatFlowchartEdge(fromId: string, to: string, edgeLabel?: string): string {
+  const label = edgeLabel?.trim()
+  if (label) return `${fromId} -->|${label}| ${to}`
+  return `${fromId} --> ${to}`
+}
+
+function edgeAlreadyExists(lines: string[], fromNodeId: string, toNodeId: string): boolean {
+  const from = escapeRegExp(fromNodeId)
+  const to = escapeRegExp(toNodeId)
+  return lines.some((line) => {
+    const trimmed = line.trim()
+    if (!trimmed || FLOWCHART_SKIP_LINE.test(trimmed)) return false
+    return new RegExp(`^\\b${from}\\s*-->(?:\\|[^|]*\\|)?\\s*\\b${to}\\b`).test(trimmed)
+  })
+}
+
 function isFlowchartDecisionNode(source: string, nodeId: string): boolean {
   const id = escapeRegExp(nodeId)
   return stripInjectedClassLines(source)
@@ -112,11 +128,12 @@ export function addFlowchartNodeDownstream(
   afterNodeId: string,
   nodeType: 'step' | 'decision',
   label?: string,
+  edgeLabel?: string,
 ): string {
   const lines = splitSourceLines(source)
   const outCount = countOutgoingEdges(lines, afterNodeId)
   if (isFlowchartDecisionNode(source, afterNodeId) && outCount > 0) {
-    return addFlowchartBranch(source, afterNodeId, nodeType, label)
+    return addFlowchartBranch(source, afterNodeId, nodeType, label, edgeLabel)
   }
 
   const indent = getFlowchartIndent(lines)
@@ -130,15 +147,15 @@ export function addFlowchartNodeDownstream(
     const id = escapeRegExp(afterNodeId)
     const match = trimmed.match(new RegExp(`^(\\s*\\b${id}\\s*-->\\s*)(.+)$`))
     if (match) {
-      const target = match[2].trim()
-      lines[outIdx] = `${match[1]}${nodeExpr}`
-      lines.splice(outIdx + 1, 0, `${indent}${newId} --> ${target}`)
+      const target = match[2].trim().replace(/^\|[^|]*\|\s*/, '')
+      lines[outIdx] = `${indent}${formatFlowchartEdge(afterNodeId, nodeExpr, edgeLabel)}`
+      lines.splice(outIdx + 1, 0, `${indent}${formatFlowchartEdge(newId, target)}`)
       return lines.join('\n')
     }
   }
 
   const insertAt = findFlowchartBodyInsertIndex(lines)
-  lines.splice(insertAt, 0, `${indent}${afterNodeId} --> ${nodeExpr}`)
+  lines.splice(insertAt, 0, `${indent}${formatFlowchartEdge(afterNodeId, nodeExpr, edgeLabel)}`)
   return lines.join('\n')
 }
 
@@ -148,6 +165,7 @@ export function addFlowchartBranch(
   fromNodeId: string,
   nodeType: 'step' | 'decision' = 'step',
   label?: string,
+  edgeLabel?: string,
 ): string {
   const lines = splitSourceLines(source)
   const indent = getFlowchartIndent(lines)
@@ -155,7 +173,23 @@ export function addFlowchartBranch(
   const defaultLabel = nodeType === 'decision' ? '新判断?' : '新分支'
   const nodeExpr = buildFlowchartNodeExpr(newId, nodeType, label ?? defaultLabel)
   const insertAt = findFlowchartBodyInsertIndex(lines)
-  lines.splice(insertAt, 0, `${indent}${fromNodeId} --> ${nodeExpr}`)
+  lines.splice(insertAt, 0, `${indent}${formatFlowchartEdge(fromNodeId, nodeExpr, edgeLabel)}`)
+  return lines.join('\n')
+}
+
+/** 将两个已有节点相连（可选边标签） */
+export function connectFlowchartNodes(
+  source: string,
+  fromNodeId: string,
+  toNodeId: string,
+  edgeLabel?: string,
+): string {
+  if (fromNodeId === toNodeId) return source
+  const lines = splitSourceLines(source)
+  if (edgeAlreadyExists(lines, fromNodeId, toNodeId)) return source
+  const indent = getFlowchartIndent(lines)
+  const insertAt = findFlowchartBodyInsertIndex(lines)
+  lines.splice(insertAt, 0, `${indent}${formatFlowchartEdge(fromNodeId, toNodeId, edgeLabel)}`)
   return lines.join('\n')
 }
 

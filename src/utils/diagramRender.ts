@@ -27,17 +27,17 @@ const MINDMAP_THEME_CSS = `
   .edgePath path, .edgePaths path { stroke-linecap: round; }
 `
 
-async function getMermaid(kind: DiagramKind, colorSchemeId: ColorSchemeId) {
+async function getMermaid(kind: DiagramKind, colorSchemeId: ColorSchemeId, htmlLabels = true) {
   const mermaid = (await import('mermaid')).default
 
-  const renderKey = `${kind}:${colorSchemeId}`
+  const renderKey = `${kind}:${colorSchemeId}:${htmlLabels ? 'html' : 'svg'}`
 
   if (lastRenderKey !== renderKey) {
     const theme = getDiagramColorTheme(colorSchemeId)
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: 'loose',
-      htmlLabels: true,
+      htmlLabels,
       theme: 'base',
       themeVariables: {
         ...theme.themeVariables,
@@ -52,7 +52,7 @@ async function getMermaid(kind: DiagramKind, colorSchemeId: ColorSchemeId) {
       },
       themeCSS: kind === 'mindmap' ? MINDMAP_THEME_CSS : FLOWCHART_THEME_CSS,
       flowchart: {
-        htmlLabels: true,
+        htmlLabels,
         curve: 'basis',
         padding: 20,
         nodeSpacing: 58,
@@ -81,12 +81,21 @@ function buildMindmapFallbackSource(source: string): string {
   return `mindmap\n  root((主题))\n    分支一\n    分支二`
 }
 
+export interface RenderMermaidOptions {
+  /** 预览默认 true；PNG 导出需 false，避免 foreignObject 污染 canvas */
+  htmlLabels?: boolean
+  attachEditMetadata?: boolean
+}
+
 export async function renderMermaidToSvg(
   source: string,
   kind: DiagramKind,
   colorSchemeId: ColorSchemeId,
   mindmapTemplate?: MindmapTemplate,
+  options: RenderMermaidOptions = {},
 ): Promise<string> {
+  const htmlLabels = options.htmlLabels ?? true
+  const attachEditMetadata = options.attachEditMetadata ?? true
   const trimmed = source.trim()
   if (!trimmed) throw new Error('Mermaid 源码为空')
 
@@ -97,14 +106,14 @@ export async function renderMermaidToSvg(
   const renderSource =
     kind === 'flowchart' ? injectFlowchartVividStyles(trimmed, colorSchemeId) : prepareMindmapSource(trimmed)
 
-  const mermaid = await getMermaid(kind, colorSchemeId)
+  const mermaid = await getMermaid(kind, colorSchemeId, htmlLabels)
   renderCounter += 1
   const id = `chartcraft-mermaid-${kind}-${colorSchemeId}-${renderCounter}`
 
   try {
     const result = await mermaid.render(id, renderSource)
     const enhanced = enhanceDiagramSvg(result.svg, kind, colorSchemeId, mindmapTemplate)
-    return attachDiagramEditMetadata(enhanced, source, kind)
+    return attachEditMetadata ? attachDiagramEditMetadata(enhanced, source, kind) : enhanced
   } catch (firstErr) {
     if (kind !== 'mindmap') {
       const message = firstErr instanceof Error ? firstErr.message : 'Mermaid 渲染失败'
@@ -115,7 +124,7 @@ export async function renderMermaidToSvg(
       const fallbackSource = buildMindmapFallbackSource(renderSource)
       const result = await mermaid.render(`${id}-fallback`, fallbackSource)
       const enhanced = enhanceDiagramSvg(result.svg, kind, colorSchemeId, mindmapTemplate)
-      return attachDiagramEditMetadata(enhanced, source, kind)
+      return attachEditMetadata ? attachDiagramEditMetadata(enhanced, source, kind) : enhanced
     } catch {
       const message = firstErr instanceof Error ? firstErr.message : 'Mermaid 渲染失败'
       throw new Error(message)
