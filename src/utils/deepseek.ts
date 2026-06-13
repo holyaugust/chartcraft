@@ -343,8 +343,37 @@ export interface DeepSeekTextOptions {
   maxTokens?: number
 }
 
-/** 通用 DeepSeek 文本生成（非 JSON 校对模式） */
-export async function requestDeepSeekPlainText(options: DeepSeekTextOptions): Promise<string> {
+export interface DeepSeekVisionOptions {
+  systemPrompt: string
+  userPrompt: string
+  imageDataUrl: string
+  temperature?: number
+  maxTokens?: number
+}
+
+export function getDeepSeekVisionModel(): string {
+  const configured = import.meta.env.VITE_DEEPSEEK_VISION_MODEL as string | undefined
+  return configured?.trim() || getDeepSeekModel()
+}
+
+/** 仅当显式开启且使用支持 image_url 的模型/端点时才走视觉 API */
+export function isDeepSeekVisionEnabled(): boolean {
+  const flag = import.meta.env.VITE_DEEPSEEK_VISION_ENABLED as string | undefined
+  return flag === 'true' || flag === '1'
+}
+
+export function isDeepSeekVisionUnsupportedError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err)
+  const lower = message.toLowerCase()
+  return (
+    lower.includes('image_url') ||
+    lower.includes('unknown variant') ||
+    lower.includes('multimodal') ||
+    lower.includes('vision')
+  )
+}
+
+async function postDeepSeekChat(body: Record<string, unknown>): Promise<string> {
   const apiUrl = getDeepSeekApiUrl()
   const useProxy = apiUrl.startsWith('/api/')
   const apiKey = (import.meta.env.VITE_DEEPSEEK_API_KEY as string | undefined)?.trim()
@@ -361,15 +390,7 @@ export async function requestDeepSeekPlainText(options: DeepSeekTextOptions): Pr
   const response = await fetch(apiUrl, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      model: getDeepSeekModel(),
-      messages: [
-        { role: 'system', content: options.systemPrompt },
-        { role: 'user', content: options.userPrompt },
-      ],
-      temperature: options.temperature ?? 0.5,
-      max_tokens: options.maxTokens ?? 8192,
-    }),
+    body: JSON.stringify(body),
   })
 
   let data: ChatCompletionResponse
@@ -390,6 +411,38 @@ export async function requestDeepSeekPlainText(options: DeepSeekTextOptions): Pr
   }
 
   return content.trim()
+}
+
+/** 通用 DeepSeek 文本生成（非 JSON 校对模式） */
+export async function requestDeepSeekPlainText(options: DeepSeekTextOptions): Promise<string> {
+  return postDeepSeekChat({
+    model: getDeepSeekModel(),
+    messages: [
+      { role: 'system', content: options.systemPrompt },
+      { role: 'user', content: options.userPrompt },
+    ],
+    temperature: options.temperature ?? 0.5,
+    max_tokens: options.maxTokens ?? 8192,
+  })
+}
+
+/** DeepSeek 多模态：图片 + 文本 */
+export async function requestDeepSeekVision(options: DeepSeekVisionOptions): Promise<string> {
+  return postDeepSeekChat({
+    model: getDeepSeekVisionModel(),
+    messages: [
+      { role: 'system', content: options.systemPrompt },
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: options.imageDataUrl } },
+          { type: 'text', text: options.userPrompt },
+        ],
+      },
+    ],
+    temperature: options.temperature ?? 0.3,
+    max_tokens: options.maxTokens ?? 4096,
+  })
 }
 
 async function checkChunkAtOffset(

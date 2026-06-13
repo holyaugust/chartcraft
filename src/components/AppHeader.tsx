@@ -1,6 +1,6 @@
-import { BarChart2, BarChart3, Brain, FileText, GitBranch } from 'lucide-react'
+import { BarChart2, BarChart3, Brain, FileText, GitBranch, LayoutGrid } from 'lucide-react'
 
-export type WorkspaceId = 'chart' | 'document' | 'flowchart' | 'mindmap'
+export type WorkspaceId = 'chart' | 'document' | 'flowchart' | 'mindmap' | 'smartgraphic'
 
 interface AppHeaderProps {
   workspace: WorkspaceId
@@ -18,7 +18,7 @@ export default function AppHeader({ workspace, onWorkspaceChange, savedLabel }: 
           </div>
           <div>
             <h1>ChartCraft</h1>
-            <p>数据 · 文档 · 流程图 · 思维导图</p>
+            <p>数据 · 文档 · 流程图 · 思维导图 · 智能图形</p>
           </div>
         </div>
 
@@ -62,6 +62,16 @@ export default function AppHeader({ workspace, onWorkspaceChange, savedLabel }: 
             onClick={() => onWorkspaceChange('mindmap')}
           >
             <Brain size={22} strokeWidth={2} />
+          </button>
+          <button
+            type="button"
+            className={`workspace-nav-btn${workspace === 'smartgraphic' ? ' active' : ''}`}
+            title="智能图形"
+            aria-label="智能图形"
+            aria-current={workspace === 'smartgraphic' ? 'page' : undefined}
+            onClick={() => onWorkspaceChange('smartgraphic')}
+          >
+            <LayoutGrid size={22} strokeWidth={2} />
           </button>
         </nav>
       </div>

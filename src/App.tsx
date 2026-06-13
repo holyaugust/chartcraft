@@ -5,6 +5,7 @@ import './App.css'
 
 const DocumentWorkspace = lazy(() => import('./components/DocumentWorkspace'))
 const DiagramWorkspace = lazy(() => import('./components/DiagramWorkspace'))
+const SmartGraphicWorkspace = lazy(() => import('./components/SmartGraphicWorkspace'))
 
 function WorkspaceFallback() {
   return (
@@ -24,6 +25,8 @@ function workspaceFooter(workspace: WorkspaceId): string {
       return 'AI 流程图 · Mermaid · SVG/PNG 导出'
     case 'mindmap':
       return 'AI 思维导图 · Mermaid · SVG/PNG 导出'
+    case 'smartgraphic':
+      return '智能图形 · HTML 排版 · 截图导出 PNG'
   }
 }
 
@@ -48,6 +51,8 @@ export default function App() {
           <ChartWorkspace onSavedLabelChange={handleSavedLabelChange} />
         ) : workspace === 'document' ? (
           <DocumentWorkspace onSavedLabelChange={handleSavedLabelChange} />
+        ) : workspace === 'smartgraphic' ? (
+          <SmartGraphicWorkspace onSavedLabelChange={handleSavedLabelChange} />
         ) : (
           <DiagramWorkspace
             key={workspace}
