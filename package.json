@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate:ppt-covers": "node scripts/generate-ppt-cover-templates.mjs",
+    "generate:ppt-full": "node scripts/generate-ppt-full-templates.mjs"
   },
   "dependencies": {
     "docx-preview": "^0.3.7",

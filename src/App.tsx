@@ -6,6 +6,7 @@ import './App.css'
 const DocumentWorkspace = lazy(() => import('./components/DocumentWorkspace'))
 const DiagramWorkspace = lazy(() => import('./components/DiagramWorkspace'))
 const SmartGraphicWorkspace = lazy(() => import('./components/SmartGraphicWorkspace'))
+const PptBeautifyWorkspace = lazy(() => import('./components/PptBeautifyWorkspace'))
 
 function WorkspaceFallback() {
   return (
@@ -27,6 +28,8 @@ function workspaceFooter(workspace: WorkspaceId): string {
       return 'AI 思维导图 · Mermaid · SVG/PNG 导出'
     case 'smartgraphic':
       return '智能图形 · HTML 排版 · 截图导出 PNG'
+    case 'pptbeautify':
+      return 'PPT · 文档生成大纲 · 封面/全文美化'
   }
 }
 
@@ -53,6 +56,8 @@ export default function App() {
           <DocumentWorkspace onSavedLabelChange={handleSavedLabelChange} />
         ) : workspace === 'smartgraphic' ? (
           <SmartGraphicWorkspace onSavedLabelChange={handleSavedLabelChange} />
+        ) : workspace === 'pptbeautify' ? (
+          <PptBeautifyWorkspace onSavedLabelChange={handleSavedLabelChange} />
         ) : (
           <DiagramWorkspace
             key={workspace}

@@ -38,7 +38,25 @@ function classifyTemplateSlide(
   totalSlides: number,
 ): PresentationSlideLayout {
   const placeholders = summary.placeholderTypes
-  const joined = summary.texts.join(' ').toLowerCase()
+  const joined = summary.texts.join(' ')
+
+  if (joined.includes('CC_CLOSING')) {
+    return 'closing'
+  }
+
+  if (joined.includes('CC_SECTION')) {
+    return 'section'
+  }
+
+  if (joined.includes('CC_COVER')) {
+    return 'title'
+  }
+
+  if (joined.includes('CC_BULLET') || joined.includes('CC_TITLE') || joined.includes('KEY POINTS')) {
+    return 'content'
+  }
+
+  const joinedLower = joined.toLowerCase()
 
   if (
     placeholders.some((ph) => ph === 'ctrTitle' || ph === 'title') &&
@@ -53,7 +71,7 @@ function classifyTemplateSlide(
 
   if (
     index === totalSlides - 1 &&
-    (joined.includes('谢谢') || joined.includes('thank') || joined.includes('聆听') || joined.includes('结束'))
+    (joinedLower.includes('谢谢') || joinedLower.includes('thank') || joinedLower.includes('聆听') || joinedLower.includes('结束'))
   ) {
     return 'closing'
   }
