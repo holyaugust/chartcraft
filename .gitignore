@@ -25,3 +25,7 @@ dist-ssr
 *.sw?
 
 .vercel
+services/ppt-master-api/data/
+services/ppt-master-api/.env
+services/ppt-master-api/**/__pycache__/
+vendor/

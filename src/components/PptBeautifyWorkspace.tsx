@@ -6,6 +6,8 @@ import PptBeautifyCoverPreview from './PptBeautifyCoverPreview'
 
 import PptBeautifyOutlinePanel from './PptBeautifyOutlinePanel'
 
+import PptMasterGeneratePanel from './PptMasterGeneratePanel'
+
 import PptBeautifyFullPreview from './PptBeautifyFullPreview'
 
 import PptBeautifySlideList from './PptBeautifySlideList'
@@ -27,6 +29,11 @@ import {
   type FullBeautifyExportMode,
 
 } from '../types/pptBeautify'
+
+import {
+  PPT_OUTLINE_GENERATE_MODE_LABELS,
+  type PptOutlineGenerateMode,
+} from '../types/pptMaster'
 
 import type { PresentationOutline, PresentationSlideLayout } from '../types/presentation'
 
@@ -101,6 +108,8 @@ function coverFromOutline(outline: PresentationOutline): PptCoverContent {
 export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautifyWorkspaceProps) {
 
   const [phase, setPhase] = useState<PptBeautifyPhase>(1)
+
+  const [generateMode, setGenerateMode] = useState<PptOutlineGenerateMode>('outline')
 
   const [content, setContent] = useState<PptCoverContent>(() => {
 
@@ -249,6 +258,38 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
       setFullSource(imported)
 
       setFullSourceFromOutline(true)
+
+      setLayoutOverrides({})
+
+      setActiveFullSlideIndex(0)
+
+      onSavedLabelChange(
+
+        `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}`,
+
+      )
+
+    },
+
+    [onSavedLabelChange],
+
+  )
+
+
+
+  const handlePptxReady = useCallback(
+
+    (imported: ImportedPptx) => {
+
+      const cover = extractCoverContentFromImportedPptx(imported)
+
+      setContent(cover)
+
+      setFullSource(imported)
+
+      setFullSourceFromOutline(false)
+
+      setOutlineSource(null)
 
       setLayoutOverrides({})
 
@@ -738,17 +779,69 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
 
         {phase === 1 ? (
 
-          <PptBeautifyOutlinePanel
+          <>
 
-            busy={busy}
+            <div className="ppt-beautify-generate-mode-tabs" role="tablist" aria-label="生成模式">
 
-            onBusyChange={setBusy}
+              {(Object.keys(PPT_OUTLINE_GENERATE_MODE_LABELS) as PptOutlineGenerateMode[]).map((mode) => (
 
-            onStatus={setStatus}
+                <button
 
-            onOutlineReady={handleOutlineReady}
+                  key={mode}
 
-          />
+                  type="button"
+
+                  role="tab"
+
+                  aria-selected={generateMode === mode}
+
+                  className={`ppt-beautify-generate-mode-tab${generateMode === mode ? ' active' : ''}`}
+
+                  disabled={busy}
+
+                  onClick={() => setGenerateMode(mode)}
+
+                >
+
+                  {PPT_OUTLINE_GENERATE_MODE_LABELS[mode]}
+
+                </button>
+
+              ))}
+
+            </div>
+
+            {generateMode === 'outline' ? (
+
+              <PptBeautifyOutlinePanel
+
+                busy={busy}
+
+                onBusyChange={setBusy}
+
+                onStatus={setStatus}
+
+                onOutlineReady={handleOutlineReady}
+
+              />
+
+            ) : (
+
+              <PptMasterGeneratePanel
+
+                busy={busy}
+
+                onBusyChange={setBusy}
+
+                onStatus={setStatus}
+
+                onPptxReady={handlePptxReady}
+
+              />
+
+            )}
+
+          </>
 
         ) : null}
 

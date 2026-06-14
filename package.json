@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:ppt-api": "python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8787 --app-dir services/ppt-master-api",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",

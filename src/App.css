@@ -6527,6 +6527,91 @@
   color: #166534;
 }
 
+.ppt-beautify-generate-mode-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 16px 12px;
+}
+
+.ppt-beautify-generate-mode-tab {
+  padding: 8px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ppt-beautify-generate-mode-tab.active {
+  border-color: #0f766e;
+  background: #ecfdf5;
+  color: #0f766e;
+  font-weight: 600;
+}
+
+.ppt-beautify-sidecar-status {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.ppt-beautify-sidecar-status .ok {
+  color: #15803d;
+}
+
+.ppt-beautify-sidecar-status .bad {
+  color: #b45309;
+}
+
+.ppt-beautify-sidecar-warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0;
+  font-size: 13px;
+  color: #b45309;
+}
+
+.ppt-beautify-master-progress {
+  padding: 20px;
+}
+
+.ppt-beautify-master-progress-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.ppt-beautify-master-progress-bar > div {
+  height: 100%;
+  background: linear-gradient(90deg, #0f766e, #14b8a6);
+  transition: width 0.3s ease;
+}
+
+.ppt-beautify-master-log {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: auto;
+  max-height: 180px;
+}
+
+.ppt-beautify-master-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+}
+
 .ppt-beautify-full-preview-header {
   margin-bottom: 12px;
 }

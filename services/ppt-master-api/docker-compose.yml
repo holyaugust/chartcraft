@@ -1,0 +1,15 @@
+services:
+  ppt-master-api:
+    build: .
+    ports:
+      - "8787:8787"
+    env_file:
+      - .env
+    environment:
+      PPT_MASTER_HOME: /opt/ppt-master
+      PPT_MASTER_DATA_DIR: /data
+    volumes:
+      - ppt-master-data:/data
+
+volumes:
+  ppt-master-data:

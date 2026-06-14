@@ -27,6 +27,11 @@ export default defineConfig(({ mode }) => {
             })
           },
         },
+        '/api/ppt-master': {
+          target: env.VITE_PPT_MASTER_API_PROXY ?? 'http://127.0.0.1:8787',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/ppt-master/, ''),
+        },
       },
     },
   }
