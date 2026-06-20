@@ -50,6 +50,23 @@ def _schedule_job(job_id: str) -> None:
 set_runner(_schedule_job)
 
 
+@app.get("/")
+def root() -> dict[str, object]:
+    return {
+        "service": "ChartCraft PPT Master Sidecar",
+        "version": "0.2.0",
+        "status": "running",
+        "endpoints": {
+            "health": "/health",
+            "styles": "/styles",
+            "create_job": "POST /jobs",
+            "job_status": "/jobs/{job_id}",
+            "download": "/jobs/{job_id}/download",
+        },
+        "note": "ChartCraft 前端通过 /api/ppt-master 代理访问，浏览器自检请打开 /health",
+    }
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     home = settings.ppt_master_home.strip()

@@ -52,7 +52,6 @@ async def create_design_spec(*, markdown: str, prompt: str, style: str, deck_tit
             {"role": "user", "content": user},
         ],
         temperature=0.35,
-        use_visual_endpoint=True,
     )
     spec = _extract_json(content)
     spec.setdefault("palette", {})

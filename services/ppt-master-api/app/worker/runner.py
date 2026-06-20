@@ -9,7 +9,7 @@ from app.models import JobProgress, JobStatus
 from app.store import store
 from app.worker.design_spec import create_design_spec
 from app.worker.llm import plan_slides_fallback, plan_slides_from_markdown
-from app.worker.llm_client import visual_model
+from app.worker.llm_client import executor_model
 from app.worker.llm_svg import generate_all_slide_svgs
 from app.worker.source_convert import convert_source, export_with_ppt_master
 from app.worker.svg_builder import build_slide_svg
@@ -83,7 +83,7 @@ def run_job(job_id: str) -> None:
         store.update(
             job_id,
             progress=JobProgress(step="design", percent=32, message="AI 制定视觉设计规范…"),
-            log=f"Strategist 设计规范 · 模型 {visual_model()}",
+            log=f"Strategist 设计规范 · 模型 {settings.ppt_master_llm_model}",
         )
         try:
             design_spec = asyncio.run(
@@ -162,5 +162,5 @@ def run_job(job_id: str) -> None:
         progress=JobProgress(step="done", percent=100, message="生成完成"),
         output_file=str(output_path),
         slide_count=len(slides),
-        log=f"完成：{output_path.name}（{len(slides)} 页 · {render_mode} · {visual_model()}）",
+        log=f"完成：{output_path.name}（{len(slides)} 页 · {render_mode} · Executor {executor_model()}）",
     )

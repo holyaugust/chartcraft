@@ -13,7 +13,10 @@ class Settings(BaseSettings):
     ppt_master_llm_timeout: float = 180.0
     # ai_svg = LLM 逐页生成 SVG（高视觉）；template = 内置模板（快速）
     ppt_master_render_mode: str = "ai_svg"
-    # 视觉生成可用更强模型（留空则沿用 ppt_master_llm_model）
+    # Executor 逐页 SVG（留空则沿用 ppt_master_llm_*；兼容旧名 VISUAL_*）
+    ppt_master_executor_api_url: str = ""
+    ppt_master_executor_api_key: str = ""
+    ppt_master_executor_model: str = ""
     ppt_master_visual_api_url: str = ""
     ppt_master_visual_api_key: str = ""
     ppt_master_visual_model: str = ""

@@ -51,18 +51,34 @@ npm run dev
 | **ai_svg**（默认） | `PPT_MASTER_RENDER_MODE=ai_svg` | Strategist 设计规范 + LLM **逐页**生成 SVG，接近官方 PPT Master 视觉 |
 | template | `PPT_MASTER_RENDER_MODE=template` | 内置 Python 模板 SVG，速度快、效果较平 |
 
-**推荐配置（高视觉）：**
+**推荐配置（性价比 · DeepSeek 规划 + 阿里百炼 Executor）：**
 
-- **规划**：DeepSeek / 任意便宜模型（结构、页型）
-- **视觉**：Claude Sonnet / Opus 或 GPT-4o（通过 OpenAI 兼容网关）
+```env
+# 规划 + Strategist
+PPT_MASTER_LLM_API_URL=https://api.deepseek.com/v1/chat/completions
+PPT_MASTER_LLM_API_KEY=sk-你的DeepSeekKey
+PPT_MASTER_LLM_MODEL=deepseek-chat
+
+# Executor 逐页 SVG（阿里百炼官方 OpenAI 兼容）
+PPT_MASTER_EXECUTOR_API_URL=https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
+PPT_MASTER_EXECUTOR_API_KEY=sk-你的百炼Key
+PPT_MASTER_EXECUTOR_MODEL=qwen-max
+PPT_MASTER_RENDER_MODE=ai_svg
+```
+
+百炼 API Key：[控制台 → API-KEY 管理](https://help.aliyun.com/zh/model-studio/get-api-key)
+
+**其它网关（七牛 / OpenRouter 等）：**
 
 ```env
 PPT_MASTER_LLM_MODEL=deepseek-chat
 PPT_MASTER_RENDER_MODE=ai_svg
-PPT_MASTER_VISUAL_API_URL=https://your-gateway/v1/chat/completions
-PPT_MASTER_VISUAL_API_KEY=sk-...
-PPT_MASTER_VISUAL_MODEL=claude-sonnet-4-20250514
+PPT_MASTER_EXECUTOR_API_URL=https://your-gateway/v1/chat/completions
+PPT_MASTER_EXECUTOR_API_KEY=sk-...
+PPT_MASTER_EXECUTOR_MODEL=claude-sonnet-4-6
 ```
+
+旧变量 `PPT_MASTER_VISUAL_*` 仍兼容，等同于 `EXECUTOR_*`。
 
 10 页 `ai_svg` 约 **5–15 分钟**（视视觉模型速度）；`template` 约 1–3 分钟。
 
@@ -81,9 +97,9 @@ PPT_MASTER_VISUAL_MODEL=claude-sonnet-4-20250514
 ```
 上传 PDF/DOCX/MD/TXT
   → 解析为 Markdown
-  → LLM 规划页型结构
-  → Strategist 设计规范（palette / motif）
-  → LLM 逐页生成 SVG（1280×720）
+  → LLM 规划页型结构（DeepSeek）
+  → Strategist 设计规范（同规划模型）
+  → Executor 逐页生成 SVG（可单独配置 qwen-max 等）
   → PPT Master finalize_svg + svg_to_pptx
   → 可编辑 .pptx
 ```

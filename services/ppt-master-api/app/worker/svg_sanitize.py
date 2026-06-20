@@ -29,6 +29,38 @@ def _local_tag(tag: str) -> str:
     return str(tag)
 
 
+def _promote_orphan_tspan_to_text(tspan: ET.Element) -> ET.Element:
+    text = ET.Element("text")
+    for key, value in tspan.attrib.items():
+        text.set(key, value)
+    text.text = tspan.text
+    text.tail = tspan.tail
+    for child in list(tspan):
+        text.append(child)
+    return text
+
+
+def _fix_orphan_tspans(root: ET.Element) -> None:
+    """PPT Master only allows <tspan> inside <text>, never as top-level shapes."""
+    changed = True
+    while changed:
+        changed = False
+        for parent in root.iter():
+            if _local_tag(parent.tag) == "text":
+                continue
+            for child in list(parent):
+                if _local_tag(child.tag) != "tspan":
+                    continue
+                promoted = _promote_orphan_tspan_to_text(child)
+                index = list(parent).index(child)
+                parent.remove(child)
+                parent.insert(index, promoted)
+                changed = True
+                break
+            if changed:
+                break
+
+
 def normalize_svg_tree(root: ET.Element) -> None:
     """Align LLM SVG with PPT Master native DrawingML constraints."""
     for elem in list(root.iter()):
@@ -44,9 +76,14 @@ def normalize_svg_tree(root: ET.Element) -> None:
             if _local_tag(child.tag) == "filter":
                 defs.remove(child)
 
+    _fix_orphan_tspans(root)
+
 
 def normalize_svg_file(path: Path) -> None:
-    tree = ET.parse(path)
+    try:
+        tree = ET.parse(path)
+    except ET.ParseError:
+        return
     normalize_svg_tree(tree.getroot())
     tree.write(path, encoding="unicode", xml_declaration=False)
 
@@ -91,7 +128,10 @@ def sanitize_svg(raw: str) -> str:
             flags=re.IGNORECASE,
         )
 
-    root = ET.fromstring(svg)
+    try:
+        root = ET.fromstring(svg)
+    except ET.ParseError as exc:
+        raise ValueError(f"SVG XML 无效：{exc}") from exc
     normalize_svg_tree(root)
     svg = ET.tostring(root, encoding="unicode")
 

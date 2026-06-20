@@ -176,7 +176,7 @@ export default function PptMasterGeneratePanel({
                 渲染：{health.render_mode === 'ai_svg' ? 'AI 逐页 SVG（高视觉）' : '模板（快速）'}
               </li>
               <li className="ok">
-                规划模型：{health.plan_model} · 视觉模型：{health.visual_model}
+                规划模型：{health.plan_model} · Executor：{health.visual_model}
               </li>
             </ul>
           ) : (
