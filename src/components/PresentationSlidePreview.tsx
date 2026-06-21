@@ -13,11 +13,11 @@ interface PresentationSlidePreviewProps {
 function layoutLabel(layout: PresentationSlide['layout']): string {
   switch (layout) {
     case 'title':
-      return '封面'
+      return '标题页'
     case 'section':
       return '章节'
     case 'content':
-      return '正文'
+      return '内容页'
     case 'closing':
       return '结束'
     case 'chart':

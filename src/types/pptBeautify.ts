@@ -63,13 +63,28 @@ export const FULL_BEAUTIFY_EXPORT_MODE_LABELS: Record<FullBeautifyExportMode, st
   visual: '高保真',
 }
 
-/** PPT 美化主视图（替代原多阶段 Tab） */
-export type PptBeautifyView = 'outline' | 'template-export' | 'ai-design'
+/** 模板导出子阶段 */
+export type TemplateExportPhase = 'outline' | 'beautify'
+
+export const TEMPLATE_EXPORT_PHASE_LABELS: Record<TemplateExportPhase, string> = {
+  outline: '生成大纲',
+  beautify: '模板美化',
+}
+
+/** PPT 美化主视图 */
+export type PptBeautifyView = 'ai-design' | 'template-export'
 
 export const PPT_BEAUTIFY_VIEW_LABELS: Record<PptBeautifyView, string> = {
-  outline: '生成大纲',
-  'template-export': '选模板导出',
-  'ai-design': 'AI 设计稿',
+  'ai-design': 'AI一键设计',
+  'template-export': '模板导出',
+}
+
+/** 材料页上传结果（内存态，刷新后需重新上传） */
+export interface PptMaterialSourcePayload {
+  file: File
+  text: string
+  name: string
+  prompt: string
 }
 
 export const PPT_BEAUTIFY_PHASE_LABELS: Record<PptBeautifyPhase, string> = {

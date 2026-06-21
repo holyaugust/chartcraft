@@ -80,11 +80,9 @@ export interface FullBeautifyAnalysis {
 
 export const PPT_LAYOUT_LABELS: Record<PresentationSlideLayout, string> = {
 
-  title: '封面',
-
+  title: '标题页',
   section: '章节',
-
-  content: '正文',
+  content: '内容页',
 
   closing: '致谢',
 
