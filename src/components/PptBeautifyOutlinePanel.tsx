@@ -37,6 +37,14 @@ interface UploadedDoc {
   name: string
   text: string
   kind: PptSourceDocument['kind']
+  file: File
+}
+
+export interface PptOutlineSourcePayload {
+  file: File
+  text: string
+  name: string
+  prompt: string
 }
 
 interface PptBeautifyOutlinePanelProps {
@@ -44,6 +52,7 @@ interface PptBeautifyOutlinePanelProps {
   onBusyChange: (busy: boolean) => void
   onStatus: (message: string, isError?: boolean) => void
   onOutlineReady: (outline: PresentationOutline) => void
+  onSourceChange?: (source: PptOutlineSourcePayload | null) => void
 }
 
 export default function PptBeautifyOutlinePanel({
@@ -51,6 +60,7 @@ export default function PptBeautifyOutlinePanel({
   onBusyChange,
   onStatus,
   onOutlineReady,
+  onSourceChange,
 }: PptBeautifyOutlinePanelProps) {
   const initial = loadPresentationDraft()
 
@@ -102,6 +112,22 @@ export default function PptBeautifyOutlinePanel({
       onOutlineReady(next)
     },
     [onOutlineReady, persistTemplateId, prompt],
+  )
+
+  const persistSource = useCallback(
+    (doc: UploadedDoc | null, activePrompt = prompt) => {
+      if (!doc) {
+        onSourceChange?.(null)
+        return
+      }
+      onSourceChange?.({
+        file: doc.file,
+        text: doc.text,
+        name: doc.name,
+        prompt: activePrompt,
+      })
+    },
+    [onSourceChange, prompt],
   )
 
   const generateFromDoc = useCallback(
@@ -160,8 +186,9 @@ export default function PptBeautifyOutlinePanel({
       onBusyChange(true)
       try {
         const doc = await readPptSourceDocument(file)
-        const next: UploadedDoc = { name: doc.name, text: doc.text, kind: doc.kind }
+        const next: UploadedDoc = { name: doc.name, text: doc.text, kind: doc.kind, file: doc.file }
         setUploadedDoc(next)
+        persistSource(next)
         if (doc.kind === 'pdf') {
           onStatus(`已上传 PDF「${doc.name}」，标准大纲不支持，请用「智能设计稿」`, true)
           return
@@ -178,7 +205,7 @@ export default function PptBeautifyOutlinePanel({
         onBusyChange(false)
       }
     },
-    [generateFromDoc, onBusyChange, onStatus],
+    [generateFromDoc, onBusyChange, onStatus, persistSource],
   )
 
   useEffect(() => {
@@ -251,6 +278,7 @@ export default function PptBeautifyOutlinePanel({
                   onClick={(event) => {
                     event.stopPropagation()
                     setUploadedDoc(null)
+                    persistSource(null)
                     setOutlineJson('')
                     setPreviewText('')
                     setActiveSlideIndex(0)
@@ -329,7 +357,10 @@ export default function PptBeautifyOutlinePanel({
             rows={4}
             disabled={busy}
             placeholder={DEFAULT_PROJECT_PROMPT}
-            onChange={(e) => setPrompt(e.target.value)}
+            onChange={(e) => {
+              setPrompt(e.target.value)
+              if (uploadedDoc) persistSource(uploadedDoc, e.target.value)
+            }}
           />
           <button
             type="button"
@@ -390,11 +421,6 @@ export default function PptBeautifyOutlinePanel({
           />
         )}
 
-        {outline ? (
-          <p className="ppt-beautify-compare-hint">
-            大纲生成后可进入「封面美化」「全文美化」阶段；封面字段与全文页内容将自动同步。
-          </p>
-        ) : null}
       </div>
     </div>
   )

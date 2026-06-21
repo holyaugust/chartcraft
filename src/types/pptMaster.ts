@@ -43,6 +43,11 @@ export const PPT_MASTER_STYLE_LABELS: Record<PptMasterStyle, string> = {
 export type PptOutlineGenerateMode = 'outline' | 'ppt-master'
 
 export const PPT_OUTLINE_GENERATE_MODE_LABELS: Record<PptOutlineGenerateMode, string> = {
-  outline: '标准大纲',
-  'ppt-master': '智能设计稿',
+  outline: '文本大纲',
+  'ppt-master': 'AI 设计稿',
+}
+
+export const PPT_OUTLINE_GENERATE_MODE_HINTS: Record<PptOutlineGenerateMode, string> = {
+  outline: '快速规划结构 → 阶段 2–4 模板美化',
+  'ppt-master': 'Sidecar 逐页 AI 成稿 → 生成后直接下载',
 }

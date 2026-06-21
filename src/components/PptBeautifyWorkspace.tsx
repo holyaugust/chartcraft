@@ -1,10 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 
-import { AlertCircle, ChevronDown, Download, FileUp, Loader2, Palette, Sparkles } from 'lucide-react'
+import { AlertCircle, Download, FileUp, Loader2, Palette, Sparkles } from 'lucide-react'
 
-import PptBeautifyCoverPreview from './PptBeautifyCoverPreview'
-
-import PptBeautifyOutlinePanel from './PptBeautifyOutlinePanel'
+import PptBeautifyOutlinePanel, { type PptOutlineSourcePayload } from './PptBeautifyOutlinePanel'
 
 import PptMasterGeneratePanel from './PptMasterGeneratePanel'
 
@@ -16,36 +14,16 @@ import { PPT_COVER_THEMES, getPptCoverTheme } from '../data/pptCoverThemes'
 
 import {
 
-  DEFAULT_PPT_COVER_CONTENT,
-
-  PPT_BEAUTIFY_PHASE_LABELS,
-
-  type PptBeautifyPhase,
-
-  type PptCoverContent,
-
   FULL_BEAUTIFY_EXPORT_MODE_LABELS,
+  PPT_BEAUTIFY_VIEW_LABELS,
 
   type FullBeautifyExportMode,
 
+  type PptBeautifyView,
+
 } from '../types/pptBeautify'
 
-import {
-  PPT_OUTLINE_GENERATE_MODE_LABELS,
-  type PptOutlineGenerateMode,
-} from '../types/pptMaster'
-
 import type { PresentationOutline, PresentationSlideLayout } from '../types/presentation'
-
-import {
-
-  buildCoverFileName,
-
-  exportBeautifiedCoverPptx,
-
-  extractCoverContentFromImportedPptx,
-
-} from '../utils/pptCoverBeautify'
 
 import {
 
@@ -71,7 +49,9 @@ import { importPptxFile, type ImportedPptx } from '../utils/pptxImport'
 
 import { loadPresentationDraft } from '../utils/presentationStorage'
 
-import { saveFile, beginSaveFile } from '../utils/saveFile'
+import { resolveAiDesignSource } from '../utils/pptAiDesignSource'
+
+import { beginSaveFile } from '../utils/saveFile'
 
 import { loadEnterpriseTemplateMeta, registerEnterpriseTemplate } from '../utils/pptBeautifyEnterprise'
 
@@ -85,67 +65,17 @@ interface PptBeautifyWorkspaceProps {
 
 
 
-function coverFromOutline(outline: PresentationOutline): PptCoverContent {
-
-  const titleSlide = outline.slides.find((slide) => slide.layout === 'title')
-
-  return {
-
-    title: outline.title || '演示文稿',
-
-    subtitle: outline.subtitle || titleSlide?.title || '',
-
-    author: titleSlide?.bullets?.[0]?.trim() || DEFAULT_PPT_COVER_CONTENT.author,
-
-    date: titleSlide?.bullets?.[1]?.trim() || DEFAULT_PPT_COVER_CONTENT.date,
-
-  }
-
-}
-
-
-
 export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautifyWorkspaceProps) {
 
-  const [phase, setPhase] = useState<PptBeautifyPhase>(1)
+  const [pptView, setPptView] = useState<PptBeautifyView>('outline')
 
-  const [generateMode, setGenerateMode] = useState<PptOutlineGenerateMode>('outline')
-
-  const [content, setContent] = useState<PptCoverContent>(() => {
-
-    const draft = loadPresentationDraft()
-
-    if (draft.outlineJson.trim()) {
-
-      try {
-
-        return coverFromOutline(JSON.parse(draft.outlineJson) as PresentationOutline)
-
-      } catch {
-
-        /* use default */
-
-      }
-
-    }
-
-    return { ...DEFAULT_PPT_COVER_CONTENT }
-
-  })
-
-  const [themeId, setThemeId] = useState(PPT_COVER_THEMES[0].id)
+  const [sharedSource, setSharedSource] = useState<PptOutlineSourcePayload | null>(null)
 
   const [busy, setBusy] = useState(false)
 
   const [statusMessage, setStatusMessage] = useState('')
 
   const [statusIsError, setStatusIsError] = useState(false)
-
-  const fileRef = useRef<HTMLInputElement>(null)
-
-
-
-  const theme = useMemo(() => getPptCoverTheme(themeId) ?? PPT_COVER_THEMES[0], [themeId])
 
   const [enterpriseCount, setEnterpriseCount] = useState(() => loadEnterpriseTemplateMeta().length)
 
@@ -207,33 +137,9 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
 
   const [layoutOverrides, setLayoutOverrides] = useState<Partial<Record<number, PresentationSlideLayout>>>({})
 
-  const [fullExportMenuOpen, setFullExportMenuOpen] = useState(false)
-
   const [activeFullSlideIndex, setActiveFullSlideIndex] = useState(0)
 
   const fullFileRef = useRef<HTMLInputElement>(null)
-
-  const fullExportMenuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!fullExportMenuOpen) return
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!fullExportMenuRef.current?.contains(event.target as Node)) {
-        setFullExportMenuOpen(false)
-      }
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setFullExportMenuOpen(false)
-    }
-    document.addEventListener('mousedown', handlePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [fullExportMenuOpen])
-
-
 
   const setStatus = useCallback((message: string, isError = false) => {
 
@@ -250,8 +156,6 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
     (outline: PresentationOutline) => {
 
       setOutlineSource(outline)
-
-      setContent(coverFromOutline(outline))
 
       const imported = outlineToImportedPptx(outline)
 
@@ -277,23 +181,9 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
 
 
 
-  const handlePptxReady = useCallback(
+  const handleDesignDraftComplete = useCallback(
 
-    (imported: ImportedPptx) => {
-
-      const cover = extractCoverContentFromImportedPptx(imported)
-
-      setContent(cover)
-
-      setFullSource(imported)
-
-      setFullSourceFromOutline(false)
-
-      setOutlineSource(null)
-
-      setLayoutOverrides({})
-
-      setActiveFullSlideIndex(0)
+    (_slideCount?: number) => {
 
       onSavedLabelChange(
 
@@ -307,99 +197,7 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
 
   )
 
-
-
-  const update = (patch: Partial<PptCoverContent>) => {
-
-    setContent((prev) => ({ ...prev, ...patch }))
-
-    onSavedLabelChange(
-
-      `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}`,
-
-    )
-
-  }
-
-
-
-  const handleImportPptx = useCallback(async (file: File) => {
-
-    setBusy(true)
-
-    setStatusMessage('')
-
-    setStatusIsError(false)
-
-    try {
-
-      const imported = await importPptxFile(file)
-
-      const cover = extractCoverContentFromImportedPptx(imported)
-
-      setContent(cover)
-
-      setStatusMessage(`已从「${file.name}」第一页提取封面文字，请选择主题后导出`)
-
-    } catch (err) {
-
-      setStatusIsError(true)
-
-      setStatusMessage(err instanceof Error ? err.message : 'PPT 导入失败')
-
-    } finally {
-
-      setBusy(false)
-
-    }
-
-  }, [])
-
-
-
-  const handleExport = useCallback(async () => {
-
-    if (busy) return
-
-    setBusy(true)
-
-    setStatusMessage('')
-
-    setStatusIsError(false)
-
-    try {
-
-      const blob = await exportBeautifiedCoverPptx(content, themeId)
-
-      const saved = await saveFile(blob, {
-
-        suggestedName: buildCoverFileName(content.title, themeId),
-
-        description: 'PowerPoint 演示文稿',
-
-        accept: {
-
-          'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
-
-        },
-
-      })
-
-      setStatusMessage(saved ? '封面美化 PPT 已下载，请用 PowerPoint / WPS 打开查看' : '已取消下载')
-
-    } catch (err) {
-
-      setStatusIsError(true)
-
-      setStatusMessage(err instanceof Error ? err.message : '导出失败')
-
-    } finally {
-
-      setBusy(false)
-
-    }
-
-  }, [busy, content, themeId])
+  const goOutlineView = useCallback(() => setPptView('outline'), [])
 
 
 
@@ -426,6 +224,16 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
     [fullThemeId],
 
   )
+
+  const aiDesignSource = useMemo(
+
+    () => resolveAiDesignSource(sharedSource, outlineSource),
+
+    [sharedSource, outlineSource],
+
+  )
+
+  const aiDesignPrompt = sharedSource?.prompt || loadPresentationDraft().prompt || undefined
 
 
 
@@ -480,8 +288,6 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
     if (mode === 'editable' && !fullTemplateSource) return
 
     if (mode === 'visual' && fullTemplateKind === 'enterprise') return
-
-    setFullExportMenuOpen(false)
 
     const themeKey =
 
@@ -619,7 +425,13 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
 
               <h2>PPT 美化</h2>
 
-              <p>分阶段流程 · 当前：{PPT_BEAUTIFY_PHASE_LABELS[phase]}</p>
+              <p>
+                {pptView === 'outline'
+                  ? '上传材料 · 生成并预览 PPT 大纲'
+                  : pptView === 'template-export'
+                    ? `基于大纲 · ${PPT_BEAUTIFY_VIEW_LABELS['template-export']}`
+                    : `${PPT_BEAUTIFY_VIEW_LABELS['ai-design']} · 成稿后直接下载`}
+              </p>
 
             </div>
 
@@ -627,137 +439,67 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
 
           <div className="document-toolbar-actions">
 
-            {phase === 2 ? (
+            <div className="ppt-beautify-output-mode-switch" role="tablist" aria-label="出稿方式">
 
-              <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => void handleExport()}>
+              <button
 
-                <Download size={14} />
+                type="button"
 
-                导出美化封面
+                role="tab"
+
+                aria-selected={pptView === 'template-export'}
+
+                className={`ppt-beautify-output-mode-btn${pptView === 'template-export' ? ' active' : ''}`}
+
+                disabled={busy}
+
+                title={outlineSource ? '基于大纲选择主题模板导出' : '请先生成大纲'}
+
+                onClick={() => {
+
+                  if (!outlineSource) {
+
+                    setStatus('请先生成大纲后再使用模板导出', true)
+
+                    return
+
+                  }
+
+                  setPptView('template-export')
+
+                }}
+
+              >
+
+                模板导出
 
               </button>
 
-            ) : null}
+              <button
 
-            {phase === 3 ? (
+                type="button"
 
-              <div className="document-export-dropdown" ref={fullExportMenuRef}>
+                role="tab"
 
-                <button
+                aria-selected={pptView === 'ai-design'}
 
-                  type="button"
+                className={`ppt-beautify-output-mode-btn${pptView === 'ai-design' ? ' active' : ''}`}
 
-                  className="btn btn-sm btn-primary document-export-trigger"
+                disabled={busy}
 
-                  disabled={busy || !fullSource}
+                title="Sidecar 逐页 AI 成稿，生成后直接下载"
 
-                  aria-expanded={fullExportMenuOpen}
+                onClick={() => setPptView('ai-design')}
 
-                  aria-haspopup="menu"
+              >
 
-                  onClick={() => setFullExportMenuOpen((open) => !open)}
+                AI 设计稿
 
-                >
+              </button>
 
-                  {busy ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
-
-                  导出全文美化
-
-                  <ChevronDown size={14} className={`document-export-chevron${fullExportMenuOpen ? ' open' : ''}`} />
-
-                </button>
-
-                {fullExportMenuOpen ? (
-
-                  <div className="document-export-menu" role="menu">
-
-                    <button
-
-                      type="button"
-
-                      role="menuitem"
-
-                      disabled={busy || !fullTemplateSource}
-
-                      title="基于模板写回文字，可在 PowerPoint 中修改内容"
-
-                      onClick={() => void handleExportFull('editable')}
-
-                    >
-
-                      可编辑导出
-
-                    </button>
-
-                    <button
-
-                      type="button"
-
-                      role="menuitem"
-
-                      disabled={busy || fullTemplateKind === 'enterprise'}
-
-                      title={
-
-                        fullTemplateKind === 'enterprise'
-
-                          ? '高保真导出仅支持内置主题'
-
-                          : '按 HTML 预览逐页截图，视觉与预览一致，文字不可编辑'
-
-                      }
-
-                      onClick={() => void handleExportFull('visual')}
-
-                    >
-
-                      高保真导出
-
-                    </button>
-
-                  </div>
-
-                ) : null}
-
-              </div>
-
-            ) : null}
+            </div>
 
           </div>
-
-        </div>
-
-
-
-        <div className="ppt-beautify-phase-tabs" role="tablist" aria-label="美化阶段">
-
-          {([1, 2, 3, 4] as PptBeautifyPhase[]).map((item) => (
-
-            <button
-
-              key={item}
-
-              type="button"
-
-              role="tab"
-
-              aria-selected={phase === item}
-
-              className={`ppt-beautify-phase-tab${phase === item ? ' active' : ''}${item === 4 ? ' phase-future' : ''}`}
-
-              onClick={() => setPhase(item)}
-
-            >
-
-              阶段 {item} · {PPT_BEAUTIFY_PHASE_LABELS[item]}
-
-              {item === 1 && outlineSource ? ` (${outlineSource.slides.length}页)` : ''}
-
-              {item === 3 && enterpriseCount > 0 ? ` (${enterpriseCount})` : ''}
-
-            </button>
-
-          ))}
 
         </div>
 
@@ -777,69 +519,23 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
 
 
 
-        {phase === 1 ? (
+        {pptView === 'outline' ? (
 
           <>
 
-            <div className="ppt-beautify-generate-mode-tabs" role="tablist" aria-label="生成模式">
+            <PptBeautifyOutlinePanel
 
-              {(Object.keys(PPT_OUTLINE_GENERATE_MODE_LABELS) as PptOutlineGenerateMode[]).map((mode) => (
+              busy={busy}
 
-                <button
+              onBusyChange={setBusy}
 
-                  key={mode}
+              onStatus={setStatus}
 
-                  type="button"
+              onOutlineReady={handleOutlineReady}
 
-                  role="tab"
+              onSourceChange={setSharedSource}
 
-                  aria-selected={generateMode === mode}
-
-                  className={`ppt-beautify-generate-mode-tab${generateMode === mode ? ' active' : ''}`}
-
-                  disabled={busy}
-
-                  onClick={() => setGenerateMode(mode)}
-
-                >
-
-                  {PPT_OUTLINE_GENERATE_MODE_LABELS[mode]}
-
-                </button>
-
-              ))}
-
-            </div>
-
-            {generateMode === 'outline' ? (
-
-              <PptBeautifyOutlinePanel
-
-                busy={busy}
-
-                onBusyChange={setBusy}
-
-                onStatus={setStatus}
-
-                onOutlineReady={handleOutlineReady}
-
-              />
-
-            ) : (
-
-              <PptMasterGeneratePanel
-
-                busy={busy}
-
-                onBusyChange={setBusy}
-
-                onStatus={setStatus}
-
-                onPptxReady={handlePptxReady}
-
-              />
-
-            )}
+            />
 
           </>
 
@@ -847,243 +543,31 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
 
 
 
-        {phase === 2 ? (
+        {pptView === 'ai-design' ? (
 
-          <div className="ppt-beautify-layout">
+          <PptMasterGeneratePanel
 
-            <aside className="ppt-beautify-sidebar">
+            busy={busy}
 
-              {outlineSource ? (
+            onBusyChange={setBusy}
 
-                <section className="ppt-beautify-block ppt-beautify-outline-sync">
+            onStatus={setStatus}
 
-                  <h3>来自文档大纲</h3>
+            onDesignDraftComplete={handleDesignDraftComplete}
 
-                  <p>
+            initialSource={aiDesignSource}
 
-                    已同步封面字段：<strong>{outlineSource.title}</strong>
+            initialPrompt={aiDesignPrompt}
 
-                  </p>
+            onBack={goOutlineView}
 
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => setPhase(1)}>
-
-                    返回修改大纲
-
-                  </button>
-
-                </section>
-
-              ) : null}
-
-
-
-              <section className="ppt-beautify-block">
-
-                <h3>封面内容</h3>
-
-                <div className="setting-field">
-
-                  <label htmlFor="ppt-cover-title">主标题</label>
-
-                  <input
-
-                    id="ppt-cover-title"
-
-                    type="text"
-
-                    value={content.title}
-
-                    onChange={(e) => update({ title: e.target.value })}
-
-                  />
-
-                </div>
-
-                <div className="setting-field">
-
-                  <label htmlFor="ppt-cover-subtitle">副标题</label>
-
-                  <input
-
-                    id="ppt-cover-subtitle"
-
-                    type="text"
-
-                    value={content.subtitle}
-
-                    onChange={(e) => update({ subtitle: e.target.value })}
-
-                  />
-
-                </div>
-
-                <div className="ppt-beautify-row-2">
-
-                  <div className="setting-field">
-
-                    <label htmlFor="ppt-cover-author">汇报人</label>
-
-                    <input
-
-                      id="ppt-cover-author"
-
-                      type="text"
-
-                      value={content.author}
-
-                      onChange={(e) => update({ author: e.target.value })}
-
-                    />
-
-                  </div>
-
-                  <div className="setting-field">
-
-                    <label htmlFor="ppt-cover-date">日期</label>
-
-                    <input
-
-                      id="ppt-cover-date"
-
-                      type="text"
-
-                      value={content.date}
-
-                      onChange={(e) => update({ date: e.target.value })}
-
-                    />
-
-                  </div>
-
-                </div>
-
-              </section>
-
-
-
-              <section className="ppt-beautify-block">
-
-                <h3>从 PPT 导入</h3>
-
-                <input
-
-                  ref={fileRef}
-
-                  type="file"
-
-                  accept=".pptx"
-
-                  hidden
-
-                  onChange={(e) => {
-
-                    const file = e.target.files?.[0]
-
-                    if (file) void handleImportPptx(file)
-
-                  }}
-
-                />
-
-                <button
-
-                  type="button"
-
-                  className="doc-write-upload-zone ppt-beautify-upload"
-
-                  disabled={busy}
-
-                  onClick={() => fileRef.current?.click()}
-
-                >
-
-                  <FileUp size={18} />
-
-                  <span>上传 .pptx，提取第一页文字</span>
-
-                </button>
-
-              </section>
-
-
-
-              <section className="ppt-beautify-block">
-
-                <h3>选择主题（{PPT_COVER_THEMES.length} 套）</h3>
-
-                <div className="ppt-beautify-theme-grid">
-
-                  {PPT_COVER_THEMES.map((item) => (
-
-                    <button
-
-                      key={item.id}
-
-                      type="button"
-
-                      className={`ppt-beautify-theme-card${themeId === item.id ? ' active' : ''}`}
-
-                      onClick={() => setThemeId(item.id)}
-
-                    >
-
-                      <span className="ppt-beautify-theme-swatch" style={{ background: item.preview.background }} />
-
-                      <strong>{item.name}</strong>
-
-                      <span>{item.description}</span>
-
-                    </button>
-
-                  ))}
-
-                </div>
-
-              </section>
-
-            </aside>
-
-
-
-            <div className="ppt-beautify-compare">
-
-              <div className="ppt-beautify-compare-col">
-
-                <h4>美化前</h4>
-
-                <PptBeautifyCoverPreview mode="before" content={content} />
-
-              </div>
-
-              <div className="ppt-beautify-compare-arrow" aria-hidden="true">
-
-                →
-
-              </div>
-
-              <div className="ppt-beautify-compare-col">
-
-                <h4>美化后 · {theme.name}</h4>
-
-                <PptBeautifyCoverPreview mode="after" content={content} theme={theme} />
-
-              </div>
-
-              <p className="ppt-beautify-compare-hint">
-
-                右侧为 HTML 主题预览；导出 pptx 基于模板写回，请在 PowerPoint / WPS 中查看最终效果。
-
-              </p>
-
-            </div>
-
-          </div>
+          />
 
         ) : null}
 
 
 
-        {phase === 3 ? (
+        {pptView === 'template-export' ? (
 
           <div className="ppt-beautify-layout ppt-beautify-full-layout">
 
@@ -1093,7 +577,7 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
 
                 <section className="ppt-beautify-block ppt-beautify-outline-sync">
 
-                  <h3>内容来源 · 文档大纲</h3>
+                  <h3>内容来源 · 文本大纲</h3>
 
                   <p>
 
@@ -1101,7 +585,7 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
 
                   </p>
 
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => setPhase(1)}>
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={goOutlineView}>
 
                     返回修改大纲
 
@@ -1429,6 +913,56 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
 
                 <h4>美化后预览</h4>
 
+                <div className="ppt-beautify-export-actions">
+
+                  <button
+
+                    type="button"
+
+                    className="btn btn-sm btn-primary"
+
+                    disabled={busy || !fullSource || !fullTemplateSource}
+
+                    title="基于模板写回文字，可在 PowerPoint 中修改内容"
+
+                    onClick={() => void handleExportFull('editable')}
+
+                  >
+
+                    {busy ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
+
+                    可编辑导出
+
+                  </button>
+
+                  <button
+
+                    type="button"
+
+                    className="btn btn-sm btn-ghost"
+
+                    disabled={busy || !fullSource || fullTemplateKind === 'enterprise'}
+
+                    title={
+
+                      fullTemplateKind === 'enterprise'
+
+                        ? '高保真导出仅支持内置主题'
+
+                        : '按 HTML 预览逐页截图，视觉与预览一致，文字不可编辑'
+
+                    }
+
+                    onClick={() => void handleExportFull('visual')}
+
+                  >
+
+                    高保真导出
+
+                  </button>
+
+                </div>
+
               </div>
 
 
@@ -1480,28 +1014,6 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
               </p>
 
             </div>
-
-          </div>
-
-        ) : null}
-
-
-
-        {phase === 4 ? (
-
-          <div className="ppt-beautify-phase-panel">
-
-            <h3>阶段四：元素与主题（规划中）</h3>
-
-            <ul>
-
-              <li>图表 / 表格样式一键优化</li>
-
-              <li>单页版式重排</li>
-
-              <li>全局主题色 / 字体一键替换</li>
-
-            </ul>
 
           </div>
 

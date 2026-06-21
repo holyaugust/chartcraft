@@ -3,8 +3,6 @@ import { AlertCircle, Download, FileText, Loader2, Sparkles, Trash2 } from 'luci
 
 import type { PptMasterHealth, PptMasterJobRecord, PptMasterStyle } from '../types/pptMaster'
 import { PPT_MASTER_STYLE_LABELS } from '../types/pptMaster'
-import type { ImportedPptx } from '../utils/pptxImport'
-import { importPptxFile } from '../utils/pptxImport'
 import {
   createPptMasterJob,
   downloadPptMasterJob,
@@ -13,25 +11,38 @@ import {
 } from '../utils/pptMasterApi'
 import { DEFAULT_PROJECT_PROMPT, PPT_SOURCE_ACCEPT } from '../utils/pptSourceDocument'
 import { saveFile } from '../utils/saveFile'
+import {
+  aiDesignSourceHint,
+  type AiDesignSource,
+  type AiDesignSourceOrigin,
+} from '../utils/pptAiDesignSource'
 
 interface PptMasterGeneratePanelProps {
   busy: boolean
   onBusyChange: (busy: boolean) => void
   onStatus: (message: string, isError?: boolean) => void
-  onPptxReady: (imported: ImportedPptx) => void
+  onDesignDraftComplete?: (slideCount?: number) => void
+  initialSource?: AiDesignSource
+  initialPrompt?: string
+  onBack?: () => void
 }
 
 export default function PptMasterGeneratePanel({
   busy,
   onBusyChange,
   onStatus,
-  onPptxReady,
+  onDesignDraftComplete,
+  initialSource,
+  initialPrompt,
+  onBack,
 }: PptMasterGeneratePanelProps) {
   const [health, setHealth] = useState<PptMasterHealth | null>(null)
   const [healthError, setHealthError] = useState('')
-  const [prompt, setPrompt] = useState(DEFAULT_PROJECT_PROMPT)
+  const [prompt, setPrompt] = useState(initialPrompt ?? DEFAULT_PROJECT_PROMPT)
   const [style, setStyle] = useState<PptMasterStyle>('business')
-  const [sourceFile, setSourceFile] = useState<File | null>(null)
+  const [sourceFile, setSourceFile] = useState<File | null>(initialSource?.file ?? null)
+  const [sourceOrigin, setSourceOrigin] = useState<AiDesignSourceOrigin>(initialSource?.origin ?? 'none')
+  const [sourceDisplayName, setSourceDisplayName] = useState(initialSource?.displayName ?? '')
   const [job, setJob] = useState<PptMasterJobRecord | null>(null)
   const [downloadName, setDownloadName] = useState('')
   const stopPollRef = useRef<(() => void) | null>(null)
@@ -66,20 +77,29 @@ export default function PptMasterGeneratePanel({
     void refreshHealth()
   }, [refreshHealth])
 
+  useEffect(() => {
+    if (!initialSource) return
+    setSourceFile(initialSource.file)
+    setSourceOrigin(initialSource.origin)
+    setSourceDisplayName(initialSource.displayName)
+  }, [initialSource])
+
+  useEffect(() => {
+    if (initialPrompt?.trim()) setPrompt(initialPrompt)
+  }, [initialPrompt])
+
+  const sourceHint = aiDesignSourceHint(sourceOrigin)
+  const hasResolvedSource = Boolean(sourceFile && sourceOrigin !== 'none' && sourceOrigin !== 'manual')
+
   const finishJob = useCallback(
     async (record: PptMasterJobRecord) => {
       if (record.status !== 'succeeded') return
-      onStatus('正在下载并解析 PPT…')
-      const blob = await downloadPptMasterJob(record.job_id)
-      const file = new File([blob], `ppt-master-${record.job_id.slice(0, 8)}.pptx`, {
-        type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      })
-      const imported = await importPptxFile(file)
       setDownloadName(buildDownloadName(record))
-      onPptxReady(imported)
-      onStatus(`智能设计稿已就绪：共 ${imported.slideCount} 页 · 可点击下方下载，或进入「全文美化」换主题`)
+      onDesignDraftComplete?.(record.slide_count ?? undefined)
+      const pages = record.slide_count ? `${record.slide_count} 页` : '已完成'
+      onStatus(`AI 设计稿已生成（${pages}）· 可直接下载使用，无需进入后续美化阶段`)
     },
-    [buildDownloadName, onPptxReady, onStatus],
+    [buildDownloadName, onDesignDraftComplete, onStatus],
   )
 
   const handleDownload = useCallback(async () => {
@@ -190,49 +210,92 @@ export default function PptMasterGeneratePanel({
         </section>
 
         <section className="ppt-beautify-block">
-          <h3>上传材料</h3>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={PPT_SOURCE_ACCEPT}
-            hidden
-            disabled={busy}
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) setSourceFile(file)
-              e.target.value = ''
-            }}
-          />
-          <button
-            type="button"
-            className="doc-write-upload-zone ppt-beautify-upload"
-            disabled={busy}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {sourceFile ? (
-              <span className="ppt-beautify-doc-uploaded">
-                <FileText size={16} />
-                {sourceFile.name}
-                <button
-                  type="button"
-                  className="ppt-beautify-doc-remove"
-                  aria-label="移除文件"
-                  disabled={busy}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    setSourceFile(null)
-                  }}
-                >
-                  <Trash2 size={13} />
-                </button>
-              </span>
-            ) : (
-              <>
-                <FileText size={18} />
-                <span>PDF / Word / Markdown / 文本</span>
-              </>
-            )}
-          </button>
+          <h3>{hasResolvedSource ? '材料来源' : '上传材料'}</h3>
+          {hasResolvedSource ? (
+            <div className="ppt-beautify-outline-sync ppt-beautify-ai-source-sync">
+              <p>
+                <FileText size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                <strong>{sourceDisplayName || sourceFile?.name}</strong>
+              </p>
+              {sourceHint ? <p className="ppt-beautify-ai-source-hint">{sourceHint}</p> : null}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={PPT_SOURCE_ACCEPT}
+                hidden
+                disabled={busy}
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    setSourceFile(file)
+                    setSourceOrigin('manual')
+                    setSourceDisplayName(file.name)
+                  }
+                  e.target.value = ''
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                disabled={busy}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                更换文件
+              </button>
+            </div>
+          ) : (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={PPT_SOURCE_ACCEPT}
+                hidden
+                disabled={busy}
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    setSourceFile(file)
+                    setSourceOrigin('manual')
+                    setSourceDisplayName(file.name)
+                  }
+                  e.target.value = ''
+                }}
+              />
+              <button
+                type="button"
+                className="doc-write-upload-zone ppt-beautify-upload"
+                disabled={busy}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {sourceFile ? (
+                  <span className="ppt-beautify-doc-uploaded">
+                    <FileText size={16} />
+                    {sourceFile.name}
+                    <button
+                      type="button"
+                      className="ppt-beautify-doc-remove"
+                      aria-label="移除文件"
+                      disabled={busy}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setSourceFile(null)
+                        setSourceOrigin('none')
+                        setSourceDisplayName('')
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </span>
+                ) : (
+                  <>
+                    <FileText size={18} />
+                    <span>PDF / Word / Markdown / 文本</span>
+                  </>
+                )}
+              </button>
+              {sourceHint ? <p className="ppt-beautify-full-meta">{sourceHint}</p> : null}
+            </>
+          )}
         </section>
 
         <section className="ppt-beautify-block">
@@ -269,14 +332,21 @@ export default function PptMasterGeneratePanel({
             onClick={() => void handleGenerate()}
           >
             {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
-            生成智能设计稿（可编辑 PPT）
+            生成 AI 设计稿（可编辑 PPT）
           </button>
         </section>
       </aside>
 
       <div className="ppt-beautify-outline-main">
         <div className="ppt-beautify-outline-toolbar">
-          <h4>智能设计稿 · PPT Master Sidecar</h4>
+          <div className="ppt-beautify-outline-toolbar-row">
+            {onBack ? (
+              <button type="button" className="btn btn-sm btn-ghost ppt-beautify-view-back" onClick={onBack}>
+                ← 返回大纲
+              </button>
+            ) : null}
+            <h4>AI 设计稿 · PPT Master Sidecar</h4>
+          </div>
         </div>
 
         {!job ? (
@@ -289,8 +359,7 @@ export default function PptMasterGeneratePanel({
               <li>DrawingML 导出可编辑 .pptx</li>
             </ol>
             <p className="ppt-beautify-compare-hint">
-              AI 逐页渲染约 5–15 分钟（视页数与模型速度）。追求最佳视觉效果时，Sidecar 建议配置 Claude Sonnet / Opus 作为视觉模型。
-              生成完成后可进入「全文美化」套用 ChartCraft 企业主题；也可直接下载使用。
+              AI 逐页渲染约 5–15 分钟（视页数与模型速度）。成稿后请直接下载 `.pptx` 使用，无需再走模板导出。
             </p>
           </div>
         ) : (
@@ -308,15 +377,18 @@ export default function PptMasterGeneratePanel({
               <pre className="ppt-beautify-master-log">{job.logs.slice(-6).join('\n')}</pre>
             ) : null}
             {job.status === 'succeeded' ? (
-              <button
-                type="button"
-                className="btn btn-sm btn-primary ppt-beautify-master-download-btn"
-                disabled={busy}
-                onClick={() => void handleDownload()}
-              >
-                <Download size={14} />
-                下载 PPT（.pptx）
-              </button>
+              <div className="ppt-beautify-master-done">
+                <p className="ppt-beautify-master-done-title">成稿完成，可直接下载使用</p>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary ppt-beautify-master-download-btn"
+                  disabled={busy}
+                  onClick={() => void handleDownload()}
+                >
+                  <Download size={14} />
+                  下载 PPT（.pptx）
+                </button>
+              </div>
             ) : null}
           </div>
         )}

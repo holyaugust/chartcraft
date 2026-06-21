@@ -29,7 +29,7 @@ function workspaceFooter(workspace: WorkspaceId): string {
     case 'smartgraphic':
       return '智能图形 · HTML 排版 · 截图导出 PNG'
     case 'pptbeautify':
-      return 'PPT · 文档生成大纲 · 封面/全文美化'
+      return 'PPT · 生成大纲 · 模板导出 / AI 设计稿'
   }
 }
 
