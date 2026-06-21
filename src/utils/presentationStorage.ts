@@ -9,7 +9,7 @@ export interface PresentationDraft {
 }
 
 const DEFAULT_DRAFT: PresentationDraft = {
-  templateId: 'ppt-gongzuo-huibao',
+  templateId: 'adaptive',
   previewText: '',
   outlineJson: '',
   prompt: '',

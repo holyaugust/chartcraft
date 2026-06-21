@@ -11,9 +11,8 @@ import {
   fetchPptMasterHealth,
   pollPptMasterJob,
 } from '../utils/pptMasterApi'
+import { DEFAULT_PROJECT_PROMPT, PPT_SOURCE_ACCEPT } from '../utils/pptSourceDocument'
 import { saveFile } from '../utils/saveFile'
-
-const DEFAULT_PROMPT = '请根据上传材料生成结构清晰、适合正式汇报的可编辑 PPT，突出结论与关键数据。'
 
 interface PptMasterGeneratePanelProps {
   busy: boolean
@@ -30,7 +29,7 @@ export default function PptMasterGeneratePanel({
 }: PptMasterGeneratePanelProps) {
   const [health, setHealth] = useState<PptMasterHealth | null>(null)
   const [healthError, setHealthError] = useState('')
-  const [prompt, setPrompt] = useState(DEFAULT_PROMPT)
+  const [prompt, setPrompt] = useState(DEFAULT_PROJECT_PROMPT)
   const [style, setStyle] = useState<PptMasterStyle>('business')
   const [sourceFile, setSourceFile] = useState<File | null>(null)
   const [job, setJob] = useState<PptMasterJobRecord | null>(null)
@@ -38,10 +37,13 @@ export default function PptMasterGeneratePanel({
   const stopPollRef = useRef<(() => void) | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const buildDownloadName = useCallback((record: PptMasterJobRecord) => {
-    const base = sourceFile?.name.replace(/\.[^.]+$/, '') || '智能设计稿'
-    return `${base}-设计稿-${record.job_id.slice(0, 8)}.pptx`
-  }, [sourceFile])
+  const buildDownloadName = useCallback(
+    (record: PptMasterJobRecord) => {
+      const base = sourceFile?.name.replace(/\.[^.]+$/, '') || '智能设计稿'
+      return `${base}-设计稿-${record.job_id.slice(0, 8)}.pptx`
+    },
+    [sourceFile],
+  )
 
   useEffect(() => {
     return () => {
@@ -192,7 +194,7 @@ export default function PptMasterGeneratePanel({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.docx,.txt,.md,.markdown"
+            accept={PPT_SOURCE_ACCEPT}
             hidden
             disabled={busy}
             onChange={(e) => {
@@ -257,6 +259,7 @@ export default function PptMasterGeneratePanel({
             value={prompt}
             rows={4}
             disabled={busy}
+            placeholder={DEFAULT_PROJECT_PROMPT}
             onChange={(e) => setPrompt(e.target.value)}
           />
           <button

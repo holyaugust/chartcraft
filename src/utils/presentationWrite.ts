@@ -1,4 +1,4 @@
-import { getPresentationTemplateById } from '../data/presentationTemplates'
+import { getPresentationTemplateById, PRESENTATION_TEMPLATES } from '../data/presentationTemplates'
 import type { PresentationOutline, PresentationSlide, PresentationSlideLayout } from '../types/presentation'
 import { requestDeepSeekPlainText } from './deepseek'
 
@@ -11,12 +11,28 @@ export interface PresentationTemplateSlideHint {
 
 export interface PresentationWriteRequest {
   prompt: string
-  templateId: string
+  /** 未传或 `adaptive` 时由 AI 根据材料自定页结构 */
+  templateId?: string
   sourceDocument?: string
   templateSlideHints?: PresentationTemplateSlideHint[]
 }
 
-function buildSystemPrompt(): string {
+export const ADAPTIVE_PRESENTATION_TEMPLATE_ID = 'adaptive'
+
+function isAdaptiveTemplate(templateId?: string): boolean {
+  return !templateId || templateId === ADAPTIVE_PRESENTATION_TEMPLATE_ID
+}
+
+function buildAdaptiveStructureCatalog(): string {
+  return PRESENTATION_TEMPLATES.map(
+    (item) => `- ${item.name}：${item.suggestedStructure}（${item.sceneHint}）`,
+  ).join('\n')
+}
+
+function buildSystemPrompt(adaptive: boolean): string {
+  const adaptiveHint = adaptive
+    ? `\n7. 未指定固定模板时：先通读材料判断其性质（总结、专项、请示、述职等），再设计最匹配的章节顺序与页型，可灵活增删章节，勿生搬硬套单一模板`
+    : ''
   return `你是国企汇报 PPT 策划专家，熟悉领导汇报、工作汇报、专题汇报、述职汇报的页结构与表述规范。
 
 输出要求：
@@ -35,31 +51,38 @@ function buildSystemPrompt(): string {
   ]
 }
 3. layout 说明：title=封面；section=章节过渡页（可无 bullets）；content=正文要点页；closing=致谢/结束；chart=图表页（可无 bullets，标题为图表说明）
-4. 正文页 bullets 每页 3～5 条，每条 15～40 字，动词开头、数据化表述
-5. 总页数 8～14 页（含封面与结束页）
-6. 未定信息用「×××」占位`
+4. 正文页要点条数按信息量灵活安排，单条 15～40 字为宜，动词开头、数据化表述
+5. 页数须完整反映参考材料的章节与要点：通读全文后按内容自然拆分，不设页数上下限；不得省略、合并或舍弃材料中的重要部分
+6. 未定信息用「×××」占位${adaptiveHint}`
 }
 
 function buildUserPrompt(request: PresentationWriteRequest): string {
-  const template = getPresentationTemplateById(request.templateId)
-  const sections: string[] = [
-    `汇报需求：${request.prompt.trim()}`,
-    `模板类型：${template?.name ?? '工作汇报'}`,
-  ]
+  const adaptive = isAdaptiveTemplate(request.templateId)
+  const sections: string[] = [`汇报需求：${request.prompt.trim()}`]
 
-  if (template?.sceneHint) {
-    sections.push(`场景说明：${template.sceneHint}`)
-  }
-  if (template?.suggestedStructure) {
-    sections.push(`建议结构：${template.suggestedStructure}`)
+  if (adaptive) {
+    sections.push(
+      '结构模式：智能适配（请根据材料内容自主确定最合适的汇报结构与章节顺序）',
+      '下列页型结构仅作参考，可增删、合并或调整顺序：',
+      buildAdaptiveStructureCatalog(),
+    )
+  } else {
+    const template = getPresentationTemplateById(request.templateId!)
+    sections.push(`固定模板：${template?.name ?? '工作汇报'}`)
+    if (template?.sceneHint) {
+      sections.push(`场景说明：${template.sceneHint}`)
+    }
+    if (template?.suggestedStructure) {
+      sections.push(`可参考结构：${template.suggestedStructure}（页数仍以完整覆盖材料为准）`)
+    }
   }
 
   if (request.sourceDocument?.trim()) {
-    const excerpt =
-      request.sourceDocument.length > 8000
-        ? `${request.sourceDocument.slice(0, 8000)}\n…（已截断）`
-        : request.sourceDocument
-    sections.push('', '参考材料（提炼要点写入幻灯片，勿照搬无关段落）：', excerpt)
+    sections.push(
+      '',
+      `参考材料全文（共 ${request.sourceDocument.length} 字，须通读并完整提炼，不得截断或遗漏后文）：`,
+      request.sourceDocument,
+    )
   }
 
   if (request.templateSlideHints?.length) {
@@ -80,8 +103,18 @@ function buildUserPrompt(request: PresentationWriteRequest): string {
     )
   }
 
-  sections.push('', '请生成完整汇报 PPT 的 JSON 大纲。')
+  sections.push(
+    '',
+    '请生成完整汇报 PPT 的 JSON 大纲。页数与章节须完整覆盖上述材料，不得人为压缩或省略内容。',
+  )
   return sections.join('\n')
+}
+
+/** 长材料需要更多输出 token 以容纳更多幻灯片 JSON */
+function resolveOutlineMaxTokens(sourceDocument?: string): number {
+  const length = sourceDocument?.trim().length ?? 0
+  const estimated = 2048 + Math.ceil(length / 600) * 512
+  return Math.min(8192, Math.max(4096, estimated))
 }
 
 function extractJsonObject(raw: string): string {
@@ -142,11 +175,12 @@ export function parsePresentationOutline(raw: string): PresentationOutline {
 export async function generatePresentationOutline(
   request: PresentationWriteRequest,
 ): Promise<PresentationOutline> {
+  const adaptive = isAdaptiveTemplate(request.templateId)
   const raw = await requestDeepSeekPlainText({
-    systemPrompt: buildSystemPrompt(),
+    systemPrompt: buildSystemPrompt(adaptive),
     userPrompt: buildUserPrompt(request),
-    temperature: 0.45,
-    maxTokens: 8192,
+    temperature: adaptive ? 0.5 : 0.45,
+    maxTokens: resolveOutlineMaxTokens(request.sourceDocument),
   })
 
   return parsePresentationOutline(raw)
