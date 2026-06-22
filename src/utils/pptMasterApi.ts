@@ -29,11 +29,19 @@ export async function createPptMasterJob(input: {
   file: File
   prompt: string
   style: PptMasterStyle
+  styleNote?: string
+  primaryColor?: string
 }): Promise<{ job_id: string }> {
   const form = new FormData()
   form.append('file', input.file)
   form.append('prompt', input.prompt)
   form.append('style', input.style)
+  if (input.styleNote?.trim()) {
+    form.append('style_note', input.styleNote.trim())
+  }
+  if (input.primaryColor?.trim()) {
+    form.append('primary_color', input.primaryColor.trim())
+  }
 
   const response = await fetch(`${baseUrl()}/jobs`, {
     method: 'POST',

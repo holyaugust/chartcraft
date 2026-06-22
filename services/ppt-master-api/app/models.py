@@ -32,6 +32,8 @@ class JobRecord(BaseModel):
     updated_at: str
     prompt: str = ""
     style: str = "business"
+    style_note: str = ""
+    primary_color: str = ""
     source_name: str = ""
     source_kind: str = "file"
     progress: JobProgress = Field(default_factory=lambda: JobProgress(step="queued", percent=0, message="排队中"))
@@ -54,17 +56,15 @@ class HealthResponse(BaseModel):
 
 class PptMasterStyle(str, Enum):
     business = "business"
+    tech = "tech"
+    academic = "academic"
     editorial = "editorial"
     minimal = "minimal"
     dark = "dark"
-
-
-STYLE_LABELS: dict[str, str] = {
-    "business": "商务汇报",
-    "editorial": "杂志 editorial",
-    "minimal": "极简灰白",
-    "dark": "深色数据",
-}
+    creative = "creative"
+    warm = "warm"
+    luxury = "luxury"
+    gov = "gov"
 
 
 def utc_now() -> str:

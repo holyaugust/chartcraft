@@ -9,7 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.config import settings
-from app.models import HealthResponse, JobCreateResponse, JobRecord, JobStatus, PptMasterStyle, STYLE_LABELS
+from app.models import HealthResponse, JobCreateResponse, JobRecord, JobStatus, PptMasterStyle
+from app.style_presets import STYLE_LABELS, valid_hex
 from app.store import enqueue, set_runner, store
 from app.worker.llm_client import visual_model
 from app.worker.runner import run_job
@@ -96,6 +97,8 @@ async def create_job(
     background_tasks: BackgroundTasks,
     prompt: str = Form(default="请根据材料生成结构清晰的汇报 PPT"),
     style: PptMasterStyle = Form(default=PptMasterStyle.business),
+    style_note: str = Form(default=""),
+    primary_color: str = Form(default=""),
     file: UploadFile = File(...),
 ) -> JobCreateResponse:
     if not file.filename:
@@ -105,9 +108,15 @@ async def create_job(
     if suffix not in allowed:
         raise HTTPException(status_code=400, detail=f"不支持的文件类型：{suffix}")
 
+    color = primary_color.strip()
+    if color and not valid_hex(color):
+        raise HTTPException(status_code=400, detail="主色格式无效，请使用 #RRGGBB")
+
     record = store.create(
         prompt=prompt.strip() or "请根据材料生成结构清晰的汇报 PPT",
         style=style.value,
+        style_note=style_note.strip(),
+        primary_color=color,
         source_name=Path(file.filename).name,
         source_kind="file",
     )

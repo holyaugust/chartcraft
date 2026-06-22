@@ -4,6 +4,7 @@ import json
 import re
 
 from app.config import settings
+from app.style_presets import STYLE_LABELS, build_style_context
 from app.worker.llm_client import chat_completion
 from app.worker.svg_builder import SlidePlan
 
@@ -22,6 +23,7 @@ async def plan_slides_from_markdown(
     prompt: str,
     style: str,
     deck_title: str,
+    style_note: str = "",
 ) -> tuple[str, list[SlidePlan]]:
     if not settings.ppt_master_llm_api_key.strip():
         raise RuntimeError("未配置 PPT_MASTER_LLM_API_KEY，无法规划幻灯片结构")
@@ -34,8 +36,11 @@ async def plan_slides_from_markdown(
         "规则：第一页 layout=title；中间可用 section 分隔章节；正文用 content 且 bullets 1-5 条；"
         "最后一页 layout=closing；总页数 6-12 页；语言与源材料一致。"
     )
+    style_label = STYLE_LABELS.get(style, style)
+    style_context = build_style_context(style=style, style_note=style_note)
     user = (
-        f"视觉风格：{style}\n"
+        f"视觉风格：{style_label}（{style}）\n"
+        f"风格说明：{style_context}\n"
         f"用户要求：{prompt}\n"
         f"建议标题：{deck_title}\n\n"
         f"源材料：\n{markdown[:12000]}"

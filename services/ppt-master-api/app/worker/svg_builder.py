@@ -4,6 +4,8 @@ import re
 import xml.sax.saxutils as saxutils
 from dataclasses import dataclass
 
+from app.style_presets import PALETTES, apply_primary_to_palette
+
 
 @dataclass
 class SlidePlan:
@@ -12,46 +14,6 @@ class SlidePlan:
     title: str
     subtitle: str = ""
     bullets: list[str] | None = None
-
-
-PALETTES = {
-    "business": {
-        "bg": ("#0f766e", "#134e4a"),
-        "accent": "#14b8a6",
-        "title": "#ffffff",
-        "body": "#1e293b",
-        "muted": "#64748b",
-        "card": "#ffffff",
-        "header": "#0f766e",
-    },
-    "editorial": {
-        "bg": ("#1c1917", "#44403c"),
-        "accent": "#f97316",
-        "title": "#fafaf9",
-        "body": "#292524",
-        "muted": "#78716c",
-        "card": "#fafaf9",
-        "header": "#292524",
-    },
-    "minimal": {
-        "bg": ("#f8fafc", "#e2e8f0"),
-        "accent": "#334155",
-        "title": "#0f172a",
-        "body": "#334155",
-        "muted": "#64748b",
-        "card": "#ffffff",
-        "header": "#ffffff",
-    },
-    "dark": {
-        "bg": ("#0b1220", "#111827"),
-        "accent": "#38bdf8",
-        "title": "#f8fafc",
-        "body": "#e2e8f0",
-        "muted": "#94a3b8",
-        "card": "#111827",
-        "header": "#0f172a",
-    },
-}
 
 
 def _esc(text: str) -> str:
@@ -84,8 +46,15 @@ def _gradient_defs(palette: dict[str, str], grad_id: str) -> str:
     )
 
 
-def build_slide_svg(slide: SlidePlan, style: str, page_number: int, total: int) -> str:
-    palette = PALETTES.get(style, PALETTES["business"])
+def build_slide_svg(
+    slide: SlidePlan,
+    style: str,
+    page_number: int,
+    total: int,
+    primary_color: str = "",
+) -> str:
+    palette = dict(PALETTES.get(style, PALETTES["business"]))
+    palette = apply_primary_to_palette(palette, primary_color)
     grad_id = f"bg-{slide.index}"
     defs = _gradient_defs(palette, grad_id)
     bg = f'<rect width="1280" height="720" fill="url(#{grad_id})"/>'

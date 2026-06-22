@@ -1,3 +1,5 @@
+import type { PptFullLayoutStyle } from '../data/pptLayoutStyles'
+
 /** PPT 美化 — 分阶段能力标记 */
 export type PptBeautifyPhase = 1 | 2 | 3 | 4
 
@@ -12,6 +14,8 @@ export interface PptCoverTheme {
   id: string
   name: string
   description: string
+  /** 全文模板版式（封面/章节/正文结构） */
+  layoutStyle: PptFullLayoutStyle
   /** 模板 pptx 文件名（位于 /ppt-beautify/covers/） */
   templateFile: string
   preview: {

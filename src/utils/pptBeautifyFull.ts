@@ -95,7 +95,11 @@ export const PPT_LAYOUT_LABELS: Record<PresentationSlideLayout, string> = {
 export const FULL_DECK_MAX_SLIDES = 14
 
 /** 全文模板版本号，升级模板后递增以绕过浏览器缓存 */
-const FULL_DECK_TEMPLATE_VERSION = '7'
+const FULL_DECK_TEMPLATE_VERSION = '9'
+
+function slideRelPath(slidePath: string): string {
+  return slidePath.replace('ppt/slides/', 'ppt/slides/_rels/').replace('.xml', '.xml.rels')
+}
 
 
 
@@ -616,6 +620,7 @@ export async function exportFullBeautifiedPptx(
 
 
   const templateXmlCache = new Map<number, string>()
+  const templateRelCache = new Map<number, string>()
 
   for (let i = 0; i < templateImported.slides.length; i += 1) {
 
@@ -629,6 +634,12 @@ export async function exportFullBeautifiedPptx(
 
       templateXmlCache.set(i, await entry.async('string'))
 
+    }
+
+    const relPath = slideRelPath(path)
+    const relEntry = zip.file(relPath)
+    if (relEntry) {
+      templateRelCache.set(i, await relEntry.async('string'))
     }
 
   }
@@ -675,6 +686,11 @@ export async function exportFullBeautifiedPptx(
     const outputPath = templateSlidePaths[i]!
 
     zip.file(outputPath, nextXml)
+
+    const templateRel = templateRelCache.get(templateIndex)
+    if (templateRel) {
+      zip.file(slideRelPath(outputPath), templateRel)
+    }
 
     updatedCount += 1
 

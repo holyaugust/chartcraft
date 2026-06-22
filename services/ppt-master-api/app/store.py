@@ -23,7 +23,16 @@ class JobStore:
     def _meta_path(self, job_id: str) -> Path:
         return self._job_dir(job_id) / "meta.json"
 
-    def create(self, *, prompt: str, style: str, source_name: str, source_kind: str) -> JobRecord:
+    def create(
+        self,
+        *,
+        prompt: str,
+        style: str,
+        source_name: str,
+        source_kind: str,
+        style_note: str = "",
+        primary_color: str = "",
+    ) -> JobRecord:
         import uuid
 
         job_id = uuid.uuid4().hex
@@ -35,6 +44,8 @@ class JobStore:
             updated_at=now,
             prompt=prompt,
             style=style,
+            style_note=style_note,
+            primary_color=primary_color,
             source_name=source_name,
             source_kind=source_kind,
         )

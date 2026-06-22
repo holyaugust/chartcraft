@@ -585,6 +585,7 @@ function patchTxBodiesInXml(
   shapes: Element[],
   planned: string[][],
   clearUnused: boolean,
+  usesCcMarkers = false,
 ): string {
   const spBlocks = getTextShapeTxBodyBlocks(xml)
   if (spBlocks.length === 0) return xml
@@ -593,7 +594,8 @@ function patchTxBodiesInXml(
 
   for (let i = 0; i < shapes.length; i += 1) {
     const rawLines = planned[i] ?? []
-    const hasExplicitEmpty = clearUnused && rawLines.length === 1 && rawLines[0] === ''
+    const hasExplicitEmpty =
+      (clearUnused || usesCcMarkers) && rawLines.length === 1 && rawLines[0] === ''
     const lines = rawLines
       .map((line) => String(line ?? '').trim())
       .filter((line) => line.length > 0)
@@ -657,7 +659,7 @@ export function applySlideTextPlanToXml(xml: string, plan: SlideTextWritePlan): 
   const hasContent = planned.some((lines) => lines.some((line) => String(line ?? '').trim().length > 0))
   if (!hasContent) return xml
 
-  let result = patchTxBodiesInXml(xml, shapes, planned, clearUnused)
+  let result = patchTxBodiesInXml(xml, shapes, planned, clearUnused, usesCcMarkers)
 
   if (
     plan.layout === 'content' &&

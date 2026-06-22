@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertCircle, Download, FileText, Loader2, Sparkles, Trash2 } from 'lucide-react'
 
 import type { PptMasterHealth, PptMasterJobRecord, PptMasterStyle } from '../types/pptMaster'
-import { PPT_MASTER_STYLE_LABELS } from '../types/pptMaster'
+import { PPT_MASTER_STYLE_LABELS, PPT_MASTER_STYLES } from '../types/pptMaster'
 import {
   createPptMasterJob,
   downloadPptMasterJob,
@@ -11,6 +11,10 @@ import {
 } from '../utils/pptMasterApi'
 import { DEFAULT_PROJECT_PROMPT, PPT_SOURCE_ACCEPT, readPptSourceDocument } from '../utils/pptSourceDocument'
 import { saveFile } from '../utils/saveFile'
+import { PptMasterFieldHintRow } from './PptMasterFieldGuide'
+import { PPT_MASTER_PROMPT_GUIDE } from '../data/pptMasterWritingGuide'
+import { PPT_MASTER_STYLE_PREVIEWS } from '../data/pptMasterStylePreview'
+import PptMasterStyleGuidePanel from './PptMasterStyleGuidePanel'
 
 interface PptMasterGeneratePanelProps {
   busy: boolean
@@ -174,7 +178,7 @@ export default function PptMasterGeneratePanel({
   const sidecarChecking = !health && !healthError
 
   return (
-    <div className="ppt-beautify-layout ppt-beautify-outline-layout">
+    <div className="ppt-beautify-layout ppt-beautify-outline-layout ppt-beautify-ai-layout">
       <aside className="ppt-beautify-sidebar">
         {!sidecarReady && !sidecarChecking ? (
           <section className="ppt-beautify-block ppt-beautify-sidecar-alert">
@@ -239,29 +243,39 @@ export default function PptMasterGeneratePanel({
 
         <section className="ppt-beautify-block">
           <h3>视觉风格</h3>
-          <div className="ppt-beautify-outline-templates">
-            {(Object.keys(PPT_MASTER_STYLE_LABELS) as PptMasterStyle[]).map((item) => (
-              <button
-                key={item}
-                type="button"
-                className={`ppt-beautify-outline-template${style === item ? ' active' : ''}`}
-                disabled={busy}
-                onClick={() => setStyle(item)}
-              >
-                <strong>{PPT_MASTER_STYLE_LABELS[item]}</strong>
-              </button>
-            ))}
+          <div className="ppt-beautify-outline-templates ppt-beautify-style-list ppt-beautify-style-swatch-grid">
+            {PPT_MASTER_STYLES.map((item) => {
+              const preview = PPT_MASTER_STYLE_PREVIEWS[item].preview
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  className={`ppt-beautify-style-swatch-btn${style === item ? ' active' : ''}`}
+                  disabled={busy}
+                  title={PPT_MASTER_STYLE_PREVIEWS[item].scene}
+                  onClick={() => setStyle(item)}
+                >
+                  <span
+                    className="ppt-beautify-style-swatch"
+                    style={{ background: preview.slideBackground }}
+                    aria-hidden="true"
+                  />
+                  <strong>{PPT_MASTER_STYLE_LABELS[item]}</strong>
+                </button>
+              )
+            })}
           </div>
         </section>
 
-        <section className="ppt-beautify-block">
-          <h3>生成要求</h3>
+        <section className="ppt-beautify-block ppt-beautify-block-primary">
+          <h3>{PPT_MASTER_PROMPT_GUIDE.title}</h3>
+          <PptMasterFieldHintRow guide={PPT_MASTER_PROMPT_GUIDE} />
           <textarea
             className="ppt-beautify-outline-prompt"
             value={prompt}
             rows={4}
             disabled={busy}
-            placeholder={DEFAULT_PROJECT_PROMPT}
+            placeholder={PPT_MASTER_PROMPT_GUIDE.placeholder}
             onChange={(e) => setPrompt(e.target.value)}
           />
           <button
@@ -278,47 +292,12 @@ export default function PptMasterGeneratePanel({
 
       <div className="ppt-beautify-outline-main ppt-beautify-ai-main">
         {!job ? (
-          <div className="ppt-beautify-ai-idle">
-            {!sourceFile ? (
-              <>
-                <div className="ppt-beautify-ai-idle-icon" aria-hidden="true">
-                  <Sparkles size={36} />
-                </div>
-                <h3 className="ppt-beautify-ai-idle-title">上传材料，AI 帮你完成整套 PPT</h3>
-                <p className="ppt-beautify-ai-idle-desc">
-                  在左侧上传 PDF / Word / 文本，选择视觉风格并填写要求，即可开始生成。
-                </p>
-                <ul className="ppt-beautify-ai-idle-steps">
-                  <li><span>1</span>上传材料</li>
-                  <li><span>2</span>选风格 · 填要求</li>
-                  <li><span>3</span>一键生成 · 下载</li>
-                </ul>
-                <p className="ppt-beautify-compare-hint">生成约 5–15 分钟，成稿为可编辑 .pptx</p>
-              </>
-            ) : (
-              <>
-                <div className="ppt-beautify-ai-ready-card">
-                  <FileText size={28} />
-                  <div>
-                    <strong>{sourceName || sourceFile.name}</strong>
-                    <p>风格：{PPT_MASTER_STYLE_LABELS[style]}</p>
-                  </div>
-                </div>
-                <p className="ppt-beautify-ai-idle-desc">
-                  材料已就绪，点击左侧「开始 AI 一键设计」即可成稿。
-                </p>
-                <button
-                  type="button"
-                  className="btn btn-primary ppt-beautify-ai-idle-cta"
-                  disabled={busy || !sidecarReady}
-                  onClick={() => void handleGenerate()}
-                >
-                  {busy ? <Loader2 size={16} className="spin" /> : <Sparkles size={16} />}
-                  开始 AI 一键设计
-                </button>
-              </>
-            )}
-          </div>
+          <PptMasterStyleGuidePanel
+            style={style}
+            sourceFile={sourceFile}
+            sourceName={sourceName}
+            onPromptChange={setPrompt}
+          />
         ) : (
           <div className="ppt-beautify-master-progress ppt-beautify-ai-progress">
             <div className="ppt-beautify-ai-progress-head">

@@ -72,6 +72,7 @@ def run_job(job_id: str) -> None:
                 prompt=record.prompt,
                 style=record.style,
                 deck_title=deck_title,
+                style_note=record.style_note,
             )
         )
     except Exception as exc:  # noqa: BLE001
@@ -92,6 +93,8 @@ def run_job(job_id: str) -> None:
                     prompt=record.prompt,
                     style=record.style,
                     deck_title=deck_title,
+                    style_note=record.style_note,
+                    primary_color=record.primary_color,
                 )
             )
         except Exception as exc:  # noqa: BLE001
@@ -124,6 +127,8 @@ def run_job(job_id: str) -> None:
                 style=record.style,
                 design_spec=design_spec,
                 deck_title=deck_title,
+                style_note=record.style_note,
+                primary_color=record.primary_color,
                 on_progress=on_slide_progress,
             )
         )
@@ -134,7 +139,7 @@ def run_job(job_id: str) -> None:
             log=f"模板模式生成 {len(slides)} 页",
         )
         svg_contents = [
-            build_slide_svg(slide, record.style, index, len(slides))
+            build_slide_svg(slide, record.style, index, len(slides), record.primary_color)
             for index, slide in enumerate(slides, start=1)
         ]
 

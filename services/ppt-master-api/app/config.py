@@ -1,8 +1,18 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 固定指向 services/ppt-master-api/.env，不依赖启动时的 cwd
+_SIDECAR_ROOT = Path(__file__).resolve().parent.parent
+_ENV_FILE = _SIDECAR_ROOT / ".env"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(_ENV_FILE),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     ppt_master_api_host: str = "0.0.0.0"
     ppt_master_api_port: int = 8787

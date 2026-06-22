@@ -1,7 +1,7 @@
 import { readWriteReferenceFile } from './documentWrite'
 
 export const DEFAULT_PROJECT_PROMPT =
-  '请根据上传材料生成结构清晰、适合正式汇报的 PPT，突出核心结论与关键数据。'
+  '请根据上传材料生成结构清晰、适合正式汇报的 PPT，突出核心结论与关键数据。如需调整视觉，可在此补充留白、气质或品牌色等描述。'
 
 export const PPT_SOURCE_ACCEPT = '.pdf,.docx,.txt,.md,.markdown'
 

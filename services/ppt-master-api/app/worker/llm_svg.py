@@ -5,7 +5,7 @@ import json
 import re
 from collections.abc import Callable
 
-from app.worker.design_spec import STYLE_ART_DIRECTION
+from app.style_presets import build_style_context
 from app.worker.llm_client import chat_completion, executor_model
 from app.worker.svg_builder import SlidePlan, build_slide_svg
 from app.worker.svg_sanitize import sanitize_svg
@@ -36,8 +36,15 @@ async def generate_slide_svg(
     style: str,
     design_spec: dict,
     deck_title: str,
+    style_note: str = "",
+    primary_color: str = "",
 ) -> str:
     bullets = slide.bullets or []
+    style_context = build_style_context(
+        style=style,
+        style_note=style_note,
+        primary_color=primary_color,
+    )
     user = (
         f"Deck: {deck_title}\n"
         f"Slide {slide_index}/{slide_total}\n"
@@ -45,7 +52,7 @@ async def generate_slide_svg(
         f"Title: {slide.title}\n"
         f"Subtitle: {slide.subtitle or ''}\n"
         f"Bullets: {json.dumps(bullets, ensure_ascii=False)}\n"
-        f"Style preset: {style} — {STYLE_ART_DIRECTION.get(style, '')}\n"
+        f"Style preset ({style}): {style_context}\n"
         f"Design spec: {json.dumps(design_spec, ensure_ascii=False)}\n\n"
         "Generate one polished SVG slide matching the design spec."
     )
@@ -75,7 +82,7 @@ async def generate_slide_svg(
                 continue
             break
 
-    return build_slide_svg(slide, style, slide_index, slide_total)
+    return build_slide_svg(slide, style, slide_index, slide_total, primary_color)
 
 
 async def generate_all_slide_svgs(
@@ -84,6 +91,8 @@ async def generate_all_slide_svgs(
     style: str,
     design_spec: dict,
     deck_title: str,
+    style_note: str = "",
+    primary_color: str = "",
     on_progress: Callable[[int, int, str], None] | None = None,
 ) -> list[str]:
     results: list[str] = []
@@ -98,6 +107,8 @@ async def generate_all_slide_svgs(
             style=style,
             design_spec=design_spec,
             deck_title=deck_title,
+            style_note=style_note,
+            primary_color=primary_color,
         )
         results.append(svg)
         if index < total:

@@ -10,6 +10,7 @@ import PptBeautifyFullPreview from './PptBeautifyFullPreview'
 import PptBeautifySlideList from './PptBeautifySlideList'
 
 import { PPT_COVER_THEMES, getPptCoverTheme } from '../data/pptCoverThemes'
+import { PPT_LAYOUT_STYLE_LABELS } from '../data/pptLayoutStyles'
 
 import { PRESENTATION_TEMPLATES } from '../data/presentationTemplates'
 
@@ -694,6 +695,7 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
                                 style={{ background: item.preview.background }}
                               />
                               <strong>{item.name}</strong>
+                              <span className="ppt-beautify-theme-layout-tag">{PPT_LAYOUT_STYLE_LABELS[item.layoutStyle]}</span>
                             </button>
                           ))}
                         </div>
