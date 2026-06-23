@@ -9,13 +9,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.config import settings
-from app.models import HealthResponse, JobCreateResponse, JobRecord, JobStatus, PptMasterStyle
+from app.models import (
+    HealthResponse,
+    JobCreateResponse,
+    JobRecord,
+    JobStatus,
+    PptMasterStyle,
+    QianfanHealthResponse,
+    QianfanPptTheme,
+    QianfanThemesResponse,
+)
+from app.qianfan.client import QianfanPptError, get_ppt_themes
+from app.qianfan.runner import run_qianfan_job
 from app.style_presets import STYLE_LABELS, valid_hex
-from app.store import enqueue, set_runner, store
+from app.store import enqueue, set_qianfan_runner, set_runner, store
 from app.worker.llm_client import visual_model
 from app.worker.runner import run_job
 
-app = FastAPI(title="ChartCraft PPT Master Sidecar", version="0.2.0")
+app = FastAPI(title="ChartCraft PPT Master Sidecar", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,7 +37,9 @@ app.add_middleware(
 )
 
 _executor = ThreadPoolExecutor(max_workers=1)
+_qianfan_executor = ThreadPoolExecutor(max_workers=1)
 _executor_lock = threading.Lock()
+_qianfan_lock = threading.Lock()
 
 
 def _schedule_job(job_id: str) -> None:
@@ -48,23 +61,48 @@ def _schedule_job(job_id: str) -> None:
         _executor.submit(_run)
 
 
+def _schedule_qianfan_job(job_id: str) -> None:
+    def _run() -> None:
+        try:
+            run_qianfan_job(job_id)
+        except Exception as exc:  # noqa: BLE001
+            from app.models import JobProgress, JobStatus
+
+            store.update(
+                job_id,
+                status=JobStatus.failed,
+                error=str(exc),
+                progress=JobProgress(step="failed", percent=100, message=str(exc)),
+                log=f"ERROR: {exc}",
+            )
+
+    with _qianfan_lock:
+        _qianfan_executor.submit(_run)
+
+
 set_runner(_schedule_job)
+set_qianfan_runner(_schedule_qianfan_job)
 
 
 @app.get("/")
 def root() -> dict[str, object]:
     return {
         "service": "ChartCraft PPT Master Sidecar",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "status": "running",
         "endpoints": {
             "health": "/health",
             "styles": "/styles",
             "create_job": "POST /jobs",
-            "job_status": "/jobs/{job_id}",
-            "download": "/jobs/{job_id}/download",
+            "job_status": "GET /jobs/{job_id}",
+            "download": "GET /jobs/{job_id}/download",
+            "qianfan_health": "/qianfan/health",
+            "qianfan_themes": "GET /qianfan/themes",
+            "qianfan_create_job": "POST /qianfan/jobs",
+            "qianfan_job_status": "GET /qianfan/jobs/{job_id}",
+            "qianfan_download": "GET /qianfan/jobs/{job_id}/download",
         },
-        "note": "ChartCraft 前端通过 /api/ppt-master 代理访问，浏览器自检请打开 /health",
+        "note": "ChartCraft 前端通过 /api/ppt-master 代理访问",
     }
 
 
@@ -76,15 +114,53 @@ def health() -> HealthResponse:
         home_path
         and (home_path / "skills" / "ppt-master" / "scripts" / "svg_to_pptx.py").exists()
     )
+    llm_ok = bool(settings.ppt_master_llm_api_key.strip())
+    qianfan_ok = bool(settings.qianfan_api_key.strip())
     return HealthResponse(
-        ok=scripts_ok and bool(settings.ppt_master_llm_api_key.strip()),
+        ok=(scripts_ok and llm_ok) or qianfan_ok,
         ppt_master_home=home,
         ppt_master_ready=scripts_ok,
-        llm_configured=bool(settings.ppt_master_llm_api_key.strip()),
+        llm_configured=llm_ok,
         render_mode=settings.ppt_master_render_mode,
         plan_model=settings.ppt_master_llm_model,
         visual_model=visual_model(),
+        qianfan_configured=qianfan_ok,
     )
+
+
+@app.get("/qianfan/health", response_model=QianfanHealthResponse)
+def qianfan_health() -> QianfanHealthResponse:
+    configured = bool(settings.qianfan_api_key.strip())
+    return QianfanHealthResponse(ok=configured, api_configured=configured)
+
+
+@app.get("/qianfan/themes", response_model=QianfanThemesResponse)
+def qianfan_themes() -> QianfanThemesResponse:
+    if not settings.qianfan_api_key.strip():
+        raise HTTPException(status_code=503, detail="未配置 QIANFAN_API_KEY")
+    try:
+        raw = get_ppt_themes()
+    except QianfanPptError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    themes: list[QianfanPptTheme] = []
+    for item in raw:
+        tpl_id = item.get("tpl_id")
+        style_id = item.get("style_id")
+        if tpl_id is None or style_id is None:
+            continue
+        names = item.get("style_name_list")
+        colors = item.get("color_list")
+        themes.append(
+            QianfanPptTheme(
+                tpl_id=int(tpl_id),
+                style_id=int(style_id),
+                style_name_list=[str(n) for n in names] if isinstance(names, list) else [],
+                color_list=[str(c) for c in colors] if isinstance(colors, list) else [],
+                main_img_url=str(item.get("main_img_url") or ""),
+            )
+        )
+    return QianfanThemesResponse(themes=themes)
 
 
 @app.get("/styles")
@@ -119,6 +195,56 @@ async def create_job(
         primary_color=color,
         source_name=Path(file.filename).name,
         source_kind="file",
+        engine="ppt-master",
+    )
+    dest = store.job_dir(record.job_id) / record.source_name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    content = await file.read()
+    dest.write_bytes(content)
+
+    background_tasks.add_task(enqueue, record.job_id)
+    return JobCreateResponse(job_id=record.job_id, status=JobStatus.queued)
+
+
+@app.post("/qianfan/jobs", response_model=JobCreateResponse)
+async def create_qianfan_job(
+    background_tasks: BackgroundTasks,
+    prompt: str = Form(default="请根据材料生成结构清晰的汇报 PPT"),
+    tpl_id: int = Form(...),
+    style_id: int = Form(...),
+    page_range: str = Form(default="1-10"),
+    layout: str = Form(default="2"),
+    gen_mode: int = Form(default=1),
+    resource_url: str = Form(default=""),
+    file: UploadFile = File(...),
+) -> JobCreateResponse:
+    if not settings.qianfan_api_key.strip():
+        raise HTTPException(status_code=503, detail="未配置 QIANFAN_API_KEY")
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="请上传源文件")
+    suffix = Path(file.filename).suffix.lower()
+    allowed = {".pdf", ".doc", ".docx", ".md", ".markdown", ".txt", ".ppt", ".pptx"}
+    if suffix not in allowed:
+        raise HTTPException(status_code=400, detail=f"不支持的文件类型：{suffix}")
+    if page_range not in {"1-10", "11-20", "21-30", "31-40", "40+"}:
+        raise HTTPException(status_code=400, detail="page_range 无效")
+    if layout not in {"1", "2"}:
+        raise HTTPException(status_code=400, detail="layout 无效")
+    if gen_mode not in {1, 2}:
+        raise HTTPException(status_code=400, detail="gen_mode 无效")
+
+    record = store.create(
+        prompt=prompt.strip() or "请根据材料生成结构清晰的汇报 PPT",
+        style="qianfan",
+        source_name=Path(file.filename).name,
+        source_kind="file",
+        engine="qianfan-ppt",
+        tpl_id=tpl_id,
+        style_id=style_id,
+        page_range=page_range,
+        layout=layout,
+        gen_mode=gen_mode,
+        resource_url=resource_url.strip(),
     )
     dest = store.job_dir(record.job_id) / record.source_name
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -137,6 +263,16 @@ def get_job(job_id: str) -> JobRecord:
     return record
 
 
+@app.get("/qianfan/jobs/{job_id}", response_model=JobRecord)
+def get_qianfan_job(job_id: str) -> JobRecord:
+    record = store.get(job_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if record.engine != "qianfan-ppt":
+        raise HTTPException(status_code=404, detail="非千帆 PPT 任务")
+    return record
+
+
 @app.get("/jobs/{job_id}/download")
 def download_job(job_id: str) -> FileResponse:
     record = store.get(job_id)
@@ -147,8 +283,14 @@ def download_job(job_id: str) -> FileResponse:
     path = Path(record.output_file)
     if not path.exists():
         raise HTTPException(status_code=404, detail="输出文件不存在")
+    prefix = "qianfan-ppt" if record.engine == "qianfan-ppt" else "ppt-master"
     return FileResponse(
         path,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        filename=f"ppt-master-{job_id[:8]}.pptx",
+        filename=f"{prefix}-{job_id[:8]}.pptx",
     )
+
+
+@app.get("/qianfan/jobs/{job_id}/download")
+def download_qianfan_job(job_id: str) -> FileResponse:
+    return download_job(job_id)

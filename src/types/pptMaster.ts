@@ -42,6 +42,7 @@ export interface PptMasterHealth {
   render_mode: string
   plan_model: string
   visual_model: string
+  qianfan_configured?: boolean
   version: string
 }
 

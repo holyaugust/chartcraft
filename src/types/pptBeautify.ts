@@ -76,10 +76,11 @@ export const TEMPLATE_EXPORT_PHASE_LABELS: Record<TemplateExportPhase, string> =
 }
 
 /** PPT 美化主视图 */
-export type PptBeautifyView = 'ai-design' | 'template-export'
+export type PptBeautifyView = 'ai-design' | 'qianfan-ppt' | 'template-export'
 
 export const PPT_BEAUTIFY_VIEW_LABELS: Record<PptBeautifyView, string> = {
   'ai-design': 'AI一键设计',
+  'qianfan-ppt': '千帆 PPT',
   'template-export': '模板导出',
 }
 

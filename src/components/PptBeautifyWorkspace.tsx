@@ -5,6 +5,8 @@ import PptBeautifyOutlinePreview from './PptBeautifyOutlinePreview'
 
 import PptMasterGeneratePanel from './PptMasterGeneratePanel'
 
+import QianfanPptGeneratePanel from './QianfanPptGeneratePanel'
+
 import PptBeautifyFullPreview from './PptBeautifyFullPreview'
 
 import PptBeautifySlideList from './PptBeautifySlideList'
@@ -430,10 +432,12 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
               <h2>PPT 美化</h2>
               <p>
                 {pptView === 'ai-design'
-                  ? `${PPT_BEAUTIFY_VIEW_LABELS['ai-design']} · 成稿后直接下载`
-                  : templatePhase === 'outline'
-                    ? `${PPT_BEAUTIFY_VIEW_LABELS['template-export']} · ${TEMPLATE_EXPORT_PHASE_LABELS.outline}`
-                    : `${PPT_BEAUTIFY_VIEW_LABELS['template-export']} · ${TEMPLATE_EXPORT_PHASE_LABELS.beautify}`}
+                  ? `${PPT_BEAUTIFY_VIEW_LABELS['ai-design']} · Sidecar 逐页 SVG 成稿`
+                  : pptView === 'qianfan-ppt'
+                    ? `${PPT_BEAUTIFY_VIEW_LABELS['qianfan-ppt']} · 文库智能 PPT API 一键成稿`
+                    : templatePhase === 'outline'
+                      ? `${PPT_BEAUTIFY_VIEW_LABELS['template-export']} · ${TEMPLATE_EXPORT_PHASE_LABELS.outline}`
+                      : `${PPT_BEAUTIFY_VIEW_LABELS['template-export']} · ${TEMPLATE_EXPORT_PHASE_LABELS.beautify}`}
               </p>
             </div>
           </div>
@@ -450,6 +454,17 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
                 onClick={() => setPptView('ai-design')}
               >
                 AI一键设计
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={pptView === 'qianfan-ppt'}
+                className={`ppt-beautify-output-mode-btn${pptView === 'qianfan-ppt' ? ' active' : ''}`}
+                disabled={busy}
+                title="百度千帆智能 PPT：大纲 + 排版 + 导出"
+                onClick={() => setPptView('qianfan-ppt')}
+              >
+                千帆 PPT
               </button>
               <button
                 type="button"
@@ -479,6 +494,16 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
             onBusyChange={setBusy}
             onStatus={setStatus}
             onDesignDraftComplete={handleDesignDraftComplete}
+            initialPrompt={templatePrompt}
+          />
+        ) : null}
+
+        {pptView === 'qianfan-ppt' ? (
+          <QianfanPptGeneratePanel
+            busy={busy}
+            onBusyChange={setBusy}
+            onStatus={setStatus}
+            onComplete={handleDesignDraftComplete}
             initialPrompt={templatePrompt}
           />
         ) : null}

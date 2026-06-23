@@ -82,6 +82,25 @@ PPT_MASTER_EXECUTOR_MODEL=claude-sonnet-4-6
 
 10 页 `ai_svg` 约 **5–15 分钟**（视视觉模型速度）；`template` 约 1–3 分钟。
 
+## 千帆 PPT 引擎（可选）
+
+在 Sidecar `.env` 中配置 `QIANFAN_API_KEY` 后，前端 **PPT 美化 → 千帆 PPT** 将全流程调用百度文库智能 PPT API：
+
+1. `get_ppt_theme` — 加载文库模板
+2. `generate_outline` — 生成大纲（SSE）
+3. `generate_ppt_by_outline` — 排版并导出 pptx
+4. Sidecar 下载 pptx 至本地任务目录，前端从 `/qianfan/jobs/{id}/download` 取回
+
+本地材料会先解析为文本并写入 `query`；若需「严格依从」模式，可后续配置公网 `resource_url`（如 BOS）。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/qianfan/health` | 千帆 Key 是否已配置 |
+| GET | `/qianfan/themes` | 文库 PPT 模板列表 |
+| POST | `/qianfan/jobs` | 创建千帆 PPT 任务 |
+| GET | `/qianfan/jobs/{id}` | 任务进度 |
+| GET | `/qianfan/jobs/{id}/download` | 下载 `.pptx` |
+
 ## API
 
 | 方法 | 路径 | 说明 |

@@ -32,6 +32,13 @@ class JobStore:
         source_kind: str,
         style_note: str = "",
         primary_color: str = "",
+        engine: str = "ppt-master",
+        tpl_id: int | None = None,
+        style_id: int | None = None,
+        page_range: str = "1-10",
+        layout: str = "2",
+        gen_mode: int = 1,
+        resource_url: str = "",
     ) -> JobRecord:
         import uuid
 
@@ -48,6 +55,13 @@ class JobStore:
             primary_color=primary_color,
             source_name=source_name,
             source_kind=source_kind,
+            engine=engine,
+            tpl_id=tpl_id,
+            style_id=style_id,
+            page_range=page_range,
+            layout=layout,
+            gen_mode=gen_mode,
+            resource_url=resource_url,
         )
         job_dir = self._job_dir(job_id)
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -116,6 +130,7 @@ class JobStore:
 store = JobStore(Path(settings.ppt_master_data_dir))
 
 _runner: Callable[[str], None] | None = None
+_qianfan_runner: Callable[[str], None] | None = None
 
 
 def set_runner(fn: Callable[[str], None]) -> None:
@@ -123,7 +138,18 @@ def set_runner(fn: Callable[[str], None]) -> None:
     _runner = fn
 
 
+def set_qianfan_runner(fn: Callable[[str], None]) -> None:
+    global _qianfan_runner
+    _qianfan_runner = fn
+
+
 def enqueue(job_id: str) -> None:
+    record = store.get(job_id)
+    if record and record.engine == "qianfan-ppt":
+        if _qianfan_runner is None:
+            raise RuntimeError("Qianfan worker runner not registered")
+        _qianfan_runner(job_id)
+        return
     if _runner is None:
         raise RuntimeError("Worker runner not registered")
     _runner(job_id)

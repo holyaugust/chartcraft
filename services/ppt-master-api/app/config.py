@@ -32,5 +32,10 @@ class Settings(BaseSettings):
     ppt_master_visual_model: str = ""
     ppt_master_data_dir: str = "./data"
 
+    # 千帆 · 百度文库智能 PPT
+    qianfan_api_key: str = ""
+    qianfan_api_base: str = "https://qianfan.baidubce.com"
+    qianfan_request_timeout: float = 900.0
+
 
 settings = Settings()
