@@ -8704,6 +8704,10 @@
   box-shadow: 0 0 0 1px #2563eb;
 }
 
+.ppt-beautify-qianfan-theme-thumb {
+  position: relative;
+}
+
 .ppt-beautify-qianfan-theme-card img,
 .ppt-beautify-qianfan-theme-fallback {
   width: 100%;
@@ -8711,6 +8715,151 @@
   object-fit: cover;
   border-radius: 8px;
   background: linear-gradient(135deg, #e2e8f0, #f8fafc);
+}
+
+.ppt-beautify-qianfan-theme-zoom {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.ppt-beautify-qianfan-theme-card:hover .ppt-beautify-qianfan-theme-zoom,
+.ppt-beautify-qianfan-theme-card.active .ppt-beautify-qianfan-theme-zoom,
+.ppt-beautify-qianfan-theme-zoom:focus-visible {
+  opacity: 1;
+}
+
+.ppt-beautify-qianfan-theme-zoom:hover {
+  background: rgba(37, 99, 235, 0.92);
+}
+
+.qianfan-cover-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.qianfan-cover-modal {
+  width: min(920px, 100%);
+  max-height: min(92vh, 900px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.22);
+  overflow: hidden;
+}
+
+.qianfan-cover-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.qianfan-cover-modal-head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.qianfan-cover-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.qianfan-cover-modal-close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.qianfan-cover-modal-body {
+  padding: 16px 18px 18px;
+  overflow: auto;
+}
+
+.qianfan-cover-modal-img {
+  display: block;
+  width: 100%;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.qianfan-cover-modal-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #e2e8f0, #f8fafc);
+  color: #64748b;
+  font-size: 14px;
+}
+
+.qianfan-cover-modal-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.qianfan-cover-modal-tags li {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  font-size: 12px;
+  color: #475569;
+}
+
+.qianfan-cover-modal-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.qianfan-cover-modal-colors span {
+  width: 28px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.qianfan-cover-modal-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
 }
 
 .ppt-beautify-qianfan-theme-card strong {

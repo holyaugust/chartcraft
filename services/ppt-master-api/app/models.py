@@ -72,6 +72,8 @@ class QianfanPptTheme(BaseModel):
     tpl_id: int
     style_id: int
     style_name_list: list[str] = Field(default_factory=list)
+    style_list: list[str] = Field(default_factory=list)
+    scene_list: list[str] = Field(default_factory=list)
     color_list: list[str] = Field(default_factory=list)
     main_img_url: str = ""
 

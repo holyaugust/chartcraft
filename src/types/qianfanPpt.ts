@@ -10,6 +10,8 @@ export interface QianfanPptTheme {
   tpl_id: number
   style_id: number
   style_name_list: string[]
+  style_list: string[]
+  scene_list: string[]
   color_list: string[]
   main_img_url: string
 }
@@ -64,7 +66,10 @@ export const QIANFAN_GEN_MODE_OPTIONS: { value: QianfanGenMode; label: string; h
 ]
 
 export function qianfanThemeLabel(theme: QianfanPptTheme): string {
-  const name = theme.style_name_list.find(Boolean)
+  const name =
+    theme.style_name_list.find(Boolean) ??
+    theme.style_list.find(Boolean) ??
+    theme.scene_list.find(Boolean)
   if (name) return name
   return `模板 ${theme.tpl_id}`
 }

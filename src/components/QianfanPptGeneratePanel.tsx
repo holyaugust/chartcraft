@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Download, FileText, Loader2, Sparkles, Trash2 } from 'lucide-react'
+import { AlertCircle, Download, FileText, Loader2, Sparkles, Trash2, ZoomIn } from 'lucide-react'
 
 import {
   QIANFAN_GEN_MODE_OPTIONS,
@@ -22,6 +22,7 @@ import {
 } from '../utils/qianfanPptApi'
 import { DEFAULT_PROJECT_PROMPT, PPT_SOURCE_ACCEPT, readPptSourceDocument } from '../utils/pptSourceDocument'
 import { saveFile } from '../utils/saveFile'
+import QianfanThemeCoverModal from './QianfanThemeCoverModal'
 
 interface QianfanPptGeneratePanelProps {
   busy: boolean
@@ -52,6 +53,7 @@ export default function QianfanPptGeneratePanel({
   const [sourceName, setSourceName] = useState('')
   const [job, setJob] = useState<QianfanPptJobRecord | null>(null)
   const [downloadName, setDownloadName] = useState('')
+  const [zoomTheme, setZoomTheme] = useState<QianfanPptTheme | null>(null)
   const stopPollRef = useRef<(() => void) | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -367,7 +369,7 @@ export default function QianfanPptGeneratePanel({
           <div className="ppt-beautify-qianfan-themes-panel">
             <div className="ppt-beautify-qianfan-themes-head">
               <h3>千帆文库模板</h3>
-              <p>大纲、排版与导出均由百度智能 PPT API 完成</p>
+              <p>大纲、排版与导出均由百度智能 PPT API 完成 · 点击放大镜可放大预览封面</p>
             </div>
             {themesLoading ? (
               <p className="ppt-beautify-qianfan-loading">
@@ -388,11 +390,27 @@ export default function QianfanPptGeneratePanel({
                       disabled={busy}
                       onClick={() => setSelectedThemeKey(key)}
                     >
-                      {theme.main_img_url ? (
-                        <img src={theme.main_img_url} alt="" loading="lazy" />
-                      ) : (
-                        <span className="ppt-beautify-qianfan-theme-fallback" aria-hidden="true" />
-                      )}
+                      <div className="ppt-beautify-qianfan-theme-thumb">
+                        {theme.main_img_url ? (
+                          <img src={theme.main_img_url} alt="" loading="lazy" />
+                        ) : (
+                          <span className="ppt-beautify-qianfan-theme-fallback" aria-hidden="true" />
+                        )}
+                        {theme.main_img_url ? (
+                          <button
+                            type="button"
+                            className="ppt-beautify-qianfan-theme-zoom"
+                            aria-label={`放大预览：${qianfanThemeLabel(theme)}`}
+                            disabled={busy}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setZoomTheme(theme)
+                            }}
+                          >
+                            <ZoomIn size={14} />
+                          </button>
+                        ) : null}
+                      </div>
                       <strong>{qianfanThemeLabel(theme)}</strong>
                       {theme.color_list[0] ? (
                         <span className="ppt-beautify-qianfan-theme-color" style={{ background: theme.color_list[0] }} />
@@ -446,6 +464,8 @@ export default function QianfanPptGeneratePanel({
           </div>
         )}
       </div>
+
+      <QianfanThemeCoverModal theme={zoomTheme} onClose={() => setZoomTheme(null)} />
     </div>
   )
 }

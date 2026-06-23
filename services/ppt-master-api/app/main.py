@@ -150,12 +150,19 @@ def qianfan_themes() -> QianfanThemesResponse:
         if tpl_id is None or style_id is None:
             continue
         names = item.get("style_name_list")
+        styles = item.get("style_list")
+        scenes = item.get("scene_list")
         colors = item.get("color_list")
+        style_names = [str(n) for n in names] if isinstance(names, list) else []
+        style_tags = [str(n) for n in styles] if isinstance(styles, list) else []
+        scene_tags = [str(n) for n in scenes] if isinstance(scenes, list) else []
         themes.append(
             QianfanPptTheme(
                 tpl_id=int(tpl_id),
                 style_id=int(style_id),
-                style_name_list=[str(n) for n in names] if isinstance(names, list) else [],
+                style_name_list=style_names,
+                style_list=style_tags,
+                scene_list=scene_tags,
                 color_list=[str(c) for c in colors] if isinstance(colors, list) else [],
                 main_img_url=str(item.get("main_img_url") or ""),
             )
