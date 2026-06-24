@@ -43,6 +43,8 @@ class JobRecord(BaseModel):
     layout: str = "2"
     gen_mode: int = 1
     resource_url: str = ""
+    reference_image_url: str = ""
+    generation_mode: str = "creative"
     progress: JobProgress = Field(default_factory=lambda: JobProgress(step="queued", percent=0, message="排队中"))
     error: str | None = None
     output_file: str | None = None
@@ -58,6 +60,8 @@ class HealthResponse(BaseModel):
     render_mode: str
     plan_model: str
     visual_model: str
+    vision_enabled: bool = False
+    vision_model: str = ""
     qianfan_configured: bool = False
     version: str = "0.3.0"
 

@@ -22,6 +22,21 @@ HTML_ENTITY_REPLACEMENTS = {
 
 _STRIP_ATTRS = ("filter", "class", "mask")
 
+# PPT Master svg_to_pptx 原生 DrawingML 不支持的标签
+_UNSUPPORTED_TAGS = frozenset(
+    {
+        "use",
+        "symbol",
+        "textPath",
+        "animate",
+        "animateTransform",
+        "animateMotion",
+        "set",
+        "foreignObject",
+        "script",
+    }
+)
+
 
 def _local_tag(tag: str) -> str:
     if isinstance(tag, str) and "}" in tag:
@@ -38,6 +53,37 @@ def _promote_orphan_tspan_to_text(tspan: ET.Element) -> ET.Element:
     for child in list(tspan):
         text.append(child)
     return text
+
+
+def _strip_unsupported_elements(root: ET.Element) -> None:
+    """Remove tags that break PPT Master native SVG → DrawingML conversion."""
+    to_remove: list[tuple[ET.Element, ET.Element]] = []
+    for parent in root.iter():
+        for child in list(parent):
+            if _local_tag(child.tag) in _UNSUPPORTED_TAGS:
+                to_remove.append((parent, child))
+    for parent, child in to_remove:
+        parent.remove(child)
+
+
+def _flatten_nested_svgs(root: ET.Element) -> None:
+    """Unwrap nested <svg> wrappers so shapes stay convertible."""
+    changed = True
+    while changed:
+        changed = False
+        for parent in root.iter():
+            for child in list(parent):
+                if _local_tag(child.tag) != "svg" or child is root:
+                    continue
+                index = list(parent).index(child)
+                for grandchild in list(child):
+                    parent.insert(index, grandchild)
+                    index += 1
+                parent.remove(child)
+                changed = True
+                break
+            if changed:
+                break
 
 
 def _fix_orphan_tspans(root: ET.Element) -> None:
@@ -73,9 +119,11 @@ def normalize_svg_tree(root: ET.Element) -> None:
 
     for defs in list(root.iter("defs")):
         for child in list(defs):
-            if _local_tag(child.tag) == "filter":
+            if _local_tag(child.tag) in {"filter", "symbol"}:
                 defs.remove(child)
 
+    _strip_unsupported_elements(root)
+    _flatten_nested_svgs(root)
     _fix_orphan_tspans(root)
 
 
@@ -117,6 +165,9 @@ def sanitize_svg(raw: str) -> str:
     svg = re.sub(r"\sclass=\"[^\"]*\"", "", svg, flags=re.IGNORECASE)
     svg = re.sub(r"<foreignObject[\s\S]*?</foreignObject>", "", svg, flags=re.IGNORECASE)
     svg = re.sub(r"<script[\s\S]*?</script>", "", svg, flags=re.IGNORECASE)
+    svg = re.sub(r"<symbol[\s\S]*?</symbol>", "", svg, flags=re.IGNORECASE)
+    svg = re.sub(r"<use\b[^>]*/>", "", svg, flags=re.IGNORECASE)
+    svg = re.sub(r"<use[\s\S]*?</use>", "", svg, flags=re.IGNORECASE)
     svg = re.sub(r'\sfilter="[^"]*"', "", svg, flags=re.IGNORECASE)
 
     if 'viewBox="0 0 1280 720"' not in svg and "viewBox='0 0 1280 720'" not in svg:

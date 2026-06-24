@@ -39,6 +39,8 @@ class JobStore:
         layout: str = "2",
         gen_mode: int = 1,
         resource_url: str = "",
+        reference_image_url: str = "",
+        generation_mode: str = "creative",
     ) -> JobRecord:
         import uuid
 
@@ -62,6 +64,8 @@ class JobStore:
             layout=layout,
             gen_mode=gen_mode,
             resource_url=resource_url,
+            reference_image_url=reference_image_url,
+            generation_mode=generation_mode,
         )
         job_dir = self._job_dir(job_id)
         job_dir.mkdir(parents=True, exist_ok=True)

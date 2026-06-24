@@ -8868,10 +8868,52 @@
   color: var(--text-primary, #0f172a);
 }
 
-.ppt-beautify-qianfan-theme-color {
-  width: 18px;
-  height: 6px;
-  border-radius: 999px;
+.ppt-beautify-master-vision-ref {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.ppt-beautify-master-vision-ref input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #e2e8f0);
+  font-size: 12px;
+}
+
+.ppt-beautify-master-ref-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ppt-beautify-master-ref-card {
+  margin: 0;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.ppt-beautify-master-ref-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #f1f5f9;
+}
+
+.ppt-beautify-master-ref-card figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #64748b;
 }
 
 .ppt-beautify-full-slide.compact .ppt-beautify-full-content-header {

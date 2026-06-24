@@ -1,3 +1,10 @@
+export type PptMasterGenerationMode = 'creative' | 'replica'
+
+export const PPT_MASTER_GENERATION_MODE_LABELS: Record<PptMasterGenerationMode, string> = {
+  creative: '智能设计',
+  replica: '参照页还原',
+}
+
 export type PptMasterJobStatus = 'queued' | 'running' | 'succeeded' | 'failed'
 
 export type PptMasterStyle =
@@ -27,6 +34,7 @@ export interface PptMasterJobRecord {
   style: PptMasterStyle
   style_note?: string
   primary_color?: string
+  generation_mode?: PptMasterGenerationMode
   source_name: string
   progress: PptMasterJobProgress
   error?: string | null
@@ -42,6 +50,8 @@ export interface PptMasterHealth {
   render_mode: string
   plan_model: string
   visual_model: string
+  vision_enabled?: boolean
+  vision_model?: string
   qianfan_configured?: boolean
   version: string
 }

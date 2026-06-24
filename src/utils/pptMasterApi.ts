@@ -1,4 +1,4 @@
-import type { PptMasterHealth, PptMasterJobRecord, PptMasterStyle } from '../types/pptMaster'
+import type { PptMasterGenerationMode, PptMasterHealth, PptMasterJobRecord, PptMasterStyle } from '../types/pptMaster'
 
 const DEFAULT_BASE = '/api/ppt-master'
 
@@ -26,21 +26,33 @@ export async function fetchPptMasterHealth(): Promise<PptMasterHealth> {
 }
 
 export async function createPptMasterJob(input: {
-  file: File
+  file?: File | null
   prompt: string
   style: PptMasterStyle
   styleNote?: string
   primaryColor?: string
+  referenceImageUrl?: string
+  generationMode?: PptMasterGenerationMode
+  referenceImages?: File[]
 }): Promise<{ job_id: string }> {
   const form = new FormData()
-  form.append('file', input.file)
+  if (input.file) {
+    form.append('file', input.file)
+  }
   form.append('prompt', input.prompt)
   form.append('style', input.style)
+  form.append('generation_mode', input.generationMode ?? 'creative')
   if (input.styleNote?.trim()) {
     form.append('style_note', input.styleNote.trim())
   }
   if (input.primaryColor?.trim()) {
     form.append('primary_color', input.primaryColor.trim())
+  }
+  if (input.referenceImageUrl?.trim()) {
+    form.append('reference_image_url', input.referenceImageUrl.trim())
+  }
+  for (const image of input.referenceImages ?? []) {
+    form.append('reference_images', image)
   }
 
   const response = await fetch(`${baseUrl()}/jobs`, {

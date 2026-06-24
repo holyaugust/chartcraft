@@ -353,7 +353,7 @@ export interface DeepSeekVisionOptions {
 
 export function getDeepSeekVisionModel(): string {
   const configured = import.meta.env.VITE_DEEPSEEK_VISION_MODEL as string | undefined
-  return configured?.trim() || getDeepSeekModel()
+  return configured?.trim() || 'deepseek-v4-flash'
 }
 
 /** 仅当显式开启且使用支持 image_url 的模型/端点时才走视觉 API */

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     ppt_master_llm_timeout: float = 180.0
     # ai_svg = LLM 逐页生成 SVG（高视觉）；template = 内置模板（快速）
     ppt_master_render_mode: str = "ai_svg"
-    # Executor 逐页 SVG（留空则沿用 ppt_master_llm_*；兼容旧名 VISUAL_*）
+    # Executor 逐页 SVG（端点/Key 可单独配置；模型名固定走 PPT_MASTER_VISION_MODEL）
     ppt_master_executor_api_url: str = ""
     ppt_master_executor_api_key: str = ""
     ppt_master_executor_model: str = ""
@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     ppt_master_visual_api_key: str = ""
     ppt_master_visual_model: str = ""
     ppt_master_data_dir: str = "./data"
+
+    # DeepSeek 视觉版（多模态 design spec · 参考图分析）
+    ppt_master_vision_enabled: bool = False
+    ppt_master_vision_model: str = "deepseek-v4-flash"
+    ppt_master_vision_api_url: str = ""
+    ppt_master_vision_api_key: str = ""
 
     # 千帆 · 百度文库智能 PPT
     qianfan_api_key: str = ""

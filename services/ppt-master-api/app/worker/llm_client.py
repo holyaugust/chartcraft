@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.worker.vision import attach_image_urls, vision_api_key, vision_api_url, vision_model
 
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-20250514"
@@ -62,11 +63,8 @@ def executor_api_key() -> str:
 
 
 def executor_model() -> str:
-    return (
-        settings.ppt_master_executor_model.strip()
-        or settings.ppt_master_visual_model.strip()
-        or settings.ppt_master_llm_model
-    )
+    """Executor 逐页 SVG 统一使用视觉模型（默认 deepseek-v4-flash）。"""
+    return vision_model()
 
 
 def visual_api_url() -> str:
@@ -241,42 +239,96 @@ async def _anthropic_chat_completion(
     return await _retry_async("Anthropic 请求", _call)
 
 
+def _is_vision_unsupported_error(exc: BaseException) -> bool:
+    message = str(exc).lower()
+    return any(
+        token in message
+        for token in (
+            "image_url",
+            "unknown variant",
+            "multimodal",
+            "vision",
+            "does not support",
+        )
+    )
+
+
 async def chat_completion(
     *,
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     model: str | None = None,
     temperature: float = 0.5,
     timeout: float | None = None,
     use_visual_endpoint: bool = False,
     use_executor_endpoint: bool = False,
+    use_vision_model: bool = False,
+    image_urls: list[str] | None = None,
 ) -> str:
-    use_executor = use_executor_endpoint or use_visual_endpoint
-    api_key = executor_api_key() if use_executor else settings.ppt_master_llm_api_key
-    if not api_key.strip():
-        raise RuntimeError("未配置 LLM API Key")
+    resolved_images = [url.strip() for url in (image_urls or []) if url.strip()]
+    use_vision = use_vision_model or bool(resolved_images)
 
-    raw_url = executor_api_url() if use_executor else settings.ppt_master_llm_api_url
-    url = _resolve_url(raw_url, use_visual=use_executor)
-    resolved_model = model or (executor_model() if use_executor else settings.ppt_master_llm_model)
+    if use_vision:
+        api_key = vision_api_key()
+        if not api_key.strip():
+            raise RuntimeError("未配置视觉模型 API Key")
+        url = vision_api_url()
+        resolved_model = model or vision_model()
+        payload_messages = attach_image_urls(messages, resolved_images)
+    else:
+        use_executor = use_visual_endpoint or use_executor_endpoint
+        api_key = executor_api_key() if use_executor else settings.ppt_master_llm_api_key
+        if not api_key.strip():
+            raise RuntimeError("未配置 LLM API Key")
+        raw_url = executor_api_url() if use_executor else settings.ppt_master_llm_api_url
+        url = _resolve_url(raw_url, use_visual=use_executor)
+        resolved_model = model or (executor_model() if use_executor else settings.ppt_master_llm_model)
+        payload_messages = messages
+
     resolved_timeout = timeout or settings.ppt_master_llm_timeout
 
     if _is_anthropic_url(url):
+        if resolved_images:
+            raise RuntimeError("Anthropic 端点暂不支持参考图视觉分析")
+        text_messages = [
+            {"role": str(m["role"]), "content": str(m["content"])}
+            for m in payload_messages
+            if isinstance(m.get("content"), str)
+        ]
         return await _anthropic_chat_completion(
             api_key=api_key,
             model=resolved_model,
-            messages=messages,
+            messages=text_messages,
             temperature=temperature,
             timeout=resolved_timeout,
         )
 
     payload: dict[str, Any] = {
         "model": resolved_model,
-        "messages": messages,
+        "messages": payload_messages,
         "temperature": temperature,
     }
-    return await _openai_chat_completion(
-        url=url,
-        api_key=api_key,
-        payload=payload,
-        timeout=resolved_timeout,
-    )
+    try:
+        return await _openai_chat_completion(
+            url=url,
+            api_key=api_key,
+            payload=payload,
+            timeout=resolved_timeout,
+        )
+    except RuntimeError as exc:
+        if resolved_images and _is_vision_unsupported_error(exc):
+            text_messages = [
+                {"role": str(m["role"]), "content": str(m["content"])}
+                for m in messages
+                if isinstance(m.get("content"), str)
+            ]
+            return await chat_completion(
+                messages=text_messages,
+                model=model,
+                temperature=temperature,
+                timeout=timeout,
+                use_visual_endpoint=use_visual_endpoint,
+                use_executor_endpoint=use_executor_endpoint,
+                use_vision_model=False,
+                image_urls=None,
+            )
+        raise
