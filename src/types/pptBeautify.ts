@@ -75,8 +75,13 @@ export const TEMPLATE_EXPORT_PHASE_LABELS: Record<TemplateExportPhase, string> =
   beautify: '模板美化',
 }
 
-/** PPT 美化主视图 */
+/** PPT 美化主视图（子流程） */
 export type PptBeautifyView = 'ai-design' | 'qianfan-ppt' | 'template-export'
+
+/** PPT 美化屏幕（含入口落地页） */
+export type PptBeautifyScreen = 'landing' | 'ai-wizard' | 'replica-wizard' | 'qianfan' | 'template-export'
+
+export const PPT_BEAUTIFY_ONBOARDING_KEY = 'ppt-beautify-onboarding-v1'
 
 export const PPT_BEAUTIFY_VIEW_LABELS: Record<PptBeautifyView, string> = {
   'ai-design': 'AI一键设计',

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, ChevronDown, ChevronRight, Download, FileText, FileUp, Loader2, Palette, Sparkles, Trash2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ChevronDown, ChevronRight, Download, FileText, FileUp, Loader2, Palette, Sparkles, Trash2 } from 'lucide-react'
 
 import PptBeautifyOutlinePreview from './PptBeautifyOutlinePreview'
 
@@ -11,6 +11,14 @@ import PptBeautifyFullPreview from './PptBeautifyFullPreview'
 
 import PptBeautifySlideList from './PptBeautifySlideList'
 
+import PptBeautifyLanding from './PptBeautifyLanding'
+
+import PptBeautifyGlobalMaterialBar from './PptBeautifyGlobalMaterialBar'
+
+import PptBeautifyOnboarding, { shouldShowPptBeautifyOnboarding } from './PptBeautifyOnboarding'
+
+import { PPT_BEAUTIFY_SCREEN_LABELS } from '../data/pptBeautifyScenarios'
+
 import { PPT_COVER_THEMES, getPptCoverTheme } from '../data/pptCoverThemes'
 import { PPT_LAYOUT_STYLE_LABELS } from '../data/pptLayoutStyles'
 
@@ -21,7 +29,7 @@ import {
   PPT_BEAUTIFY_VIEW_LABELS,
   TEMPLATE_EXPORT_PHASE_LABELS,
   type FullBeautifyExportMode,
-  type PptBeautifyView,
+  type PptBeautifyScreen,
   type PptMaterialSourcePayload,
   type TemplateExportPhase,
 } from '../types/pptBeautify'
@@ -50,7 +58,7 @@ import {
   outlineToPreviewText,
 } from '../utils/presentationWrite'
 
-import { DEFAULT_PROJECT_PROMPT, readPptSourceDocument } from '../utils/pptSourceDocument'
+import { DEFAULT_PROJECT_PROMPT, readPptSourceDocument, type PptSourceDocument } from '../utils/pptSourceDocument'
 
 import { isDeepSeekConfigured } from '../utils/deepseek'
 
@@ -84,7 +92,15 @@ interface PptBeautifyWorkspaceProps {
 export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautifyWorkspaceProps) {
   const initialDraft = loadPresentationDraft()
 
-  const [pptView, setPptView] = useState<PptBeautifyView>('ai-design')
+  const [screen, setScreen] = useState<PptBeautifyScreen>('landing')
+
+  const [aiWizardStep, setAiWizardStep] = useState(1)
+
+  const [replicaWizardStep, setReplicaWizardStep] = useState(1)
+
+  const [globalMaterial, setGlobalMaterial] = useState<PptSourceDocument | null>(null)
+
+  const [showOnboarding, setShowOnboarding] = useState(shouldShowPptBeautifyOnboarding)
 
   const [templatePhase, setTemplatePhase] = useState<TemplateExportPhase>('outline')
 
@@ -253,7 +269,7 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
         setTemplateSource(next)
         setStatus(`已读取「${doc.name}」（${doc.text.length.toLocaleString()} 字）`)
         outlineGenKeyRef.current = ''
-        if (pptView === 'template-export' && templatePhase === 'outline') {
+        if (screen === 'template-export' && templatePhase === 'outline') {
           await generateOutline()
         }
       } catch (err) {
@@ -263,22 +279,22 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
         setBusy(false)
       }
     },
-    [generateOutline, pptView, setStatus, templatePhase, templatePrompt],
+    [generateOutline, screen, setStatus, templatePhase, templatePrompt],
   )
 
   useEffect(() => {
-    if (pptView !== 'template-export' || templatePhase !== 'outline' || !templateSource?.text.trim() || busy) return
+    if (screen !== 'template-export' || templatePhase !== 'outline' || !templateSource?.text.trim() || busy) return
     const nextKey = buildOutlineGenKey(templateSource, templateOverrideId)
     if (outlineGenKeyRef.current === nextKey && outlineSource) return
     void generateOutline()
-  }, [pptView, templateSource, templatePhase]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [screen, templateSource, templatePhase]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (skipTemplateAutoGenRef.current) {
       skipTemplateAutoGenRef.current = false
       return
     }
-    if (pptView !== 'template-export' || templatePhase !== 'outline' || !templateSource?.text.trim() || busy) return
+    if (screen !== 'template-export' || templatePhase !== 'outline' || !templateSource?.text.trim() || busy) return
     void generateOutline({ templateOverrideId })
   }, [templateOverrideId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -410,10 +426,75 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
     setTemplatePhase('beautify')
   }, [fullSource, outlineSource, setStatus])
 
-  const openTemplateExport = useCallback(() => {
-    setPptView('template-export')
-    if (!outlineSource) setTemplatePhase('outline')
-  }, [outlineSource])
+  const goLanding = useCallback(() => {
+    setScreen('landing')
+    setAiWizardStep(1)
+    setReplicaWizardStep(1)
+  }, [])
+
+  const handleSelectScenario = useCallback(
+    (next: PptBeautifyScreen) => {
+      setScreen(next)
+      setAiWizardStep(1)
+      setReplicaWizardStep(1)
+      if (next === 'template-export' && !outlineSource) {
+        setTemplatePhase('outline')
+      }
+    },
+    [outlineSource],
+  )
+
+  const syncTemplateSourceFromGlobal = useCallback(
+    (doc: PptSourceDocument) => {
+      if (doc.kind === 'pdf') return
+      setTemplateSource({
+        file: doc.file,
+        text: doc.text,
+        name: doc.name,
+        prompt: templatePrompt,
+      })
+    },
+    [templatePrompt],
+  )
+
+  const handleGlobalMaterialUpload = useCallback(
+    async (file: File) => {
+      setBusy(true)
+      try {
+        const doc = await readPptSourceDocument(file)
+        setGlobalMaterial(doc)
+        syncTemplateSourceFromGlobal(doc)
+        setStatus(`已上传「${doc.name}」`)
+      } catch (err) {
+        setGlobalMaterial(null)
+        setStatus(err instanceof Error ? err.message : '文档读取失败', true)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [setStatus, syncTemplateSourceFromGlobal],
+  )
+
+  const handleGlobalMaterialClear = useCallback(() => {
+    setGlobalMaterial(null)
+  }, [])
+
+  const handleSharedMaterialChange = useCallback(
+    (doc: PptSourceDocument | null) => {
+      setGlobalMaterial(doc)
+      if (doc) syncTemplateSourceFromGlobal(doc)
+    },
+    [syncTemplateSourceFromGlobal],
+  )
+
+  const screenSubtitle = useMemo(() => {
+    if (screen === 'landing') return '上传材料，选一种出稿方式，得到可编辑演示文稿'
+    if (screen === 'ai-wizard') return '① 上传材料 → ② 选风格 → ③ 生成下载'
+    if (screen === 'replica-wizard') return '上传 PPT 截图，逐页还原为可编辑文件'
+    if (screen === 'qianfan') return '选用百度文库模板，一键成稿'
+    if (templatePhase === 'outline') return `${PPT_BEAUTIFY_VIEW_LABELS['template-export']} · ${TEMPLATE_EXPORT_PHASE_LABELS.outline}`
+    return `${PPT_BEAUTIFY_VIEW_LABELS['template-export']} · ${TEMPLATE_EXPORT_PHASE_LABELS.beautify}`
+  }, [screen, templatePhase])
 
   const updateTemplatePrompt = (next: string) => {
     setTemplatePrompt(next)
@@ -427,59 +508,38 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
       <section className="panel panel-document panel-ppt-beautify">
         <div className="panel-header document-toolbar-header">
           <div className="document-panel-title">
-            <Palette size={20} />
+            {screen !== 'landing' ? (
+              <button type="button" className="btn btn-sm btn-ghost ppt-beautify-back-landing" disabled={busy} onClick={goLanding}>
+                <ArrowLeft size={16} />
+                场景选择
+              </button>
+            ) : (
+              <Palette size={20} />
+            )}
             <div>
-              <h2>PPT 美化</h2>
-              <p>
-                {pptView === 'ai-design'
-                  ? `${PPT_BEAUTIFY_VIEW_LABELS['ai-design']} · Sidecar 逐页 SVG 成稿`
-                  : pptView === 'qianfan-ppt'
-                    ? `${PPT_BEAUTIFY_VIEW_LABELS['qianfan-ppt']} · 文库智能 PPT API 一键成稿`
-                    : templatePhase === 'outline'
-                      ? `${PPT_BEAUTIFY_VIEW_LABELS['template-export']} · ${TEMPLATE_EXPORT_PHASE_LABELS.outline}`
-                      : `${PPT_BEAUTIFY_VIEW_LABELS['template-export']} · ${TEMPLATE_EXPORT_PHASE_LABELS.beautify}`}
-              </p>
+              <h2>{screen === 'landing' ? 'PPT 美化' : PPT_BEAUTIFY_SCREEN_LABELS[screen]}</h2>
+              <p>{screenSubtitle}</p>
             </div>
           </div>
 
-          <div className="document-toolbar-actions">
-            <div className="ppt-beautify-output-mode-switch" role="tablist" aria-label="出稿方式">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={pptView === 'ai-design'}
-                className={`ppt-beautify-output-mode-btn${pptView === 'ai-design' ? ' active' : ''}`}
-                disabled={busy}
-                title="Sidecar 逐页 AI 成稿，生成后直接下载"
-                onClick={() => setPptView('ai-design')}
-              >
-                AI一键设计
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={pptView === 'qianfan-ppt'}
-                className={`ppt-beautify-output-mode-btn${pptView === 'qianfan-ppt' ? ' active' : ''}`}
-                disabled={busy}
-                title="百度千帆智能 PPT：大纲 + 排版 + 导出"
-                onClick={() => setPptView('qianfan-ppt')}
-              >
-                千帆 PPT
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={pptView === 'template-export'}
-                className={`ppt-beautify-output-mode-btn${pptView === 'template-export' ? ' active' : ''}`}
-                disabled={busy}
-                title="生成大纲、选主题模板导出"
-                onClick={openTemplateExport}
-              >
-                模板导出
+          {screen === 'landing' ? (
+            <div className="document-toolbar-actions">
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setShowOnboarding(true)}>
+                使用引导
               </button>
             </div>
-          </div>
+          ) : null}
         </div>
+
+        {screen !== 'landing' ? (
+          <PptBeautifyGlobalMaterialBar
+            material={globalMaterial}
+            busy={busy}
+            compact
+            onUpload={handleGlobalMaterialUpload}
+            onClear={handleGlobalMaterialClear}
+          />
+        ) : null}
 
         {statusMessage ? (
           <div className={`document-status-bar${statusIsError ? ' error' : ' success'}`}>
@@ -488,27 +548,63 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
           </div>
         ) : null}
 
-        {pptView === 'ai-design' ? (
+        {screen === 'landing' ? (
+          <>
+            <PptBeautifyGlobalMaterialBar
+              material={globalMaterial}
+              busy={busy}
+              onUpload={handleGlobalMaterialUpload}
+              onClear={handleGlobalMaterialClear}
+            />
+            <PptBeautifyLanding onSelect={handleSelectScenario} />
+          </>
+        ) : null}
+
+        {screen === 'ai-wizard' ? (
           <PptMasterGeneratePanel
             busy={busy}
             onBusyChange={setBusy}
             onStatus={setStatus}
             onDesignDraftComplete={handleDesignDraftComplete}
             initialPrompt={templatePrompt}
+            variant="creative-wizard"
+            wizardStep={aiWizardStep}
+            onWizardStepChange={setAiWizardStep}
+            onBackToLanding={goLanding}
+            sharedMaterial={globalMaterial}
+            onSharedMaterialChange={handleSharedMaterialChange}
           />
         ) : null}
 
-        {pptView === 'qianfan-ppt' ? (
+        {screen === 'replica-wizard' ? (
+          <PptMasterGeneratePanel
+            busy={busy}
+            onBusyChange={setBusy}
+            onStatus={setStatus}
+            onDesignDraftComplete={handleDesignDraftComplete}
+            initialPrompt={templatePrompt}
+            variant="replica-wizard"
+            wizardStep={replicaWizardStep}
+            onWizardStepChange={setReplicaWizardStep}
+            onBackToLanding={goLanding}
+            sharedMaterial={globalMaterial}
+            onSharedMaterialChange={handleSharedMaterialChange}
+          />
+        ) : null}
+
+        {screen === 'qianfan' ? (
           <QianfanPptGeneratePanel
             busy={busy}
             onBusyChange={setBusy}
             onStatus={setStatus}
             onComplete={handleDesignDraftComplete}
             initialPrompt={templatePrompt}
+            sharedMaterial={globalMaterial}
+            onSharedMaterialChange={handleSharedMaterialChange}
           />
         ) : null}
 
-        {pptView === 'template-export' ? (
+        {screen === 'template-export' ? (
           <>
             <nav className="ppt-beautify-template-steps" aria-label="模板导出步骤">
               <button
@@ -924,6 +1020,8 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
             </div>
           </>
         ) : null}
+
+        {showOnboarding ? <PptBeautifyOnboarding onClose={() => setShowOnboarding(false)} /> : null}
       </section>
     </main>
   )

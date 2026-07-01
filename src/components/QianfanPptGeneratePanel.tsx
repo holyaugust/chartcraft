@@ -20,7 +20,7 @@ import {
   fetchQianfanPptThemes,
   pollQianfanPptJob,
 } from '../utils/qianfanPptApi'
-import { DEFAULT_PROJECT_PROMPT, PPT_SOURCE_ACCEPT, readPptSourceDocument } from '../utils/pptSourceDocument'
+import { DEFAULT_PROJECT_PROMPT, PPT_SOURCE_ACCEPT, readPptSourceDocument, type PptSourceDocument } from '../utils/pptSourceDocument'
 import { saveFile } from '../utils/saveFile'
 import QianfanThemeCoverModal from './QianfanThemeCoverModal'
 
@@ -30,6 +30,8 @@ interface QianfanPptGeneratePanelProps {
   onStatus: (message: string, isError?: boolean) => void
   onComplete?: (slideCount?: number) => void
   initialPrompt?: string
+  sharedMaterial?: PptSourceDocument | null
+  onSharedMaterialChange?: (doc: PptSourceDocument | null) => void
 }
 
 export default function QianfanPptGeneratePanel({
@@ -38,6 +40,8 @@ export default function QianfanPptGeneratePanel({
   onStatus,
   onComplete,
   initialPrompt,
+  sharedMaterial,
+  onSharedMaterialChange,
 }: QianfanPptGeneratePanelProps) {
   const [healthOk, setHealthOk] = useState(false)
   const [healthError, setHealthError] = useState('')
@@ -127,6 +131,13 @@ export default function QianfanPptGeneratePanel({
     if (initialPrompt?.trim()) setPrompt(initialPrompt)
   }, [initialPrompt])
 
+  useEffect(() => {
+    if (sharedMaterial && !sourceFile) {
+      setSourceFile(sharedMaterial.file)
+      setSourceName(sharedMaterial.name)
+    }
+  }, [sharedMaterial, sourceFile])
+
   const handleUpload = useCallback(
     async (file: File) => {
       onBusyChange(true)
@@ -134,16 +145,18 @@ export default function QianfanPptGeneratePanel({
         const doc = await readPptSourceDocument(file)
         setSourceFile(doc.file)
         setSourceName(doc.name)
+        onSharedMaterialChange?.(doc)
         onStatus(`已上传「${doc.name}」`)
       } catch (err) {
         setSourceFile(null)
         setSourceName('')
+        onSharedMaterialChange?.(null)
         onStatus(err instanceof Error ? err.message : '文档读取失败', true)
       } finally {
         onBusyChange(false)
       }
     },
-    [onBusyChange, onStatus],
+    [onBusyChange, onSharedMaterialChange, onStatus],
   )
 
   const finishJob = useCallback(
