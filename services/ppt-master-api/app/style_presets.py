@@ -188,6 +188,54 @@ def apply_primary_to_palette(palette: dict, primary_color: str) -> dict:
     return merged
 
 
+def design_spec_palette(style: str, primary_color: str = "") -> dict[str, str]:
+    """Map built-in style swatch to design_spec palette (locked hex values)."""
+    raw = dict(PALETTES.get(style, PALETTES["business"]))
+    raw = apply_primary_to_palette(raw, primary_color)
+    bg = raw["bg"]
+    if isinstance(bg, tuple):
+        background_start, background_end = bg[0], bg[1]
+    else:
+        background_start, background_end = str(bg), str(raw["header"])
+    return {
+        "primary": str(raw["accent"]),
+        "secondary": str(raw["header"]),
+        "background_start": background_start,
+        "background_end": background_end,
+        "surface": str(raw["card"]),
+        "text": str(raw["body"]),
+        "title": str(raw["title"]),
+        "muted": str(raw["muted"]),
+        "header": str(raw["header"]),
+    }
+
+
+def lock_design_spec_palette(spec: dict, style: str, primary_color: str = "") -> dict:
+    """Force design_spec palette to match the selected style preset."""
+    merged = dict(spec)
+    merged["palette"] = design_spec_palette(style, primary_color)
+    merged["style_preset"] = style
+    merged["style_label"] = STYLE_LABELS.get(style, style)
+    merged["palette_locked"] = True
+    return merged
+
+
+def format_locked_palette_prompt(style: str, primary_color: str = "") -> str:
+    palette = design_spec_palette(style, primary_color)
+    label = STYLE_LABELS.get(style, style)
+    return (
+        f"LOCKED PALETTE — style「{label}」({style}). "
+        "You MUST use these exact hex colors only; do not invent substitutes:\n"
+        f"- Slide background linearGradient: {palette['background_start']} → {palette['background_end']}\n"
+        f"- Accent / badges / highlights: {palette['primary']}\n"
+        f"- Header bars / secondary blocks: {palette['secondary']}\n"
+        f"- Card / surface fill: {palette['surface']}\n"
+        f"- Body text on light areas: {palette['text']}\n"
+        f"- Title text on gradient/dark areas: {palette['title']}\n"
+        f"- Muted / captions: {palette['muted']}"
+    )
+
+
 def apply_primary_to_spec(spec: dict, primary_color: str) -> dict:
     if not valid_hex(primary_color):
         return spec

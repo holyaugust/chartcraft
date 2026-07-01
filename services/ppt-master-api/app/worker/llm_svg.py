@@ -5,7 +5,7 @@ import json
 import re
 from collections.abc import Callable
 
-from app.style_presets import build_style_context
+from app.style_presets import build_style_context, format_locked_palette_prompt
 from app.worker.llm_client import chat_completion, executor_model
 from app.worker.svg_builder import SlidePlan, build_slide_svg
 from app.worker.svg_sanitize import sanitize_svg
@@ -20,8 +20,10 @@ SVG_SYSTEM_PROMPT = """你是 PPT Master Executor，为单页 16:9 幻灯片生�
 5. XML 合法：& 写 &amp;；禁止 HTML 实体如 &nbsp; &mdash;；所有标签必须闭合，必须以 </svg> 结束
 6. 禁止：mask, filter, drop-shadow, <style>, class, foreignObject, symbol/use, textPath, script, animate, <span>
 7. 文字富文本样式只能用 <tspan>，且 <tspan> 必须放在 <text> 内部，禁止独立顶层 <tspan>
+8. 若用户提供 LOCKED PALETTE，背景必须用指定 linearGradient 起止色，禁止改用其它灰/金/蓝替代
 
 视觉要求：
+- 严格使用 LOCKED PALETTE 中的 hex 色值
 - 渐变背景、卡片、徽章、装饰几何，接近专业 Keynote 水准
 - 页码放右下（非封面）
 - 内容页用卡片承载要点，每点有编号或图标
@@ -45,6 +47,7 @@ async def generate_slide_svg(
         style_note=style_note,
         primary_color=primary_color,
     )
+    locked_palette = format_locked_palette_prompt(style, primary_color)
     user = (
         f"Deck: {deck_title}\n"
         f"Slide {slide_index}/{slide_total}\n"
@@ -53,8 +56,10 @@ async def generate_slide_svg(
         f"Subtitle: {slide.subtitle or ''}\n"
         f"Bullets: {json.dumps(bullets, ensure_ascii=False)}\n"
         f"Style preset ({style}): {style_context}\n"
-        f"Design spec: {json.dumps(design_spec, ensure_ascii=False)}\n\n"
-        "Generate one polished SVG slide matching the design spec."
+        f"{locked_palette}\n"
+        f"Design spec (layout/motif): {json.dumps({k: v for k, v in design_spec.items() if k != 'palette'}, ensure_ascii=False)}\n"
+        f"Design spec palette (authoritative): {json.dumps(design_spec.get('palette', {}), ensure_ascii=False)}\n\n"
+        "Generate one polished SVG slide. Colors MUST match LOCKED PALETTE / design spec palette exactly."
     )
 
     for attempt in range(2):
