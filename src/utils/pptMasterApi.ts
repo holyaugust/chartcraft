@@ -8,6 +8,9 @@ function baseUrl(): string {
 }
 
 async function parseError(response: Response): Promise<string> {
+  if (response.status === 502) {
+    return 'PPT 后端未响应（502），请先在本机运行 npm run dev:ppt-api'
+  }
   try {
     const payload = (await response.json()) as { detail?: string }
     if (payload.detail) return payload.detail

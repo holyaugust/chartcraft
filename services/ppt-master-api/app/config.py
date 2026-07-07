@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     ppt_master_vision_model: str = "deepseek-v4-flash"
     ppt_master_vision_api_url: str = ""
     ppt_master_vision_api_key: str = ""
+    # 视觉模型不可用时，用截图铺底生成 SVG（版式一致，文字需在 PPT 中再编辑）
+    ppt_master_replica_image_fallback: bool = True
 
     # 千帆 · 百度文库智能 PPT
     qianfan_api_key: str = ""

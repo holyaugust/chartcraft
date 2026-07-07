@@ -582,7 +582,6 @@ export default function PptBeautifyWorkspace({ onSavedLabelChange }: PptBeautify
             onBusyChange={setBusy}
             onStatus={setStatus}
             onDesignDraftComplete={handleDesignDraftComplete}
-            initialPrompt={templatePrompt}
             variant="replica-wizard"
             wizardStep={replicaWizardStep}
             onWizardStepChange={setReplicaWizardStep}

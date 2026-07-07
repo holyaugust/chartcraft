@@ -23,8 +23,10 @@ import {
 } from '../utils/pptMasterApi'
 import {
   DEFAULT_PROJECT_PROMPT,
+  DEFAULT_REPLICA_PROMPT,
   PPT_SOURCE_ACCEPT,
   readPptSourceDocument,
+  resolveReplicaPrompt,
   type PptSourceDocument,
 } from '../utils/pptSourceDocument'
 import { buildMasterProgressStory, friendlyProgressHeadline } from '../utils/pptMasterProgressStory'
@@ -73,7 +75,9 @@ export default function PptMasterGeneratePanel({
 
   const [health, setHealth] = useState<PptMasterHealth | null>(null)
   const [healthError, setHealthError] = useState('')
-  const [prompt, setPrompt] = useState(initialPrompt ?? DEFAULT_PROJECT_PROMPT)
+  const [prompt, setPrompt] = useState(() =>
+    isReplica ? DEFAULT_REPLICA_PROMPT : (initialPrompt ?? DEFAULT_PROJECT_PROMPT),
+  )
   const [style, setStyle] = useState<PptMasterStyle>('business')
   const [referenceImageUrl, setReferenceImageUrl] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -103,8 +107,9 @@ export default function PptMasterGeneratePanel({
   }, [sharedMaterial])
 
   useEffect(() => {
+    if (isReplica) return
     if (initialPrompt?.trim()) setPrompt(initialPrompt)
-  }, [initialPrompt])
+  }, [initialPrompt, isReplica])
 
   useEffect(() => {
     return () => {
@@ -225,7 +230,7 @@ export default function PptMasterGeneratePanel({
       onStatus('请先上传源文件（PDF / Word / 文本）', true)
       return
     }
-    if (!prompt.trim()) {
+    if (!prompt.trim() && !isReplica) {
       onStatus('请填写生成要求', true)
       return
     }
@@ -245,7 +250,7 @@ export default function PptMasterGeneratePanel({
     try {
       const created = await createPptMasterJob({
         file: sourceFile,
-        prompt: prompt.trim(),
+        prompt: isReplica ? resolveReplicaPrompt(prompt) : prompt.trim(),
         style,
         generationMode: isReplica ? 'replica' : 'creative',
         referenceImages: isReplica ? referenceSlides : undefined,
@@ -559,14 +564,23 @@ export default function PptMasterGeneratePanel({
               </section>
             ) : null}
             <section className="ppt-beautify-block ppt-beautify-block-primary">
-              <h3>{PPT_MASTER_PROMPT_GUIDE.title}</h3>
-              <PptMasterFieldHintRow guide={PPT_MASTER_PROMPT_GUIDE} />
+              <h3>{isReplica ? '还原要求' : PPT_MASTER_PROMPT_GUIDE.title}</h3>
+              {!isReplica ? <PptMasterFieldHintRow guide={PPT_MASTER_PROMPT_GUIDE} /> : null}
+              {isReplica ? (
+                <p className="ppt-beautify-qianfan-hint">
+                  默认严格按截图还原；仅补充与截图相关的细节（如「保留底部数据条」），勿填写「重新生成 AI 趋势」类要求。
+                </p>
+              ) : null}
               <textarea
                 className="ppt-beautify-outline-prompt"
                 value={prompt}
                 rows={4}
                 disabled={busy}
-                placeholder={PPT_MASTER_PROMPT_GUIDE.placeholder}
+                placeholder={
+                  isReplica
+                    ? '严格按截图还原全部文字与版式，不要更换主题…'
+                    : PPT_MASTER_PROMPT_GUIDE.placeholder
+                }
                 onChange={(e) => setPrompt(e.target.value)}
               />
               <button

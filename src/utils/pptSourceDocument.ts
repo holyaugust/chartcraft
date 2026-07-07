@@ -3,6 +3,29 @@ import { readWriteReferenceFile } from './documentWrite'
 export const DEFAULT_PROJECT_PROMPT =
   '请根据上传材料生成结构清晰、适合正式汇报的 PPT，突出核心结论与关键数据。如需调整视觉，可在此补充留白、气质或品牌色等描述。'
 
+/** 截图还原：禁止「重新设计」，只还原参照图 */
+export const DEFAULT_REPLICA_PROMPT =
+  '严格按上传的 PPT 页面截图还原：保留截图中的全部文字、配色、版式与图表结构，不要替换为其他主题或示例内容。'
+
+export const CREATIVE_PROMPT_MARKERS = [
+  '请根据上传材料生成',
+  '请根据材料生成',
+  '突出核心结论',
+] as const
+
+export function isCreativeDefaultPrompt(text: string): boolean {
+  const trimmed = text.trim()
+  return CREATIVE_PROMPT_MARKERS.some((marker) => trimmed.includes(marker))
+}
+
+export function resolveReplicaPrompt(prompt: string): string {
+  const trimmed = prompt.trim()
+  if (!trimmed || isCreativeDefaultPrompt(trimmed)) {
+    return DEFAULT_REPLICA_PROMPT
+  }
+  return `在严格还原截图的前提下：${trimmed}`
+}
+
 export const PPT_SOURCE_ACCEPT = '.pdf,.docx,.txt,.md,.markdown'
 
 export type PptSourceDocumentKind = 'pdf' | 'docx' | 'text'

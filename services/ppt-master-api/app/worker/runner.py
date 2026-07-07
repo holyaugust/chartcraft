@@ -12,7 +12,8 @@ from app.worker.llm import plan_slides_fallback, plan_slides_from_markdown
 from app.worker.llm_client import executor_model
 from app.worker.llm_svg import generate_all_slide_svgs
 from app.worker.llm_svg_replica import generate_all_replica_svgs
-from app.worker.reference_slides import list_reference_slide_paths, write_stub_source
+from app.worker.reference_slides import list_reference_slide_paths
+from app.worker.replica_prompt import resolve_replica_prompt
 from app.worker.svg_sanitize import normalize_svg_directory
 from app.worker.source_convert import convert_source, export_with_ppt_master
 from app.worker.svg_builder import build_slide_svg
@@ -154,7 +155,7 @@ def run_job(job_id: str) -> None:
         svg_contents = asyncio.run(
             generate_all_replica_svgs(
                 image_paths=reference_paths,
-                user_hint=record.prompt,
+                user_hint=resolve_replica_prompt(record.prompt),
                 on_progress=on_slide_progress,
             )
         )

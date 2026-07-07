@@ -263,15 +263,18 @@ async def chat_completion(
     use_executor_endpoint: bool = False,
     use_vision_model: bool = False,
     image_urls: list[str] | None = None,
+    require_vision_images: bool = False,
+    api_url_override: str | None = None,
+    api_key_override: str | None = None,
 ) -> str:
     resolved_images = [url.strip() for url in (image_urls or []) if url.strip()]
     use_vision = use_vision_model or bool(resolved_images)
 
     if use_vision:
-        api_key = vision_api_key()
-        if not api_key.strip():
+        api_key = (api_key_override or vision_api_key()).strip()
+        if not api_key:
             raise RuntimeError("未配置视觉模型 API Key")
-        url = vision_api_url()
+        url = api_url_override or vision_api_url()
         resolved_model = model or vision_model()
         payload_messages = attach_image_urls(messages, resolved_images)
     else:
@@ -316,6 +319,11 @@ async def chat_completion(
         )
     except RuntimeError as exc:
         if resolved_images and _is_vision_unsupported_error(exc):
+            if require_vision_images:
+                raise RuntimeError(
+                    "视觉模型无法读取参照截图，截图还原已中止。"
+                    "请确认 PPT_MASTER_VISION_MODEL 支持 image_url 多模态。"
+                ) from exc
             text_messages = [
                 {"role": str(m["role"]), "content": str(m["content"])}
                 for m in messages
@@ -330,5 +338,6 @@ async def chat_completion(
                 use_executor_endpoint=use_executor_endpoint,
                 use_vision_model=False,
                 image_urls=None,
+                require_vision_images=False,
             )
         raise
