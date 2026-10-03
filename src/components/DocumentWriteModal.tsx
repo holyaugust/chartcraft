@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   X,
@@ -8,30 +8,29 @@ import {
   FileText,
   Trash2,
   Sparkles,
+  Wand2,
   CircleHelp,
 } from 'lucide-react'
 import {
   DOCUMENT_WRITE_AUTO_TYPE,
   DOCUMENT_WRITE_TYPES,
-  findWriteTypeSelectionByTemplateId,
   resolveWriteTypeSelection,
   type DocumentWriteType,
 } from '../data/documentWriteTypes'
-import { getDocumentTemplateById } from '../data/documentTemplates'
 import {
   DEFAULT_WRITE_PROMPT,
+  expandWritePromptFromIntent,
   generateDocumentWithAi,
   readWriteReferenceFile,
   type DocumentWriteMode,
 } from '../utils/documentWrite'
 import { loadWriteMaterials, saveWriteMaterials, type WriteReferenceFile } from '../utils/documentWriteStorage'
 import { isDeepSeekConfigured } from '../utils/deepseek'
+import { DOCUMENT_WRITE_PROMPT_EXAMPLES } from '../data/documentWritePromptExamples'
 
 interface DocumentWriteModalProps {
   open: boolean
   onClose: () => void
-  currentEditorContent?: string
-  activeTemplateId?: string | null
   onGenerated: (payload: {
     content: string
     templateId?: string | null
@@ -176,7 +175,7 @@ function WriteTypePicker({
 
   return (
     <div className="doc-write-type-picker" ref={rootRef}>
-      <span className="doc-write-type-label">公文类型</span>
+      <span className="doc-write-type-label">写作类型</span>
       <button
         ref={triggerRef}
         type="button"
@@ -210,7 +209,7 @@ function WriteTypePicker({
                 onMouseEnter={() => setHoverTypeId(null)}
                 onClick={() => selectType(DOCUMENT_WRITE_AUTO_TYPE)}
               >
-                自动识别
+                自动识别（按需求自适应）
               </button>
               <div className="doc-write-type-menu-split">
                 <div className="doc-write-type-column" onWheel={stopColumnWheel}>
@@ -254,9 +253,6 @@ function WriteTypePicker({
     </div>
   )
 }
-
-const AUTO_REFERENCE_HELP =
-  '点击「开启」后，会把左侧编辑器里当前正文自动当作参考材料，一并发给 AI'
 
 const SAVE_MATERIALS_HELP = '勾选后，下次再打开弹窗会自动恢复当前提示词和所有设置'
 
@@ -382,36 +378,6 @@ function WriteHelpButton({
   )
 }
 
-function AutoReferenceControl({
-  checked,
-  onChange,
-  disabled,
-}: {
-  checked: boolean
-  onChange: (checked: boolean) => void
-  disabled?: boolean
-}) {
-  return (
-    <div className="doc-write-auto-reference">
-      <label className="doc-write-toggle">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(event) => onChange(event.target.checked)}
-          disabled={disabled}
-        />
-        <span className="doc-write-toggle-track" />
-        自动添加参考
-      </label>
-      <WriteHelpButton
-        ariaLabel="自动添加参考说明"
-        text={AUTO_REFERENCE_HELP}
-        disabled={disabled}
-      />
-    </div>
-  )
-}
-
 function ReferenceFileList({
   files,
   onRemove,
@@ -445,19 +411,18 @@ function ReferenceFileList({
 export default function DocumentWriteModal({
   open,
   onClose,
-  currentEditorContent = '',
-  activeTemplateId = null,
   onGenerated,
 }: DocumentWriteModalProps) {
   const saved = loadWriteMaterials()
   const [prompt, setPrompt] = useState(saved.prompt || DEFAULT_WRITE_PROMPT)
   const [typeId, setTypeId] = useState(saved.typeId || 'auto')
   const [subtypeId, setSubtypeId] = useState<string | null>(saved.subtypeId)
-  const [autoReference, setAutoReference] = useState(saved.autoReference)
   const [saveMaterials, setSaveMaterials] = useState(saved.saveMaterials)
   const [referenceFiles, setReferenceFiles] = useState<WriteReferenceFile[]>(saved.referenceFiles.slice(0, MAX_REFERENCE_FILES))
   const [referencePanelOpen, setReferencePanelOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [expanding, setExpanding] = useState(false)
+  const [expandHint, setExpandHint] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const referenceInputRef = useRef<HTMLInputElement>(null)
 
@@ -465,32 +430,14 @@ export default function DocumentWriteModal({
     if (!open) return
     const savedDraft = loadWriteMaterials()
     setPrompt(savedDraft.prompt || DEFAULT_WRITE_PROMPT)
-    setAutoReference(savedDraft.autoReference)
     setSaveMaterials(savedDraft.saveMaterials)
     setReferenceFiles(savedDraft.referenceFiles.slice(0, MAX_REFERENCE_FILES))
     setReferencePanelOpen(savedDraft.referenceFiles.length > 0)
     setError(null)
-
-    if (activeTemplateId) {
-      const linked = findWriteTypeSelectionByTemplateId(activeTemplateId)
-      if (linked) {
-        setTypeId(linked.typeId)
-        setSubtypeId(linked.subtypeId ?? null)
-        return
-      }
-    }
-
+    setExpandHint(null)
     setTypeId(savedDraft.typeId || 'auto')
     setSubtypeId(savedDraft.subtypeId)
-  }, [open, activeTemplateId])
-
-  const linkedTemplate = activeTemplateId ? getDocumentTemplateById(activeTemplateId) : undefined
-  const linkedTypeLabel = useMemo(() => {
-    if (!activeTemplateId) return null
-    const selection = findWriteTypeSelectionByTemplateId(activeTemplateId)
-    if (!selection) return linkedTemplate?.name ?? null
-    return resolveWriteTypeSelection(selection).label
-  }, [activeTemplateId, linkedTemplate?.name])
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -504,13 +451,12 @@ export default function DocumentWriteModal({
   const persistDraft = useCallback(() => {
     saveWriteMaterials({
       prompt,
-      autoReference,
       saveMaterials,
       referenceFiles,
       typeId,
       subtypeId,
     })
-  }, [prompt, autoReference, saveMaterials, referenceFiles, typeId, subtypeId])
+  }, [prompt, saveMaterials, referenceFiles, typeId, subtypeId])
 
   const handleUploadReference = useCallback(async (files: FileList | null) => {
     if (!files?.length) return
@@ -525,6 +471,31 @@ export default function DocumentWriteModal({
       setError(err instanceof Error ? err.message : '文件读取失败')
     }
   }, [])
+
+  const runExpandPrompt = useCallback(async () => {
+    if (!prompt.trim()) {
+      setError('请先用一句话写明写作意图')
+      return
+    }
+
+    setExpanding(true)
+    setBusy(true)
+    setError(null)
+    setExpandHint(null)
+
+    try {
+      const expanded = await expandWritePromptFromIntent(prompt)
+      setPrompt(expanded.prompt)
+      setTypeId(expanded.typeId)
+      setSubtypeId(expanded.subtypeId)
+      setExpandHint(`已识别为「${expanded.intentLabel}」：${expanded.summary}。可继续修改提示词后再生成。`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '意图识别失败，请重试')
+    } finally {
+      setExpanding(false)
+      setBusy(false)
+    }
+  }, [prompt])
 
   const runGenerate = useCallback(
     async (mode: DocumentWriteMode) => {
@@ -542,16 +513,9 @@ export default function DocumentWriteModal({
       persistDraft()
 
       try {
-        const referenceTexts: string[] = []
-        if (autoReference && currentEditorContent.trim()) {
-          referenceTexts.push(`【当前编辑器内容】\n${currentEditorContent.trim()}`)
-        }
-
         const result = await generateDocumentWithAi({
           prompt,
           typeSelection: { typeId, subtypeId },
-          activeTemplateId,
-          referenceTexts,
           imitationTexts: referenceFiles.map((file) => file.text),
           mode,
         })
@@ -575,9 +539,6 @@ export default function DocumentWriteModal({
       typeId,
       subtypeId,
       referenceFiles,
-      autoReference,
-      currentEditorContent,
-      activeTemplateId,
       persistDraft,
       onGenerated,
       onClose,
@@ -600,7 +561,7 @@ export default function DocumentWriteModal({
             <span className="doc-write-logo" aria-hidden="true">
               A
             </span>
-            <h2 id="doc-write-title">写公文</h2>
+            <h2 id="doc-write-title">写文书</h2>
           </div>
           <button type="button" className="doc-write-close" aria-label="关闭" disabled={busy} onClick={onClose}>
             <X size={18} />
@@ -608,21 +569,54 @@ export default function DocumentWriteModal({
         </header>
 
         <div className="doc-write-body">
-          {linkedTemplate ? (
-            <div className="doc-write-template-link" role="status">
-              已关联右侧模板：<strong>{linkedTemplate.name}</strong>
-              {linkedTypeLabel ? `（${linkedTypeLabel}）` : ''}
-            </div>
-          ) : null}
-
+          <p className="doc-write-intent-tip">
+            先用一句话写清意图，点「识别意图」生成完整专业提示词；确认后再生成正文。
+          </p>
           <textarea
             className="doc-write-prompt"
             value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder={DEFAULT_WRITE_PROMPT}
-            rows={4}
+            onChange={(event) => {
+              setPrompt(event.target.value)
+              setExpandHint(null)
+            }}
+            placeholder={`简单写一句，例如：${DEFAULT_WRITE_PROMPT}`}
+            rows={5}
             disabled={busy}
           />
+
+          <div className="doc-write-prompt-examples">
+            <span className="doc-write-prompt-examples-label">快捷意图</span>
+            {DOCUMENT_WRITE_PROMPT_EXAMPLES.map((example) => (
+              <button
+                key={example.id}
+                type="button"
+                className="doc-write-prompt-example-chip"
+                disabled={busy}
+                title={example.prompt}
+                onClick={() => {
+                  const title = example.prompt.match(/标题是[【\[]([^】\]]+)[】\]]/)?.[1]
+                  const shortIntent =
+                    example.id === 'industry-research'
+                      ? '为特发服务写一篇国资重组整合的行研报告'
+                      : example.id === 'speech-draft'
+                        ? '写一篇数字化转型启动会讲话稿'
+                        : title
+                          ? `写一份${example.label}：${title}`
+                          : `写一份${example.label}`
+                  setPrompt(shortIntent)
+                  setExpandHint(null)
+                  if (example.typeSelection) {
+                    setTypeId(example.typeSelection.typeId)
+                    setSubtypeId(example.typeSelection.subtypeId ?? null)
+                  }
+                }}
+              >
+                {example.label}
+              </button>
+            ))}
+          </div>
+
+          {expandHint ? <p className="doc-write-expand-hint">{expandHint}</p> : null}
 
           <div className="doc-write-toolbar">
             <div className="doc-write-toolbar-left">
@@ -645,19 +639,24 @@ export default function DocumentWriteModal({
                 }}
               />
             </div>
-            <AutoReferenceControl
-              checked={autoReference}
-              onChange={setAutoReference}
-              disabled={busy}
-            />
             <div className="doc-write-toolbar-right">
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost doc-write-btn-outline"
+                disabled={busy || !prompt.trim()}
+                title="识别意图并生成完整专业提示词"
+                onClick={() => void runExpandPrompt()}
+              >
+                {expanding ? <Loader2 size={14} className="spin" /> : <Wand2 size={14} />}
+                识别意图
+              </button>
               <button
                 type="button"
                 className="btn btn-sm btn-primary doc-write-btn-primary"
                 disabled={busy}
                 onClick={() => void runGenerate('full')}
               >
-                {busy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
+                {busy && !expanding ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
                 生成内容
               </button>
             </div>

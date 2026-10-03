@@ -173,6 +173,81 @@ function isGuidingColonLine(trimmed: string): boolean {
   return /：\s*$/u.test(trimmed) && trimmed.length <= 40 && !trimmed.startsWith('【')
 }
 
+function isPreambleKind(kind?: ParagraphKind): boolean {
+  return (
+    kind === undefined ||
+    kind === 'redHeader' ||
+    kind === 'docNumber' ||
+    kind === 'meta' ||
+    kind === 'enterpriseBanner' ||
+    kind === 'docKind' ||
+    kind === 'metaLabel'
+  )
+}
+
+/** 公文/研报总标题（非「一、」章节标题） */
+function looksLikeMainTitle(trimmed: string): boolean {
+  if (trimmed.length < 4 || trimmed.length > 100) return false
+  if (trimmed.startsWith('【')) return false
+  if (/^[一二三四五六七八九十百零〇]+[、．.](?!(\d|．|\.))/u.test(trimmed)) return false
+  if (/^（[一二三四五六七八九十百\d]+）/u.test(trimmed)) return false
+  if (/^\d+[、．.]\s/u.test(trimmed)) return false
+  if (/^附件[：:]|^抄送[：:]|^分送[：:]|^表\d|^单位[：:]/u.test(trimmed)) return false
+  if (isGuidingColonLine(trimmed)) return false
+  if (/[。；！？]$/u.test(trimmed)) return false
+  if (isSignatureOrgLine(trimmed)) return false
+  if (/^[\dX×]{4}年[\dX×]{1,2}月[\dX×]{1,2}日/u.test(trimmed)) return false
+
+  if (
+    /^关于.+的(请示|报告|通知|通报|意见|函|决定|批复|议案|方案|说明|命令|公告|通告|公报|纪要)/u.test(
+      trimmed,
+    )
+  ) {
+    return true
+  }
+  if (/(有限公司|集团).{0,24}关于/u.test(trimmed) && trimmed.length <= 80) return true
+  if (/——|––|—/.test(trimmed)) return true
+  if (
+    /(趋势研判|研究报告|调研报告|工作方案|实施方案|专项报告|情况汇报|工作总结|分析报告|可行性研究)/u.test(
+      trimmed,
+    )
+  ) {
+    return true
+  }
+  if (/会议纪要$/u.test(trimmed) && trimmed.length <= 40) return true
+  return false
+}
+
+function looksLikeTitleLine(trimmed: string, previousKind?: ParagraphKind): boolean {
+  if (looksLikeMainTitle(trimmed) && (isPreambleKind(previousKind) || previousKind === 'title')) {
+    return true
+  }
+
+  // 总标题下一行副标题（不含「摘要」等章节名）
+  if (
+    previousKind === 'title' &&
+    trimmed.length >= 2 &&
+    trimmed.length <= 60 &&
+    !/[。；！？]$/u.test(trimmed) &&
+    !/^(摘要|目录|前言|引言|概述|正文|附件|结语|一、|（一）)/u.test(trimmed)
+  ) {
+    if (/^——|^—|副标题|兼论|——/.test(trimmed) || trimmed.length <= 36) return true
+  }
+
+  // 文首首行：较短且无句末标点，按总标题处理（研报/方案常见）
+  if (
+    previousKind === undefined &&
+    trimmed.length >= 6 &&
+    trimmed.length <= 72 &&
+    !/[。；！？]$/u.test(trimmed) &&
+    !/^[“"‘']/u.test(trimmed)
+  ) {
+    return true
+  }
+
+  return false
+}
+
 function classifyLine(line: string, previousKind?: ParagraphKind): ParagraphKind {
   const trimmed = line.trim()
   if (!trimmed) return 'skip'
@@ -226,19 +301,7 @@ function classifyLine(line: string, previousKind?: ParagraphKind): ParagraphKind
   }
   if (isSignatureOrgLine(trimmed)) return 'signatureOrg'
 
-  if (
-    /(有限公司|集团)关于.*的(报告|请示)/u.test(trimmed) &&
-    trimmed.length <= 80 &&
-    !trimmed.startsWith('【')
-  ) {
-    return 'title'
-  }
-
-  if (/^关于.*的(请示|报告|通知|通报|意见|函|决定|批复|议案|方案|说明|命令|公告|通告|公报|纪要)/u.test(trimmed) && trimmed.length <= 80) {
-    return 'title'
-  }
-
-  if (/^.+会议纪要$/u.test(trimmed) && trimmed.length <= 40) return 'title'
+  if (looksLikeTitleLine(trimmed, previousKind)) return 'title'
 
   return 'body'
 }
@@ -679,6 +742,16 @@ const FORMATTED_SETTINGS = `<?xml version="1.0" encoding="UTF-8" standalone="yes
 </w:settings>`
 
 /** 按 GB/T 9704-2012 由纯文本生成 .docx */
+/** 供编辑器「公文版式」预览复用的段落分类 */
+export type OfficialParagraphKind = ParagraphKind
+
+export function classifyOfficialParagraph(
+  line: string,
+  previousKind?: OfficialParagraphKind,
+): OfficialParagraphKind {
+  return classifyLine(line, previousKind)
+}
+
 export async function createFormattedDocxFromPlainText(text: string): Promise<ArrayBuffer> {
   const zip = new JSZip()
   zip.file('[Content_Types].xml', FORMATTED_CONTENT_TYPES)

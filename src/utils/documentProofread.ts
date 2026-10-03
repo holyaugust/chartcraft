@@ -1,7 +1,8 @@
+import { PROFESSIONAL_TYPO_DICTIONARY } from '../data/documentTypoDictionary'
 import { resolveIssueRange } from './documentLocate'
 import { normalizeDocumentStructure, stripLeadingIndent } from './documentFormatNormalize'
 
-export type IssueCategory = 'typo' | 'grammar' | 'punctuation' | 'style' | 'format'
+export type IssueCategory = 'typo' | 'grammar' | 'punctuation' | 'style' | 'format' | 'logic' | 'rigor'
 
 export interface DocumentIssue {
   id: string
@@ -24,11 +25,31 @@ const CATEGORY_LABELS: Record<IssueCategory, string> = {
   grammar: '语句',
   punctuation: '标点',
   style: '表达',
-  format: '格式',
+  format: '公文格式',
+  logic: '逻辑完整性',
+  rigor: '表述严谨',
 }
 
 export function getIssueCategoryLabel(category: IssueCategory): string {
   return CATEGORY_LABELS[category]
+}
+
+export function getIssueFingerprint(issue: DocumentIssue): string {
+  return `${issue.category}|${issue.message}|${issue.original}|${issue.suggestion}`
+}
+
+export function buildIssueContextSnippet(content: string, issue: DocumentIssue, radius = 18): string {
+  if (!issue.original) return ''
+
+  const range = resolveIssueRange(content, issue)
+  if (!range) return ''
+
+  const before = content.slice(Math.max(0, range.start - radius), range.start).replace(/\s+/g, ' ')
+  const after = content.slice(range.end, Math.min(content.length, range.end + radius)).replace(/\s+/g, ' ')
+  const original = content.slice(range.start, range.end).replace(/\s+/g, ' ')
+  const prefix = before.length >= radius ? `…${before}` : before
+  const suffix = after.length >= radius ? `${after}…` : after
+  return `${prefix}${original}${suffix}`
 }
 
 /** 修改前后除空白外完全相同（常见于 Word 转文本后 AI 误报空格） */
@@ -37,8 +58,31 @@ export function isWhitespaceOnlyChange(original: string, suggestion: string): bo
   return original.replace(/\s/g, '') === suggestion.replace(/\s/g, '')
 }
 
-export function shouldSkipProofreadIssue(original: string, suggestion: string): boolean {
-  return isWhitespaceOnlyChange(original, suggestion)
+export function getLineTextAtOffset(text: string, offset: number): string {
+  const lineStart = text.lastIndexOf('\n', Math.max(0, offset - 1))
+  const lineEnd = text.indexOf('\n', offset)
+  const start = lineStart < 0 ? 0 : lineStart + 1
+  const end = lineEnd < 0 ? text.length : lineEnd
+  return text.slice(start, end)
+}
+
+export function shouldSkipProofreadIssue(
+  original: string,
+  suggestion: string,
+  context?: { lineText?: string; isTableDocument?: boolean },
+): boolean {
+  if (isWhitespaceOnlyChange(original, suggestion)) return true
+  if (isDigitToChineseStyleOnlyChange(original, suggestion)) {
+    if (context?.isTableDocument || context?.lineText?.includes('|')) return true
+  }
+  return false
+}
+
+function isDigitToChineseStyleOnlyChange(original: string, suggestion: string): boolean {
+  if (original === suggestion) return false
+  const stripNumeric = (value: string) =>
+    value.replace(/[0-9０-９]/g, '').replace(/[一二三四五六七八九十百千万亿]/g, '')
+  return stripNumeric(original) === stripNumeric(suggestion)
 }
 
 const TRAILING_PUNCT_CHARS = new Set([
@@ -85,19 +129,6 @@ function nextIssueId(): string {
   issueSeq += 1
   return `issue-${issueSeq}`
 }
-
-const TYPO_RULES: Array<{ pattern: RegExp; suggestion: string; message: string }> = [
-  { pattern: /因该/g, suggestion: '应该', message: '「因该」应为「应该」' },
-  { pattern: /按装/g, suggestion: '安装', message: '「按装」应为「安装」' },
-  { pattern: /做业/g, suggestion: '作业', message: '「做业」应为「作业」' },
-  { pattern: /既使/g, suggestion: '即使', message: '「既使」应为「即使」' },
-  { pattern: /侯选/g, suggestion: '候选', message: '「侯选」应为「候选」' },
-  { pattern: /在次/g, suggestion: '再次', message: '「在次」应为「再次」' },
-  { pattern: /在见/g, suggestion: '再见', message: '「在见」应为「再见」' },
-  { pattern: /以经/g, suggestion: '已经', message: '「以经」应为「已经」' },
-  { pattern: /帐号/g, suggestion: '账号', message: '「帐号」建议写作「账号」' },
-  { pattern: /其它/g, suggestion: '其他', message: '「其它」建议统一为「其他」' },
-]
 
 const GRAMMAR_RULES: Array<{ pattern: RegExp; suggestion: string; message: string }> = [
   { pattern: /涉及到/g, suggestion: '涉及', message: '「涉及到」冗余，建议改为「涉及」' },
@@ -203,6 +234,66 @@ function mergeNonOverlapping(replacements: TextReplacement[]): TextReplacement[]
   return merged
 }
 
+function rangesOverlap(
+  a: { start: number; end: number },
+  b: { start: number; end: number },
+): boolean {
+  return a.start < b.end && a.end > b.start
+}
+
+/** 合并校对结果并去重（按指纹与重叠区间） */
+export function mergeProofreadIssues(
+  text: string,
+  batches: DocumentIssue[],
+  options?: { isTableDocument?: boolean },
+): DocumentIssue[] {
+  const isTableDocument = options?.isTableDocument ?? false
+  const merged: DocumentIssue[] = []
+  const fingerprints = new Set<string>()
+  const occupied: Array<{ start: number; end: number }> = []
+
+  for (const issue of batches) {
+    if (issue.start < issue.end) {
+      const lineText = getLineTextAtOffset(text, issue.start)
+      if (shouldSkipProofreadIssue(issue.original, issue.suggestion, { lineText, isTableDocument })) {
+        continue
+      }
+    }
+
+    const fingerprint = getIssueFingerprint(issue)
+    if (fingerprints.has(fingerprint)) continue
+
+    if (issue.start < issue.end) {
+      const overlaps = occupied.some((range) => rangesOverlap(range, issue))
+      if (overlaps) continue
+      occupied.push({ start: issue.start, end: issue.end })
+    }
+
+    fingerprints.add(fingerprint)
+    merged.push(issue)
+  }
+
+  return merged.sort((a, b) => a.start - b.start || a.end - b.end)
+}
+
+/** 专业词典错别字检查（本地、即时） */
+export function collectDictionaryTypoIssues(text: string): DocumentIssue[] {
+  issueSeq = 0
+  const replacements = collectRules(text, PROFESSIONAL_TYPO_DICTIONARY, 'typo')
+  const merged = mergeNonOverlapping(replacements)
+
+  return merged.map((item) => ({
+    id: nextIssueId(),
+    category: item.category,
+    message: item.message,
+    start: item.start,
+    end: item.end,
+    original: text.slice(item.start, item.end),
+    suggestion: item.suggestion,
+    autoFixable: item.autoFixable,
+  }))
+}
+
 export function formatDocument(text: string): string {
   let result = normalizeDocumentStructure(text)
   result = result.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
@@ -261,7 +352,7 @@ export function proofreadDocument(text: string, options?: { autoFormat?: boolean
   const working = text
 
   const allReplacements: TextReplacement[] = [
-    ...collectRules(working, TYPO_RULES, 'typo'),
+    ...collectRules(working, PROFESSIONAL_TYPO_DICTIONARY, 'typo'),
     ...collectRules(working, GRAMMAR_RULES, 'grammar'),
     ...collectRules(working, PUNCTUATION_RULES, 'punctuation'),
     ...findRepeatedChars(working),

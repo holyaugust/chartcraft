@@ -10,11 +10,6 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       proxy: {
-        '/api/languagetool': {
-          target: 'https://api.languagetool.org',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/languagetool/, ''),
-        },
         '/api/deepseek': {
           target: 'https://api.deepseek.com',
           changeOrigin: true,

@@ -8,7 +8,6 @@ export interface WriteReferenceFile {
 
 export interface WriteMaterialsDraft {
   prompt: string
-  autoReference: boolean
   saveMaterials: boolean
   referenceFiles: WriteReferenceFile[]
   typeId: string
@@ -17,7 +16,6 @@ export interface WriteMaterialsDraft {
 
 const DEFAULT_MATERIALS: WriteMaterialsDraft = {
   prompt: '',
-  autoReference: true,
   saveMaterials: true,
   referenceFiles: [],
   typeId: 'auto',

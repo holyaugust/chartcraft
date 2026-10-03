@@ -366,5 +366,19 @@ export function lineNeedsEditorFirstLineIndent(line: string): boolean {
 
   if (/^.+会议纪要$/u.test(trimmed) && trimmed.length <= 40) return false
 
+  // 文首总标题 / 带破折号副标题：不首行缩进
+  if (/——|––|—/.test(trimmed) && trimmed.length <= 100 && !/[。；！？]$/u.test(trimmed)) {
+    return false
+  }
+  if (
+    /(趋势研判|研究报告|调研报告|工作方案|实施方案|专项报告|情况汇报|工作总结|分析报告)/u.test(
+      trimmed,
+    ) &&
+    trimmed.length <= 100 &&
+    !/[。；！？]$/u.test(trimmed)
+  ) {
+    return false
+  }
+
   return true
 }

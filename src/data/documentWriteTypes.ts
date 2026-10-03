@@ -1,4 +1,4 @@
-/** 智能写作 — 公文类型树（含法定文种与企业事务文书子类） */
+/** 智能写作 — 职场公文类型树（日常办公 + 党政机关标准公文） */
 
 export interface DocumentWriteSubtype {
   id: string
@@ -16,10 +16,42 @@ export interface DocumentWriteType {
 
 export const DOCUMENT_WRITE_AUTO_TYPE: DocumentWriteType = {
   id: 'auto',
-  label: '自动识别',
+  label: '自动识别（按需求自适应文体）',
 }
 
 export const DOCUMENT_WRITE_TYPES: DocumentWriteType[] = [
+  {
+    id: 'general',
+    label: '通用写作',
+    subtypes: [
+      { id: 'gen-free', label: '自由写作', sceneHint: '按用户需求自由成文，不限公文格式' },
+      { id: 'gen-research', label: '研究报告', sceneHint: '行业研究、专题分析、论证报告' },
+      { id: 'gen-article', label: '文章评论', sceneHint: '评论文章、观点稿、专栏文章' },
+      { id: 'gen-news', label: '新闻稿', sceneHint: '新闻通讯、宣传稿、信息发布' },
+      { id: 'gen-speech', label: '演讲稿', sceneHint: '讲话、致辞、发言稿' },
+      { id: 'gen-proposal', label: '策划方案', sceneHint: '活动策划、项目方案、营销方案' },
+      { id: 'gen-email', label: '商务邮件', sceneHint: '对外邮件、商务往来函件' },
+      { id: 'gen-copy', label: '文案说明', sceneHint: '产品说明、介绍文案、使用说明' },
+    ],
+  },
+  {
+    id: 'workplace',
+    label: '职场文书',
+    subtypes: [
+      { id: 'wp-notice-work', label: '工作通知', templateId: 'wp-notice-work', sceneHint: '部署专项工作、活动安排' },
+      { id: 'wp-notice-holiday', label: '放假通知', templateId: 'wp-notice-holiday', sceneHint: '节假日放假与值班安排' },
+      { id: 'wp-request-work', label: '工作请示', templateId: 'wp-request-work', sceneHint: '日常工作事项报批' },
+      { id: 'wp-report-work', label: '工作汇报', templateId: 'wp-report-work', sceneHint: '阶段性工作进展汇报' },
+      { id: 'wp-explain', label: '情况说明', templateId: 'wp-explain', sceneHint: '就特定事项作出书面说明' },
+      { id: 'wp-summary-week', label: '周工作总结', templateId: 'wp-summary-week', sceneHint: '本周完成与下周安排' },
+      { id: 'wp-summary-month', label: '月工作总结', templateId: 'wp-summary-month', sceneHint: '月度目标完成与复盘' },
+      { id: 'wp-plan-month', label: '月度工作计划', templateId: 'wp-plan-month', sceneHint: '下月目标与任务分解' },
+      { id: 'wp-meeting-notice', label: '会议通知', templateId: 'wp-meeting-notice', sceneHint: '召开会议的时间、议程与参会要求' },
+      { id: 'wp-meeting-minutes', label: '会议纪要', templateId: 'wp-meeting-minutes', sceneHint: '会议议题、讨论决定与落实事项' },
+      { id: 'wp-invite', label: '邀请函', templateId: 'wp-invite', sceneHint: '邀请参加论坛、活动、会议' },
+      { id: 'wp-rule-admin', label: '管理制度', templateId: 'wp-rule-admin', sceneHint: '部门或业务管理制度框架' },
+    ],
+  },
   {
     id: 'yijian',
     label: '意见',
