@@ -14,7 +14,7 @@ import DocumentIssuePanel from './DocumentIssuePanel'
 import DocumentStructurePanel from './DocumentStructurePanel'
 import DocumentFormatPanel from './DocumentFormatPanel'
 import DocumentOfficialLayoutPreview from './DocumentOfficialLayoutPreview'
-import DocumentTextEditor from './DocumentTextEditor'
+import DocumentTextEditor, { type DocumentPageEditorHandle } from './DocumentTextEditor'
 import DocumentTemplateSidebar from './DocumentTemplateSidebar'
 import DocumentWordSourcePanel from './DocumentWordSourcePanel'
 import DocumentTemplatePickerModal from './DocumentTemplatePickerModal'
@@ -40,11 +40,11 @@ import { renderDocxPreview } from '../utils/docxPreview'
 import { countCjkChars, hasTableLikeRows, normalizeDocxPlainText } from '../utils/docxTextExtract'
 import {
   expandRangeToCjkWord,
-  locateIssueInTextarea,
-  locateRangeInTextarea,
   locateStructureItemInContent,
   refreshIssueRanges,
+  resolveIssueRange,
 } from '../utils/documentLocate'
+import { resolveDocumentUndoKey } from '../utils/documentUndoKey'
 import type { TextHighlightRange } from '../utils/documentLocate'
 import { computeAiWriteHighlightRanges } from '../utils/documentAiHighlight'
 import { getIssueCategoryLabel } from '../utils/documentProofread'
@@ -196,7 +196,7 @@ export default function DocumentWorkspace({
   } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const exportMenuRef = useRef<HTMLDivElement>(null)
-  const editorRef = useRef<HTMLTextAreaElement>(null)
+  const editorRef = useRef<DocumentPageEditorHandle>(null)
   const previewRef = useRef<HTMLDivElement>(null)
   const importedTextRef = useRef<string>('')
   const importedRawTextRef = useRef<string>('')
@@ -296,6 +296,24 @@ export default function DocumentWorkspace({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const decision = resolveDocumentUndoKey({
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+        key: event.key,
+        target: event.target,
+        undoCount: undoPastRef.current.length,
+      })
+      if (decision === 'undo') {
+        event.preventDefault()
+        handleUndo()
+        return
+      }
+      if (decision === 'blocked') {
+        event.preventDefault()
+        return
+      }
+
       if (!(event.ctrlKey || event.metaKey) || event.key !== 'z' || event.shiftKey) return
       if (undoPastRef.current.length === 0) return
 
@@ -663,10 +681,11 @@ export default function DocumentWorkspace({
         window.requestAnimationFrame(() => {
           const editor = editorRef.current
           if (!editor) return
-          const range = locateIssueInTextarea(editor, issue, next)
+          const range = resolveIssueRange(next, issue)
           if (range) {
             const visual = expandRangeToCjkWord(next, range)
             setHighlightRange({ ...visual, adopted: nextAdopted })
+            editor.scrollToRange(visual.start, visual.end)
           }
         })
       }
@@ -728,7 +747,7 @@ export default function DocumentWorkspace({
         }
 
         // 即使 start/end 失效，也按 original/suggestion 在正文中重定位
-        const range = locateIssueInTextarea(editor, issue, content)
+        const range = resolveIssueRange(content, issue)
         if (token !== locateTokenRef.current) return
 
         if (range) {
@@ -742,9 +761,10 @@ export default function DocumentWorkspace({
                 : ''
             }`,
           )
+          editor.scrollToRange(visual.start, visual.end)
           window.requestAnimationFrame(() => {
             if (token !== locateTokenRef.current) return
-            locateIssueInTextarea(editor, issue, content)
+            editor.scrollToRange(visual.start, visual.end)
           })
           return
         }
@@ -754,7 +774,7 @@ export default function DocumentWorkspace({
           setLocateHint(
             `${getIssueCategoryLabel(issue.category)}：${issue.message}（全文级提醒，无具体定位）`,
           )
-          editor.scrollTo({ top: 0, behavior: 'smooth' })
+          editor.scrollToTop()
         } else {
           setLocateHint(
             adoptedIssueIdSet.has(issue.id)
@@ -892,13 +912,9 @@ export default function DocumentWorkspace({
 
     try {
       const liveSelection = (() => {
-        const el = editorRef.current
-        if (!el || el.selectionEnd <= el.selectionStart) return editorSelection
-        return {
-          start: el.selectionStart,
-          end: el.selectionEnd,
-          text: el.value.slice(el.selectionStart, el.selectionEnd),
-        }
+        const live = editorRef.current?.getPlainSelection() ?? null
+        if (!live || live.end <= live.start) return editorSelection
+        return live
       })()
 
       const result = await refineDocumentLocally({
@@ -1113,7 +1129,7 @@ export default function DocumentWorkspace({
           setLocateHint('左侧高亮为即将改写的原文片段，确认后才会写入')
           window.requestAnimationFrame(() => {
             const editor = editorRef.current
-            if (editor) locateRangeInTextarea(editor, range, content)
+            if (editor) editor.scrollToRange(range.start, range.end)
           })
         }
         setStatusMessage('已生成改写预览，请确认后再应用到正文')
@@ -1179,7 +1195,7 @@ export default function DocumentWorkspace({
       window.requestAnimationFrame(() => {
         const editor = editorRef.current
         if (editor) {
-          locateRangeInTextarea(editor, focusRange, formatted)
+          editor.scrollToRange(focusRange.start, focusRange.end)
         }
       })
     } else {
@@ -1357,12 +1373,12 @@ export default function DocumentWorkspace({
             const range = { start: index, end: index + appliedSnippet.length, adopted: true as const }
             setHighlightRange(range)
             setAiHighlightRanges([range])
-            locateRangeInTextarea(editor, range, content)
+            editor.scrollToRange(range.start, range.end)
             setLocateHint('已定位到该条建议写入的正文（绿色高亮）')
             setStatusIsError(false)
             window.requestAnimationFrame(() => {
               if (token !== locateTokenRef.current) return
-              locateRangeInTextarea(editor, range, content)
+              editor.scrollToRange(range.start, range.end)
             })
             return
           }
@@ -1375,12 +1391,12 @@ export default function DocumentWorkspace({
           const visual = expandRangeToCjkWord(content, range)
           setHighlightRange({ ...visual })
           setAiHighlightRanges([])
-          locateRangeInTextarea(editor, range, content)
+          editor.scrollToRange(range.start, range.end)
           setLocateHint(`已定位结构条目：${item.replace(/\s+/g, ' ').trim().slice(0, 48)}`)
           setStatusIsError(false)
           window.requestAnimationFrame(() => {
             if (token !== locateTokenRef.current) return
-            locateRangeInTextarea(editor, range, content)
+            editor.scrollToRange(visual.start, visual.end)
           })
           return
         }
@@ -1604,7 +1620,7 @@ export default function DocumentWorkspace({
 
                   {viewMode === 'text' && hasContent && workflowStep !== 'prepare' ? (
                     <DocumentTextEditor
-                      editorRef={editorRef}
+                      ref={editorRef}
                       value={content}
                       highlightRange={highlightRange}
                       aiHighlightRanges={aiHighlightRanges}

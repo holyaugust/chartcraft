@@ -12,7 +12,7 @@ import {
 interface DocumentTextEditorProps {
   value: string
   onChange: (value: string) => void
-  highlightRange: TextHighlightRange | null
+  highlightRange?: TextHighlightRange | null
   aiHighlightRanges?: TextHighlightRange[]
   className?: string
   placeholder?: string
@@ -181,7 +181,7 @@ function readCaret(root: HTMLElement): PageCaret {
 
 const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEditorProps>(
   function DocumentTextEditor(
-    { value, onChange, highlightRange, aiHighlightRanges = [], className = '', placeholder: _placeholder, onSelectionChange },
+    { value, onChange, highlightRange = null, aiHighlightRanges = [], className = '', placeholder: _placeholder, onSelectionChange },
     ref,
   ) {
     const scrollRef = useRef<HTMLDivElement>(null)
