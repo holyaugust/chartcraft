@@ -86,4 +86,118 @@ describe('DocumentTextEditor page', () => {
     scrollPageToRange(container, marker)
     expect(container.scrollTop).toBe(200)
   })
+
+  it('splits at the zero caret on enter and on shift+enter', () => {
+    const run = (shiftKey: boolean) => {
+      let next = ''
+      const { host, root } = renderEditor('甲乙', {
+        onChange: (value: string) => {
+          next = value
+        },
+      })
+      const page = host.querySelector('.document-page-editor') as HTMLElement
+      page.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey, bubbles: true }))
+      expect(next).toBe('\n甲乙')
+      act(() => root.unmount())
+    }
+    run(false)
+    run(true)
+  })
+
+  it('does not call onChange for arrow keys', () => {
+    let calls = 0
+    const { host, root } = renderEditor('甲乙', {
+      onChange: () => {
+        calls += 1
+      },
+    })
+    const page = host.querySelector('.document-page-editor') as HTMLElement
+    page.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    expect(calls).toBe(0)
+    act(() => root.unmount())
+  })
+
+  it('pastes only plain text at the zero caret', () => {
+    let next = ''
+    const { host, root } = renderEditor('甲', {
+      onChange: (value: string) => {
+        next = value
+      },
+    })
+    const page = host.querySelector('.document-page-editor') as HTMLElement
+    const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(event, 'clipboardData', {
+      value: {
+        getData: (type: string) => (type === 'text/plain' ? '乙 | 丙' : '<b>乙</b>'),
+      },
+    })
+    page.dispatchEvent(event)
+    expect(next).toBe('乙 | 丙甲')
+    expect(next).not.toContain('<b>')
+    act(() => root.unmount())
+  })
+
+  it('does not rebuild the page when the parent echoes the edited string', () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    let value = '甲乙'
+    const draw = () => {
+      act(() => {
+        root.render(
+          <DocumentTextEditor
+            value={value}
+            onChange={(next) => {
+              value = next
+            }}
+          />,
+        )
+      })
+    }
+    draw()
+    const page = host.querySelector('.document-page-editor') as HTMLElement
+    act(() => {
+      page.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    const block = host.querySelector('[data-plain-start]') as HTMLElement
+    block.dataset.marker = 'keep'
+    draw()
+    expect(host.querySelector('[data-marker="keep"]')).not.toBeNull()
+    act(() => root.unmount())
+  })
+
+  it('keeps in-progress composition text when the parent re-renders', () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    const draw = (value: string) => {
+      act(() => {
+        root.render(<DocumentTextEditor value={value} onChange={() => {}} />)
+      })
+    }
+    draw('甲')
+    const page = host.querySelector('.document-page-editor') as HTMLElement
+    page.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    const block = host.querySelector('[data-plain-start]') as HTMLElement
+    block.textContent = '甲乙'
+    draw('完全不同的外部稿')
+    expect(host.textContent).toContain('甲乙')
+    expect(host.textContent).not.toContain('完全不同的外部稿')
+    act(() => root.unmount())
+  })
+
+  it('rebuilds the page when the value changes from outside', () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    act(() => {
+      root.render(<DocumentTextEditor value="甲" onChange={() => {}} />)
+    })
+    act(() => {
+      root.render(<DocumentTextEditor value="全新" onChange={() => {}} />)
+    })
+    expect(host.textContent).toContain('全新')
+    expect(host.textContent).not.toContain('甲')
+    act(() => root.unmount())
+  })
 })
