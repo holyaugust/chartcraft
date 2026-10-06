@@ -74,6 +74,12 @@ import {
 } from '../utils/documentFormatAdjust'
 import { isDeepSeekConfigured, type ProofreadMode, type ProofreadPromptContext } from '../utils/deepseek'
 import DocumentLocalRefineCard from './DocumentLocalRefineCard'
+import type { LayoutGenre } from '../data/documentLayoutSpecs'
+import {
+  readLayoutGenre,
+  suggestLayoutGenre,
+  writeLayoutGenre,
+} from '../utils/documentLayoutRole'
 
 const DOCUMENT_STORAGE_KEY = 'chartcraft-document-draft'
 
@@ -102,6 +108,13 @@ function saveDocumentDraft(content: string) {
   }
 }
 
+function loadLayoutGenre(): LayoutGenre | null {
+  try {
+    return readLayoutGenre(localStorage)
+  } catch {
+    return null
+  }
+}
 
 function loadInitialStructureState(): {
   report: DocumentStructureAnalysisResult | null
@@ -129,6 +142,7 @@ export default function DocumentWorkspace({
   onSavedLabelChange,
 }: DocumentWorkspaceProps) {
   const [content, setContent] = useState(loadDocumentDraft)
+  const [confirmedGenre, setConfirmedGenre] = useState<LayoutGenre | null>(loadLayoutGenre)
   const [workflowStep, setWorkflowStep] = useState<DocumentWorkflowStep>(() =>
     loadDocumentDraft().trim() ? 'structure' : 'prepare',
   )
@@ -206,6 +220,7 @@ export default function DocumentWorkspace({
 
   const adoptedIssueIdSet = useMemo(() => new Set(adoptedIssueIds), [adoptedIssueIds])
   const hasContent = content.trim().length > 0
+  const suggestedGenre = useMemo(() => suggestLayoutGenre(null, content), [content])
   const preferSourceSidebar = contentOrigin === 'ai' || contentOrigin === 'word' || !!docxBuffer
   const fallbackSidebarPanel: DocumentSidebarPanel = preferSourceSidebar ? 'source' : 'templates'
   const workflowCompletedThrough = completedThroughStep({
@@ -829,6 +844,7 @@ export default function DocumentWorkspace({
           originalFullText: importedRawTextRef.current || importedTextRef.current,
           fileName: docxFileName,
           preferFormatted,
+          layoutGenre: confirmedGenre,
         })
 
         const blob = new Blob([buffer], {
@@ -869,8 +885,17 @@ export default function DocumentWorkspace({
         setBusy(false)
       }
     },
-    [content, docxBuffer, docxFileName],
+    [content, confirmedGenre, docxBuffer, docxFileName],
   )
+
+  const handleConfirmGenre = useCallback((genre: LayoutGenre) => {
+    try {
+      writeLayoutGenre(localStorage, genre)
+    } catch {
+      /* ignore */
+    }
+    setConfirmedGenre(genre)
+  }, [])
 
   const handleExportMenuAction = useCallback(
     (action: 'original-docx' | 'formatted-docx' | 'txt') => {
@@ -1468,7 +1493,7 @@ export default function DocumentWorkspace({
                     >
                       导出 Word
                     </button>
-                    {docxBuffer ? (
+                    {docxBuffer && confirmedGenre === null ? (
                       <button
                         type="button"
                         role="menuitem"
@@ -1631,6 +1656,7 @@ export default function DocumentWorkspace({
                       onChange={handleContentChange}
                       onSelectionChange={setEditorSelection}
                       placeholder="在此输入报告正文…"
+                      layoutGenre={confirmedGenre}
                     />
                   ) : null}
 
@@ -1684,6 +1710,9 @@ export default function DocumentWorkspace({
                   busy={formatBusy}
                   confirmOpen={formatConfirmOpen}
                   applied={formatCompleted && !(formatReport?.changed)}
+                  suggestedGenre={suggestedGenre}
+                  confirmedGenre={confirmedGenre}
+                  onConfirmGenre={handleConfirmGenre}
                   onAnalyze={() => void runFormatAnalysis()}
                   onRequestApply={() => setFormatConfirmOpen(true)}
                   onConfirmApply={handleConfirmFormatApply}

@@ -9,14 +9,25 @@ import {
   X,
 } from 'lucide-react'
 import { useMemo } from 'react'
+import type { LayoutGenre } from '../data/documentLayoutSpecs'
 import type { FormatAdjustReport } from '../utils/documentFormatAdjust'
 import { buildOfficialLayoutHtml } from '../utils/documentOfficialLayout'
+
+const LAYOUT_GENRE_OPTIONS: { genre: LayoutGenre; label: string }[] = [
+  { genre: 'official', label: '公文' },
+  { genre: 'contract', label: '合同' },
+  { genre: 'feasibility', label: '可研报告' },
+  { genre: 'general', label: '通用文稿' },
+]
 
 interface DocumentFormatPanelProps {
   report: FormatAdjustReport | null
   busy?: boolean
   confirmOpen?: boolean
   applied?: boolean
+  suggestedGenre: LayoutGenre
+  confirmedGenre: LayoutGenre | null
+  onConfirmGenre: (genre: LayoutGenre) => void
   onAnalyze: () => void
   onRequestApply: () => void
   onConfirmApply: () => void
@@ -31,6 +42,9 @@ export default function DocumentFormatPanel({
   busy = false,
   confirmOpen = false,
   applied = false,
+  suggestedGenre,
+  confirmedGenre,
+  onConfirmGenre,
   onAnalyze,
   onRequestApply,
   onConfirmApply,
@@ -72,6 +86,25 @@ export default function DocumentFormatPanel({
           </button>
         </div>
       </div>
+
+      <section className="document-format-genre">
+        <p>确认后编辑页和导出使用该版式，不改正文。</p>
+        <div className="document-format-genre-buttons">
+          {LAYOUT_GENRE_OPTIONS.map(({ genre, label }) => (
+            <button
+              key={genre}
+              type="button"
+              className={`btn btn-sm ${confirmedGenre === genre ? 'btn-primary' : 'btn-ghost'}`}
+              data-genre={genre}
+              {...(suggestedGenre === genre ? { 'data-suggested': 'true' } : {})}
+              aria-pressed={confirmedGenre === genre}
+              onClick={() => onConfirmGenre(genre)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
 
       {busy && !report ? (
         <div className="document-format-empty">
