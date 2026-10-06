@@ -3,25 +3,23 @@
  * 参照《国企标准公文模板（上报专项报告/请示通用版·GB/T 9704-2012）》
  */
 import JSZip from 'jszip'
+import { GBT9704_EXPORT_SPEC_NOTE } from '../data/gbt9704ExportSpec'
 import {
-  GBT9704_EXPORT_SPEC_NOTE,
-  GBT9704_LINE_SPACING,
-  GBT9704_PAGE_MARGINS,
-  GBT9704_SIGNATURE_DATE_RIGHT_CHARS,
-  GBT9704_SIGNATURE_ORG_RIGHT_CHARS,
-  GBT9704_SIGNATURE_SPACE_BEFORE,
-  GBT9704_SIZE_BODY,
-  GBT9704_SIZE_HEADING1,
-  GBT9704_SIZE_HEADING2,
-  GBT9704_SIZE_TITLE,
-} from '../data/gbt9704ExportSpec'
+  getLayoutSpec,
+  type LayoutGenre,
+  type LayoutPageSpec,
+  type LayoutRoleStyle,
+} from '../data/documentLayoutSpecs'
 import { TABLE_COL_SEP } from './docxTextExtract'
+import { layoutRoleForLine } from './documentLayoutRole'
 import {
   expandAttachmentLine,
   isSignatureOrgLine,
   splitInlineHeadingBodyLine,
   stripLeadingIndent,
 } from './documentFormatNormalize'
+
+type LayoutSpec = ReturnType<typeof getLayoutSpec>
 
 const WORD_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 
@@ -306,172 +304,25 @@ function classifyLine(line: string, previousKind?: ParagraphKind): ParagraphKind
   return 'body'
 }
 
-function styleForKind(kind: ParagraphKind): ParagraphStyle {
-  const bodyBase: ParagraphStyle = {
+function styleFromRole(kind: ParagraphKind, role: LayoutRoleStyle): ParagraphStyle {
+  return {
     kind,
-    fontEastAsia: '仿宋_GB2312',
-    fontAscii: 'Times New Roman',
-    sizeHalfPoints: GBT9704_SIZE_BODY,
-    bold: false,
-    align: 'both',
-    firstLineIndentChars: 200,
-    spaceBefore: 120,
-    spaceAfter: 120,
+    fontEastAsia: role.fontEastAsia,
+    fontAscii: role.fontAscii,
+    sizeHalfPoints: role.sizeHalfPoints,
+    bold: role.bold,
+    align: role.align,
+    firstLineIndentChars: role.firstLineIndentChars,
+    rightIndentChars: role.rightIndentChars,
+    spaceBefore: role.spaceBefore,
+    spaceAfter: role.spaceAfter,
   }
+}
 
-  switch (kind) {
-    case 'skip':
-    case 'docKind':
-      return { ...bodyBase, kind }
-    case 'redHeader':
-      return {
-        kind,
-        fontEastAsia: '小标宋',
-        fontAscii: 'Times New Roman',
-        sizeHalfPoints: GBT9704_SIZE_TITLE,
-        bold: true,
-        color: 'FF0000',
-        align: 'center',
-        spaceAfter: 120,
-      }
-    case 'docNumber':
-      return { ...bodyBase, align: 'center', firstLineIndentChars: 0, leftIndentChars: 0, spaceAfter: 160 }
-    case 'meta':
-      return { ...bodyBase, align: 'center', firstLineIndentChars: 0, leftIndentChars: 0, spaceAfter: 200 }
-    case 'enterpriseBanner':
-      return { ...bodyBase, sizeHalfPoints: 28, align: 'center', firstLineIndentChars: 0, spaceAfter: 160 }
-    case 'metaLabel':
-      return { ...bodyBase, bold: true, align: 'left', firstLineIndentChars: 0, spaceAfter: 80 }
-    case 'title':
-      return {
-        kind,
-        fontEastAsia: '小标宋',
-        fontAscii: 'Times New Roman',
-        sizeHalfPoints: GBT9704_SIZE_TITLE,
-        bold: true,
-        align: 'center',
-        firstLineIndentChars: 0,
-        spaceBefore: 200,
-        spaceAfter: 280,
-      }
-    case 'recipient':
-      return {
-        kind,
-        fontEastAsia: '黑体',
-        fontAscii: 'Times New Roman',
-        sizeHalfPoints: GBT9704_SIZE_BODY,
-        bold: true,
-        align: 'left',
-        firstLineIndentChars: 0,
-        spaceAfter: 160,
-      }
-    case 'heading1':
-      return {
-        kind,
-        fontEastAsia: '黑体',
-        fontAscii: 'Times New Roman',
-        sizeHalfPoints: GBT9704_SIZE_HEADING1,
-        bold: true,
-        align: 'left',
-        firstLineIndentChars: 0,
-        spaceBefore: 320,
-        spaceAfter: 120,
-      }
-    case 'heading2':
-      return {
-        kind,
-        fontEastAsia: '楷体_GB2312',
-        fontAscii: 'Times New Roman',
-        sizeHalfPoints: GBT9704_SIZE_HEADING2,
-        bold: true,
-        align: 'left',
-        firstLineIndentChars: 0,
-        spaceBefore: 300,
-        spaceAfter: 120,
-      }
-    case 'heading3':
-      return {
-        kind,
-        fontEastAsia: '仿宋_GB2312',
-        fontAscii: 'Times New Roman',
-        sizeHalfPoints: GBT9704_SIZE_BODY,
-        bold: true,
-        align: 'left',
-        firstLineIndentChars: 0,
-        spaceBefore: 120,
-        spaceAfter: 120,
-      }
-    case 'heading4':
-      return {
-        kind,
-        fontEastAsia: '仿宋_GB2312',
-        fontAscii: 'Times New Roman',
-        sizeHalfPoints: GBT9704_SIZE_BODY,
-        bold: false,
-        align: 'left',
-        firstLineIndentChars: 0,
-        spaceBefore: 120,
-        spaceAfter: 120,
-      }
-    case 'numberedItem':
-      return {
-        ...bodyBase,
-        firstLineIndentChars: 0,
-        leftIndentChars: 0,
-        hangingIndentChars: 0,
-      }
-    case 'closing':
-    case 'body':
-      return bodyBase
-    case 'tableCaption':
-      return { ...bodyBase, bold: true, firstLineIndentChars: 0, align: 'left' }
-    case 'tableUnit':
-      return { ...bodyBase, firstLineIndentChars: 0, align: 'left' }
-    case 'attachment':
-      return {
-        ...bodyBase,
-        firstLineIndentChars: ATTACHMENT_LABEL_INDENT_CHARS,
-        leftIndentChars: 0,
-        align: 'left',
-        spaceBefore: GBT9704_LINE_SPACING,
-        spaceAfter: 0,
-      }
-    case 'attachmentItem':
-      return {
-        ...bodyBase,
-        leftIndentChars: 0,
-        firstLineIndentChars: 0,
-        hangingIndentChars: 0,
-        align: 'left',
-        spaceBefore: 0,
-        spaceAfter: 0,
-      }
-    case 'copyTo':
-      return { ...bodyBase, firstLineIndentChars: 0, spaceBefore: 120 }
-    case 'signatureOrg':
-      return {
-        ...bodyBase,
-        align: 'right',
-        firstLineIndentChars: 0,
-        leftIndentChars: 0,
-        rightIndentChars: GBT9704_SIGNATURE_ORG_RIGHT_CHARS,
-        spaceBefore: GBT9704_SIGNATURE_SPACE_BEFORE,
-        spaceAfter: 0,
-      }
-    case 'signatureDate':
-      return {
-        ...bodyBase,
-        align: 'right',
-        firstLineIndentChars: 0,
-        leftIndentChars: 0,
-        rightIndentChars: GBT9704_SIGNATURE_DATE_RIGHT_CHARS,
-        spaceAfter: 200,
-      }
-    case 'footerNote':
-      return { ...bodyBase, firstLineIndentChars: 200, leftIndentChars: 0, spaceBefore: 120 }
-    default:
-      return bodyBase
-  }
+function styleForKind(kind: ParagraphKind): ParagraphStyle {
+  const roles = getLayoutSpec('official').roles
+  const role = roles[kind] ?? roles.body
+  return styleFromRole(kind, role)
 }
 
 function displayTextForLine(line: string, kind: ParagraphKind): string {
@@ -548,34 +399,36 @@ function buildRunXml(text: string, style: ParagraphStyle): string {
   </w:r>`
 }
 
-function buildParagraphXml(line: string, kind: ParagraphKind): string {
-  if (kind === 'skip' || kind === 'docKind') return ''
-
-  const baseStyle = styleForKind(kind)
-  const text = displayTextForLine(line, kind)
+function buildStyledParagraphXml(text: string, style: ParagraphStyle, page: LayoutPageSpec): string {
   if (!text) return ''
 
-  const style = applyDynamicIndent(baseStyle, text)
-
+  const applied = applyDynamicIndent(style, text)
   const jcMap = { left: 'left', center: 'center', right: 'right', both: 'both' }
-  const spacingParts = [`w:line="${GBT9704_LINE_SPACING}" w:lineRule="exact"`]
-  if (style.spaceBefore) spacingParts.push(`w:before="${style.spaceBefore}"`)
-  if (style.spaceAfter) spacingParts.push(`w:after="${style.spaceAfter}"`)
+  const spacingParts = [`w:line="${page.line}" w:lineRule="${page.lineRule}"`]
+  if (applied.spaceBefore) spacingParts.push(`w:before="${applied.spaceBefore}"`)
+  if (applied.spaceAfter) spacingParts.push(`w:after="${applied.spaceAfter}"`)
 
   return `<w:p>
     <w:pPr>
-      <w:jc w:val="${jcMap[style.align]}"/>
+      <w:jc w:val="${jcMap[applied.align]}"/>
       <w:spacing ${spacingParts.join(' ')}/>
-      ${buildIndentXml(style)}
+      ${buildIndentXml(applied)}
     </w:pPr>
-    ${buildRunXml(text, style)}
+    ${buildRunXml(text, applied)}
   </w:p>`
 }
 
-function buildTableXml(rows: string[][]): string {
+function buildParagraphXml(line: string, kind: ParagraphKind, page: LayoutPageSpec): string {
+  if (kind === 'skip' || kind === 'docKind') return ''
+
+  const text = displayTextForLine(line, kind)
+  return buildStyledParagraphXml(text, styleForKind(kind), page)
+}
+
+function buildTableXml(rows: string[][], spec: LayoutSpec): string {
   const colCount = Math.max(...rows.map((row) => row.length), 1)
   const colWidth = Math.floor(9000 / colCount)
-  const bodyStyle = styleForKind('body')
+  const bodyStyle = styleFromRole('body', spec.roles.body)
 
   const rowXml = rows
     .map((cells) => {
@@ -596,7 +449,7 @@ function buildTableXml(rows: string[][]): string {
             </w:tcPr>
             <w:p>
               <w:pPr>
-                <w:spacing w:line="${GBT9704_LINE_SPACING}" w:lineRule="exact"/>
+                <w:spacing w:line="${spec.page.line}" w:lineRule="${spec.page.lineRule}"/>
                 <w:ind w:firstLineChars="0"/>
               </w:pPr>
               ${cellText ? buildRunXml(cellText, bodyStyle) : '<w:r><w:t></w:t></w:r>'}
@@ -627,11 +480,12 @@ function buildTableXml(rows: string[][]): string {
   </w:tbl>`
 }
 
-function buildFormattedDocumentXml(text: string): string {
-  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-  const lines = normalized.split('\n')
-  const bodyParts: string[] = []
+function splitTableRows(tableLines: string[]): string[][] {
+  return tableLines.map((row) => row.split(TABLE_COL_SEP).map((cell) => cell.trim()))
+}
 
+function buildOfficialBodyParts(lines: string[], spec: LayoutSpec): string[] {
+  const bodyParts: string[] = []
   let i = 0
   let previousKind: ParagraphKind | undefined
   while (i < lines.length) {
@@ -648,8 +502,7 @@ function buildFormattedDocumentXml(text: string): string {
         tableLines.push(lines[i])
         i += 1
       }
-      const rows = tableLines.map((row) => row.split(TABLE_COL_SEP).map((cell) => cell.trim()))
-      bodyParts.push(buildTableXml(rows))
+      bodyParts.push(buildTableXml(splitTableRows(tableLines), spec))
       continue
     }
 
@@ -658,7 +511,7 @@ function buildFormattedDocumentXml(text: string): string {
       for (const part of expandExportParts(line, kind)) {
         const partKind = part.kind ?? classifyLine(part.text, previousKind)
         if (partKind === 'skip' || partKind === 'docKind') continue
-        const paragraph = buildParagraphXml(part.text, partKind)
+        const paragraph = buildParagraphXml(part.text, partKind, spec.page)
         if (paragraph) {
           bodyParts.push(paragraph)
           previousKind = partKind
@@ -667,8 +520,50 @@ function buildFormattedDocumentXml(text: string): string {
     }
     i += 1
   }
+  return bodyParts
+}
 
-  const { top, right, bottom, left, header, footer } = GBT9704_PAGE_MARGINS
+function buildRoleBodyParts(lines: string[], spec: LayoutSpec): string[] {
+  const bodyParts: string[] = []
+  let i = 0
+  let seenContent = false
+  while (i < lines.length) {
+    const line = lines[i]
+
+    if (!line.trim()) {
+      i += 1
+      continue
+    }
+
+    const role = layoutRoleForLine(spec.genre, line, { isFirstContentLine: !seenContent })
+    if (role === 'table') {
+      const tableLines: string[] = []
+      while (i < lines.length && layoutRoleForLine(spec.genre, lines[i]) === 'table') {
+        tableLines.push(lines[i])
+        i += 1
+      }
+      bodyParts.push(buildTableXml(splitTableRows(tableLines), spec))
+      seenContent = true
+      continue
+    }
+
+    seenContent = true
+    const roleStyle = spec.roles[role] ?? spec.roles.body
+    const text = stripLeadingIndent(line.trim())
+    const paragraph = buildStyledParagraphXml(text, styleFromRole('body', roleStyle), spec.page)
+    if (paragraph) bodyParts.push(paragraph)
+    i += 1
+  }
+  return bodyParts
+}
+
+function buildFormattedDocumentXml(text: string, genre: LayoutGenre): string {
+  const spec = getLayoutSpec(genre)
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const lines = normalized.split('\n')
+  const bodyParts = genre === 'official' ? buildOfficialBodyParts(lines, spec) : buildRoleBodyParts(lines, spec)
+
+  const { top, right, bottom, left, header, footer } = spec.page.marginTwip
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="${WORD_NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
@@ -702,20 +597,23 @@ const FORMATTED_DOCUMENT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>
 </Relationships>`
 
-const FORMATTED_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+function buildFormattedStylesXml(spec: LayoutSpec): string {
+  const body = spec.roles.body
+  const { line, lineRule } = spec.page
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="${WORD_NS}">
   <w:docDefaults>
     <w:rPrDefault>
       <w:rPr>
-        <w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="仿宋_GB2312"/>
-        <w:sz w:val="${GBT9704_SIZE_BODY}"/>
-        <w:szCs w:val="${GBT9704_SIZE_BODY}"/>
+        <w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="${body.fontEastAsia}"/>
+        <w:sz w:val="${body.sizeHalfPoints}"/>
+        <w:szCs w:val="${body.sizeHalfPoints}"/>
         <w:lang w:val="en-US" w:eastAsia="zh-CN"/>
       </w:rPr>
     </w:rPrDefault>
     <w:pPrDefault>
       <w:pPr>
-        <w:spacing w:line="${GBT9704_LINE_SPACING}" w:lineRule="exact"/>
+        <w:spacing w:line="${line}" w:lineRule="${lineRule}"/>
       </w:pPr>
     </w:pPrDefault>
   </w:docDefaults>
@@ -723,15 +621,16 @@ const FORMATTED_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?
     <w:name w:val="Normal"/>
     <w:qFormat/>
     <w:pPr>
-      <w:spacing w:line="${GBT9704_LINE_SPACING}" w:lineRule="exact"/>
+      <w:spacing w:line="${line}" w:lineRule="${lineRule}"/>
     </w:pPr>
     <w:rPr>
-      <w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="仿宋_GB2312"/>
-      <w:sz w:val="${GBT9704_SIZE_BODY}"/>
-      <w:szCs w:val="${GBT9704_SIZE_BODY}"/>
+      <w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="${body.fontEastAsia}"/>
+      <w:sz w:val="${body.sizeHalfPoints}"/>
+      <w:szCs w:val="${body.sizeHalfPoints}"/>
     </w:rPr>
   </w:style>
 </w:styles>`
+}
 
 const FORMATTED_SETTINGS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:settings xmlns:w="${WORD_NS}">
@@ -752,14 +651,18 @@ export function classifyOfficialParagraph(
   return classifyLine(line, previousKind)
 }
 
-export async function createFormattedDocxFromPlainText(text: string): Promise<ArrayBuffer> {
+export async function createFormattedDocxFromPlainText(
+  text: string,
+  genre: LayoutGenre,
+): Promise<ArrayBuffer> {
+  const spec = getLayoutSpec(genre)
   const zip = new JSZip()
   zip.file('[Content_Types].xml', FORMATTED_CONTENT_TYPES)
   zip.file('_rels/.rels', FORMATTED_ROOT_RELS)
   zip.file('word/_rels/document.xml.rels', FORMATTED_DOCUMENT_RELS)
-  zip.file('word/styles.xml', FORMATTED_STYLES)
+  zip.file('word/styles.xml', buildFormattedStylesXml(spec))
   zip.file('word/settings.xml', FORMATTED_SETTINGS)
-  zip.file('word/document.xml', buildFormattedDocumentXml(text))
+  zip.file('word/document.xml', buildFormattedDocumentXml(text, genre))
 
   return zip.generateAsync({
     type: 'arraybuffer',

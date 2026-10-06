@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import type { LayoutGenre } from '../data/documentLayoutSpecs'
 import {
   TABLE_COL_SEP,
   extractBodyBlocksFromDocumentXml,
@@ -518,15 +519,23 @@ export function buildDocxExportFileName(sourceName?: string | null, suffix = '�
   return `${base}-${suffix}.docx`
 }
 
-/** 统一导出入口：有原 docx 时默认写回；无原文件时默认 GB/T 重排版 */
+function formattedExportWarning(genre: LayoutGenre): string {
+  if (genre === 'official') {
+    return '已按 GB/T 9704-2012 国企公文格式排版（上报专项报告/请示通用版：小标宋标题、黑体主送、仿宋正文、28磅行距）'
+  }
+  return '已按所选版式表排版'
+}
+
+/** 统一导出入口：已确认文种按该表生成；未确认且有原 docx 时默认写回；其余走通用表 */
 export async function exportDocumentToDocx(
   editedText: string,
   options?: {
     originalBuffer?: ArrayBuffer | null
     originalFullText?: string
     fileName?: string | null
-    /** true：按 GB/T 9704 重排版；false：写回原 docx。默认：无原文件时为 true，有原文件时为 false */
+    /** true：按版式表生成；false：写回原 docx。默认：无原文件时为 true，有原文件时为 false */
     preferFormatted?: boolean
+    layoutGenre?: LayoutGenre | null
   },
 ): Promise<DocxExportResult & { fileName: string }> {
   if (!editedText.trim()) {
@@ -534,6 +543,17 @@ export async function exportDocumentToDocx(
   }
 
   const exportName = buildDocxExportFileName(options?.fileName)
+  const confirmedGenre = options?.layoutGenre ?? null
+
+  if (confirmedGenre) {
+    const buffer = await createFormattedDocxFromPlainText(editedText, confirmedGenre)
+    return {
+      buffer,
+      warnings: [formattedExportWarning(confirmedGenre)],
+      fileName: exportName,
+    }
+  }
+
   const useFormatted = options?.preferFormatted ?? !options?.originalBuffer
 
   if (options?.originalBuffer && !useFormatted) {
@@ -561,12 +581,10 @@ export async function exportDocumentToDocx(
     return { ...result, fileName: exportName }
   }
 
-  const buffer = await createFormattedDocxFromPlainText(editedText)
+  const buffer = await createFormattedDocxFromPlainText(editedText, 'general')
   return {
     buffer,
-    warnings: [
-      '已按 GB/T 9704-2012 国企公文格式排版（上报专项报告/请示通用版：小标宋标题、黑体主送、仿宋正文、28磅行距）',
-    ],
+    warnings: [formattedExportWarning('general')],
     fileName: exportName,
   }
 }
