@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { classifyOfficialParagraph } from './docxFormattedExport'
-import { layoutRoleForLine } from './documentLayoutRole'
+import {
+  layoutRoleForLine,
+  readLayoutGenre,
+  suggestLayoutGenre,
+  writeLayoutGenre,
+} from './documentLayoutRole'
 
 describe('layoutRoleForLine', () => {
   it('delegates official lines to the existing classifier', () => {
@@ -34,5 +39,36 @@ describe('layoutRoleForLine', () => {
   it('uses the existing heading rule for a general document', () => {
     expect(layoutRoleForLine('general', '一、标题')).toBe('heading')
     expect(layoutRoleForLine('general', '普通句子。')).toBe('body')
+  })
+})
+
+describe('suggestLayoutGenre', () => {
+  it('suggests feasibility before the proofread genre', () => {
+    expect(suggestLayoutGenre('official_doc', '关于某某可行性研究的报告')).toBe('feasibility')
+    expect(suggestLayoutGenre('research', '市场调研分析')).toBe('general')
+    expect(suggestLayoutGenre('official_doc', '关于放假的通知')).toBe('official')
+    expect(suggestLayoutGenre('contract', '采购合同')).toBe('contract')
+  })
+})
+
+describe('layout genre storage', () => {
+  it('stores the genre without touching the draft text', () => {
+    const memory = new Map<string, string>()
+    const storage = {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        memory.set(key, value)
+      },
+      removeItem: (key: string) => {
+        memory.delete(key)
+      },
+    }
+    storage.setItem('chartcraft-document-draft', '原文')
+    expect(readLayoutGenre(storage)).toBeNull()
+    writeLayoutGenre(storage, 'contract')
+    expect(readLayoutGenre(storage)).toBe('contract')
+    expect(storage.getItem('chartcraft-document-draft')).toBe('原文')
+    writeLayoutGenre(storage, null)
+    expect(readLayoutGenre(storage)).toBeNull()
   })
 })

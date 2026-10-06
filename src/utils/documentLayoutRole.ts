@@ -69,3 +69,50 @@ export function layoutRoleForLine(
       return detectHeadingLevel(line.trim()) ? 'heading' : 'body'
   }
 }
+
+export const LAYOUT_GENRE_STORAGE_KEY = 'chartcraft-document-layout-genre'
+
+const LAYOUT_GENRES: readonly LayoutGenre[] = [
+  'official',
+  'contract',
+  'feasibility',
+  'general',
+]
+
+function isLayoutGenre(value: string): value is LayoutGenre {
+  return (LAYOUT_GENRES as readonly string[]).includes(value)
+}
+
+export function suggestLayoutGenre(
+  proofreadGenreId: string | null,
+  text: string,
+): LayoutGenre {
+  if (text.includes('可行性研究')) return 'feasibility'
+  switch (proofreadGenreId) {
+    case 'official_doc':
+      return 'official'
+    case 'contract':
+      return 'contract'
+    default:
+      return 'general'
+  }
+}
+
+export function readLayoutGenre(
+  storage: Pick<Storage, 'getItem'>,
+): LayoutGenre | null {
+  const raw = storage.getItem(LAYOUT_GENRE_STORAGE_KEY)
+  if (raw === null) return null
+  return isLayoutGenre(raw) ? raw : null
+}
+
+export function writeLayoutGenre(
+  storage: Pick<Storage, 'setItem' | 'removeItem'>,
+  genre: LayoutGenre | null,
+): void {
+  if (genre === null) {
+    storage.removeItem(LAYOUT_GENRE_STORAGE_KEY)
+    return
+  }
+  storage.setItem(LAYOUT_GENRE_STORAGE_KEY, genre)
+}
