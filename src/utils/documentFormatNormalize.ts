@@ -80,9 +80,9 @@ export function normalizeDocumentStructure(text: string): string {
   return ensureHeadingBodyStructure(normalizeSignatureBlock(out.join('\n')))
 }
 
-type HeadingLevel = 'h1' | 'h2' | 'h3' | 'h4'
+export type HeadingLevel = 'h1' | 'h2' | 'h3' | 'h4'
 
-function detectHeadingLevel(trimmed: string): HeadingLevel | null {
+export function detectHeadingLevel(trimmed: string): HeadingLevel | null {
   if (/^[一二三四五六七八九十百零〇]+[、．.](?!(\d|．|\.))/u.test(trimmed)) return 'h1'
   if (/^（[一二三四五六七八九十百零〇]+）/u.test(trimmed)) return 'h2'
   if (/^（\d+）/u.test(trimmed)) return 'h4'
