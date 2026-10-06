@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   FileText,
-  Upload,
   Sparkles,
   Loader2,
   AlertCircle,
@@ -1304,6 +1303,10 @@ export default function DocumentWorkspace({
         return
       }
 
+      if (step === 'prepare' && !statusIsError) {
+        setStatusMessage(null)
+      }
+
       if (step === 'export') {
         setExportMenuOpen(true)
       } else {
@@ -1326,7 +1329,7 @@ export default function DocumentWorkspace({
         setSidebarPanel('format')
       }
     },
-    [workflowStep, hasContent, preferSourceSidebar, openOrRunStructureAnalysis],
+    [workflowStep, hasContent, preferSourceSidebar, openOrRunStructureAnalysis, statusIsError],
   )
 
   const handleLocateStructureItem = useCallback(
@@ -1420,18 +1423,7 @@ export default function DocumentWorkspace({
               hidden
               onChange={handleFileChange}
             />
-            {hasContent && workflowStep === 'prepare' ? (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                disabled={busy}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {busy ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
-                重新上传
-              </button>
-            ) : null}
-            {hasContent ? (
+            {hasContent && workflowStep !== 'prepare' ? (
               <div className="document-export-dropdown" ref={exportMenuRef}>
                 <button
                   type="button"
@@ -1489,7 +1481,7 @@ export default function DocumentWorkspace({
           onStepClick={handleWorkflowStepClick}
         />
 
-        {statusMessage ? (
+        {statusMessage && (workflowStep !== 'prepare' || statusIsError) ? (
           <div className={`document-status-bar${statusIsError ? ' error' : ' success'}`}>
             {statusIsError ? <AlertCircle size={14} /> : <Sparkles size={14} />}
             {statusMessage}

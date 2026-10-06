@@ -1,3 +1,5 @@
+import { MAX_WRITE_REFERENCE_FILES } from './writeReferenceLimits'
+
 const WRITE_MATERIALS_KEY = 'chartcraft-write-materials'
 
 export interface WriteReferenceFile {
@@ -29,7 +31,7 @@ function normalizeReferenceFiles(parsed: Partial<WriteMaterialsDraft>): WriteRef
   )
     ? (parsed as { imitationFiles: WriteReferenceFile[] }).imitationFiles
     : []
-  return [...refs, ...legacyImitation].slice(0, 1)
+  return [...refs, ...legacyImitation].slice(0, MAX_WRITE_REFERENCE_FILES)
 }
 
 export function loadWriteMaterials(): WriteMaterialsDraft {

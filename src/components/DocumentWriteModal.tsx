@@ -25,8 +25,11 @@ import {
   type DocumentWriteMode,
 } from '../utils/documentWrite'
 import { loadWriteMaterials, saveWriteMaterials, type WriteReferenceFile } from '../utils/documentWriteStorage'
+import { MAX_WRITE_REFERENCE_FILES, WRITE_REFERENCE_ACCEPT, takeReferenceUploadBatch } from '../utils/writeReferenceLimits'
 import { isDeepSeekConfigured } from '../utils/deepseek'
 import { DOCUMENT_WRITE_PROMPT_EXAMPLES } from '../data/documentWritePromptExamples'
+
+const HOT_DOCUMENT_EXAMPLES = DOCUMENT_WRITE_PROMPT_EXAMPLES.slice(0, 6)
 
 interface DocumentWriteModalProps {
   open: boolean
@@ -39,7 +42,7 @@ interface DocumentWriteModalProps {
   }) => void
 }
 
-const MAX_REFERENCE_FILES = 1
+const MAX_REFERENCE_FILES = MAX_WRITE_REFERENCE_FILES
 
 function createFileId(): string {
   return `wf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -399,7 +402,15 @@ function ReferenceFileList({
           <span className="doc-write-file-name" title={file.name}>
             {file.name}
           </span>
-          <button type="button" className="doc-write-file-remove" aria-label="移除" onClick={() => onRemove(file.id)}>
+          <button
+            type="button"
+            className="doc-write-file-remove"
+            aria-label="移除"
+            onClick={(event) => {
+              event.stopPropagation()
+              onRemove(file.id)
+            }}
+          >
             <Trash2 size={13} />
           </button>
         </li>
@@ -424,6 +435,7 @@ export default function DocumentWriteModal({
   const [expanding, setExpanding] = useState(false)
   const [expandHint, setExpandHint] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [referenceStatus, setReferenceStatus] = useState<string | null>(null)
   const referenceInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -434,6 +446,7 @@ export default function DocumentWriteModal({
     setReferenceFiles(savedDraft.referenceFiles.slice(0, MAX_REFERENCE_FILES))
     setReferencePanelOpen(savedDraft.referenceFiles.length > 0)
     setError(null)
+    setReferenceStatus(null)
     setExpandHint(null)
     setTypeId(savedDraft.typeId || 'auto')
     setSubtypeId(savedDraft.subtypeId)
@@ -460,17 +473,36 @@ export default function DocumentWriteModal({
 
   const handleUploadReference = useCallback(async (files: FileList | null) => {
     if (!files?.length) return
-    setError(null)
-
-    const file = files[0]
-    try {
-      const text = await readWriteReferenceFile(file)
-      setReferenceFiles([{ id: createFileId(), name: file.name, text }])
-      setReferencePanelOpen(true)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '文件读取失败')
+    const selected = Array.from(files)
+    const batch = takeReferenceUploadBatch(referenceFiles.length, selected)
+    setReferencePanelOpen(true)
+    if (batch.atCapacity) {
+      setError(`最多上传 ${MAX_REFERENCE_FILES} 个参考文档`)
+      return
     }
-  }, [])
+
+    setError(null)
+    setReferenceStatus('正在读取参考文档…')
+    const problems: string[] = []
+    const next: WriteReferenceFile[] = []
+    for (const file of batch.accepted) {
+      try {
+        setReferenceStatus(`正在读取「${file.name}」…`)
+        const text = await readWriteReferenceFile(file, setReferenceStatus)
+        next.push({ id: createFileId(), name: file.name, text })
+      } catch (err) {
+        problems.push(err instanceof Error ? err.message : `「${file.name}」读取失败`)
+      }
+    }
+    if (next.length > 0) {
+      setReferenceFiles((prev) => [...prev, ...next].slice(0, MAX_REFERENCE_FILES))
+    }
+    if (batch.ignoredCount > 0) {
+      problems.push(`最多 ${MAX_REFERENCE_FILES} 个参考文档，已忽略多余的 ${batch.ignoredCount} 个文件`)
+    }
+    setError(problems.length > 0 ? problems.join('；') : null)
+    setReferenceStatus(null)
+  }, [referenceFiles.length])
 
   const runExpandPrompt = useCallback(async () => {
     if (!prompt.trim()) {
@@ -484,7 +516,10 @@ export default function DocumentWriteModal({
     setExpandHint(null)
 
     try {
-      const expanded = await expandWritePromptFromIntent(prompt)
+      const expanded = await expandWritePromptFromIntent(
+        prompt,
+        referenceFiles.map((file) => ({ name: file.name, text: file.text })),
+      )
       setPrompt(expanded.prompt)
       setTypeId(expanded.typeId)
       setSubtypeId(expanded.subtypeId)
@@ -495,7 +530,7 @@ export default function DocumentWriteModal({
       setExpanding(false)
       setBusy(false)
     }
-  }, [prompt])
+  }, [prompt, referenceFiles])
 
   const runGenerate = useCallback(
     async (mode: DocumentWriteMode) => {
@@ -516,7 +551,7 @@ export default function DocumentWriteModal({
         const result = await generateDocumentWithAi({
           prompt,
           typeSelection: { typeId, subtypeId },
-          imitationTexts: referenceFiles.map((file) => file.text),
+          sourceFiles: referenceFiles.map((file) => ({ name: file.name, text: file.text })),
           mode,
         })
 
@@ -550,7 +585,7 @@ export default function DocumentWriteModal({
   return (
     <div className="doc-write-overlay" role="presentation" onClick={() => !busy && onClose()}>
       <div
-        className="doc-write-modal"
+        className="doc-write-modal doc-write-compose-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="doc-write-title"
@@ -570,7 +605,7 @@ export default function DocumentWriteModal({
 
         <div className="doc-write-body">
           <p className="doc-write-intent-tip">
-            先用一句话写清意图，点「识别意图」生成完整专业提示词；确认后再生成正文。
+            先写清要做什么。若上传了参考文档，点「优化提示词」时会把文档和这段要求放在一起理解操作意图；确认后再生成正文。
           </p>
           <textarea
             className="doc-write-prompt"
@@ -585,8 +620,8 @@ export default function DocumentWriteModal({
           />
 
           <div className="doc-write-prompt-examples">
-            <span className="doc-write-prompt-examples-label">快捷意图</span>
-            {DOCUMENT_WRITE_PROMPT_EXAMPLES.map((example) => (
+            <span className="doc-write-prompt-examples-label">热门文书</span>
+            {HOT_DOCUMENT_EXAMPLES.map((example) => (
               <button
                 key={example.id}
                 type="button"
@@ -644,11 +679,11 @@ export default function DocumentWriteModal({
                 type="button"
                 className="btn btn-sm btn-ghost doc-write-btn-outline"
                 disabled={busy || !prompt.trim()}
-                title="识别意图并生成完整专业提示词"
+                title="优化提示词并生成完整专业提示词"
                 onClick={() => void runExpandPrompt()}
               >
                 {expanding ? <Loader2 size={14} className="spin" /> : <Wand2 size={14} />}
-                识别意图
+                优化提示词
               </button>
               <button
                 type="button"
@@ -673,7 +708,8 @@ export default function DocumentWriteModal({
                 <input
                   ref={referenceInputRef}
                   type="file"
-                  accept=".docx,.txt,.md"
+                  accept={WRITE_REFERENCE_ACCEPT}
+                  multiple
                   hidden
                   onChange={(event) => {
                     void handleUploadReference(event.target.files)
@@ -689,8 +725,9 @@ export default function DocumentWriteModal({
                   <ReferenceFileList
                     files={referenceFiles}
                     onRemove={(id) => setReferenceFiles((prev) => prev.filter((file) => file.id !== id))}
-                    emptyLabel="点击上传参考文档（.docx / .txt，最多 1 个，AI 将参照其结构与文风仿写）"
+                    emptyLabel="点击上传参考文档（Word、PDF、Excel、PPT、图片、文本，最多 5 个，可混用；将与写作要求一起理解你要做的事）"
                   />
+                  {referenceStatus ? <p className="doc-write-expand-hint">{referenceStatus}</p> : null}
                 </button>
               </section>
             </div>

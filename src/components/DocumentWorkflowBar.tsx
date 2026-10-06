@@ -10,8 +10,7 @@ const STEPS: { id: DocumentWorkflowStep; label: string; icon: typeof Sparkles }[
   { id: 'export', label: '导出 Word', icon: FileDown },
 ]
 
-const STEP_TIPS: Record<DocumentWorkflowStep, string> = {
-  prepare: '从「写文书」「上传 Word」或右侧模板开始；已有正文时可点右上角「重新上传」。',
+const STEP_TIPS: Record<Exclude<DocumentWorkflowStep, 'prepare'>, string> = {
   structure: '在右侧侧栏点击「开始梳理」，生成大纲与建议；可对建议逐条优化，改前需确认。',
   proofread: '在右侧侧栏启动校对，先确认识别文体与提示词，再提交执行。',
   format: '右侧侧栏按 GB/T 9704 检查层次与版式；确认后写入正文，导出将直接使用本次结果。',
@@ -125,7 +124,9 @@ export default function DocumentWorkflowBar({
           )
         })}
       </ol>
-      <p className="document-workflow-tip">{STEP_TIPS[activeStep]}</p>
+      {activeStep !== 'prepare' ? (
+        <p className="document-workflow-tip">{STEP_TIPS[activeStep]}</p>
+      ) : null}
     </div>
   )
 }

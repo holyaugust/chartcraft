@@ -17,6 +17,7 @@ export interface DocumentWriteRequest {
   typeSelection: DocumentWriteTypeSelection
   referenceTexts?: string[]
   imitationTexts?: string[]
+  sourceFiles?: AttachedReference[]
   mode: DocumentWriteMode
 }
 
@@ -24,6 +25,36 @@ export interface DocumentWriteResult {
   content: string
   templateId?: string
   mode: DocumentWriteMode
+}
+
+export interface AttachedReference {
+  name?: string
+  text: string
+}
+
+const REFERENCE_EXCERPT_LIMIT = 6000
+
+/** 把上传材料与用户要求放在一起，供模型判断接下来要做什么。 */
+export function formatAttachedReferences(files: AttachedReference[]): string {
+  const usable = files
+    .map((file) => ({ name: file.name?.trim() ?? '', text: file.text.trim() }))
+    .filter((file) => file.text.length > 0)
+  if (usable.length === 0) return ''
+
+  const blocks = usable.map((file, index) => {
+    const excerpt =
+      file.text.length > REFERENCE_EXCERPT_LIMIT
+        ? `${file.text.slice(0, REFERENCE_EXCERPT_LIMIT)}\n…（已截断）`
+        : file.text
+    const title = file.name ? `参考文档${index + 1}：${file.name}` : `参考文档${index + 1}`
+    return `【${title}】\n${excerpt}`
+  })
+
+  return [
+    '参考文档（与用户写作要求放在一起理解操作意图）：',
+    '这些文档是用户提供的材料。请根据用户写明的要求决定下一步：提炼、汇总、改写、按材料成文、回答问题，或仅在用户明确提出时借鉴结构与文风。材料中的事实和数据优先采用；材料没有的精确信息用×××，不要编造。',
+    ...blocks,
+  ].join('\n')
 }
 
 export const DEFAULT_WRITE_PROMPT = '为特发服务写一篇国资重组整合的行研报告'
@@ -36,7 +67,7 @@ export interface ExpandedWritePrompt {
   summary: string
 }
 
-const EXPAND_PROMPT_SYSTEM = `你是中文写作提示词专家。用户只会给出一句简短意图，你要识别体裁与场景，扩写成一套完整、专业、可直接用于生成文章的提示词。
+const EXPAND_PROMPT_SYSTEM = `你是中文写作提示词专家。用户会给出一句简短意图，也可能上传参考文档。你要结合二者识别体裁、场景和操作意图，扩写成一套完整、专业、可直接用于生成文章的提示词。
 只输出 JSON：
 {"intentLabel":"体裁名称","summary":"一句话说明识别结果","typeId":"general","subtypeId":"gen-research","prompt":"完整提示词"}
 规则：
@@ -47,7 +78,8 @@ const EXPAND_PROMPT_SYSTEM = `你是中文写作提示词专家。用户只会�
 - enterprise: ent-fangan, ent-diaoyan-baogao, ent-kexing-baogao, ent-gongzuo-huibao, ent-qingkuang-shuoming
 - tongzhi: tongzhi-work；qingshi: qingshi-project；baogao: baogao-work；jiyao: jiyao-zongjingli
 不确定时用 typeId=general、subtypeId=gen-free
-3. 不要输出 markdown 或额外说明`
+3. 不要输出 markdown 或额外说明
+4. 若用户上传了参考文档：把用户原话和文档内容放在一起理解操作意图。文档是素材、数据、底稿或背景，不是默认范文。只有用户明确要求借鉴格式或文风时，才按范文处理。扩写后的 prompt 必须写清这些材料如何参与写作。`
 
 function resolveExpandedTypeSelection(
   typeId: string | undefined,
@@ -138,19 +170,37 @@ function buildLocalExpandedPrompt(intent: string): ExpandedWritePrompt {
   }
 }
 
-/** 根据一句简短意图，扩写为完整专业提示词（优先 AI，失败则本地规则） */
-export async function expandWritePromptFromIntent(intent: string): Promise<ExpandedWritePrompt> {
+/** 根据用户要求，并结合已上传的参考文档，扩写为完整专业提示词（优先 AI，失败则本地规则） */
+export async function expandWritePromptFromIntent(
+  intent: string,
+  references: AttachedReference[] = [],
+): Promise<ExpandedWritePrompt> {
   const trimmed = intent.trim()
   if (!trimmed) {
     throw new Error('请先写一句写作意图')
   }
 
   const local = buildLocalExpandedPrompt(trimmed)
+  const referenceBlock = formatAttachedReferences(references)
+  if (referenceBlock) {
+    const names = references
+      .map((file) => file.name?.trim())
+      .filter((name): name is string => Boolean(name))
+    const nameHint = names.length > 0 ? `（${names.join('、')}）` : ''
+    local.prompt = `${local.prompt}\n请结合上传材料${nameHint}完成上述要求：采用材料中的事实与数据；只有用户明确要求借鉴格式时才套用材料结构。`
+    local.summary = `${local.summary}；已结合参考文档理解要求`
+  }
 
   try {
     const raw = await requestDeepSeekPlainText({
       systemPrompt: EXPAND_PROMPT_SYSTEM,
-      userPrompt: `用户简短意图：\n"""\n${trimmed}\n"""\n\n请输出完整专业提示词 JSON。`,
+      userPrompt: [
+        `用户简短意图：\n"""\n${trimmed}\n"""`,
+        referenceBlock,
+        '请结合用户要求和参考文档（如有）理解操作意图，再输出完整专业提示词 JSON。扩写后的 prompt 要写清如何使用这些材料。',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
       temperature: 0.35,
       maxTokens: 2048,
     })
@@ -325,20 +375,13 @@ function buildUserPrompt(request: DocumentWriteRequest, style: WritePromptStyle)
     )
   }
 
-  if (request.referenceTexts?.length) {
-    sections.push('', '参考材料（可引用事实与表述，勿照搬无关内容）：')
-    request.referenceTexts.forEach((text, index) => {
-      const excerpt = text.length > 6000 ? `${text.slice(0, 6000)}\n…（已截断）` : text
-      sections.push(`【参考${index + 1}】\n${excerpt}`)
-    })
-  }
-
-  if (request.imitationTexts?.length) {
-    sections.push('', '参考文档（请参照其结构、层次与文风进行仿写，内容须重写）：')
-    request.imitationTexts.forEach((text, index) => {
-      const excerpt = text.length > 6000 ? `${text.slice(0, 6000)}\n…（已截断）` : text
-      sections.push(`【参考文档${index + 1}】\n${excerpt}`)
-    })
+  if (request.referenceTexts?.length || request.imitationTexts?.length || request.sourceFiles?.length) {
+    const attached = formatAttachedReferences([
+      ...(request.sourceFiles ?? []),
+      ...(request.referenceTexts ?? []).map((text) => ({ text })),
+      ...(request.imitationTexts ?? []).map((text) => ({ text })),
+    ])
+    if (attached) sections.push('', attached)
   }
 
   if (request.mode === 'outline') {
@@ -380,15 +423,10 @@ export async function generateDocumentWithAi(request: DocumentWriteRequest): Pro
 }
 
 /** 从上传文件读取参考文档文本 */
-export async function readWriteReferenceFile(file: File): Promise<string> {
-  const lower = file.name.toLowerCase()
-  if (lower.endsWith('.docx')) {
-    const { importDocxFile } = await import('./wordImport')
-    const result = await importDocxFile(file)
-    return result.text
-  }
-  if (lower.endsWith('.txt') || lower.endsWith('.md')) {
-    return file.text()
-  }
-  throw new Error(`不支持「${file.name}」格式，请上传 .docx 或 .txt`)
+export async function readWriteReferenceFile(
+  file: File,
+  onProgress?: (message: string) => void,
+): Promise<string> {
+  const { extractWriteReferenceText } = await import('./writeReferenceExtract')
+  return extractWriteReferenceText(file, onProgress)
 }

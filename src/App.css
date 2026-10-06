@@ -5366,6 +5366,11 @@
   overflow: hidden;
 }
 
+.doc-write-compose-modal {
+  height: calc(100vh - 48px);
+  max-height: calc(100vh - 48px);
+}
+
 .doc-write-header {
   display: flex;
   align-items: center;
@@ -5475,11 +5480,46 @@
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
 }
 
+.doc-write-compose-modal .doc-write-body {
+  overflow: hidden;
+}
+
+.doc-write-compose-modal .doc-write-intent-tip,
+.doc-write-compose-modal .doc-write-prompt-examples,
+.doc-write-compose-modal .doc-write-expand-hint,
+.doc-write-compose-modal .doc-write-toolbar,
+.doc-write-compose-modal .doc-write-error,
+.doc-write-compose-modal .doc-write-materials {
+  flex-shrink: 0;
+}
+
+.doc-write-compose-modal .doc-write-materials {
+  max-height: 180px;
+  overflow: auto;
+}
+
+.doc-write-compose-modal .doc-write-prompt {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  resize: none;
+}
+
 .doc-write-prompt-examples {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.doc-write-compose-modal .doc-write-prompt-examples {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.doc-write-compose-modal .doc-write-prompt-example-chip {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .doc-write-prompt-examples-label {
