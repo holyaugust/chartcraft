@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { buildEditorDisplayHtml, scrollEditorToIssueRange, type TextHighlightRange } from '../utils/documentLocate'
+import { forwardRef, useImperativeHandle, useRef, type ReactNode } from 'react'
+import type { TextHighlightRange } from '../utils/documentLocate'
+import { scrollPageToRange } from '../utils/documentLocate'
+import { parseDocumentPage, type DocumentPageBlock } from '../utils/documentPageBlocks'
 
 interface DocumentTextEditorProps {
   value: string
@@ -8,156 +10,196 @@ interface DocumentTextEditorProps {
   aiHighlightRanges?: TextHighlightRange[]
   className?: string
   placeholder?: string
-  editorRef?: React.RefObject<HTMLTextAreaElement | null>
   onSelectionChange?: (selection: { start: number; end: number; text: string } | null) => void
 }
 
-export default function DocumentTextEditor({
-  value,
-  onChange,
-  highlightRange,
-  aiHighlightRanges = [],
-  className = '',
-  placeholder,
-  editorRef,
-  onSelectionChange,
-}: DocumentTextEditorProps) {
-  const innerRef = useRef<HTMLTextAreaElement>(null)
-  const backdropRef = useRef<HTMLDivElement>(null)
-  const textareaRef = editorRef ?? innerRef
+export interface DocumentPageEditorHandle {
+  getPlainSelection(): { start: number; end: number; text: string } | null
+  scrollToRange(start: number, end: number): void
+  scrollToTop(): void
+}
 
-  const displayHtml = useMemo(
-    () => buildEditorDisplayHtml(value, highlightRange, aiHighlightRanges),
-    [value, highlightRange, aiHighlightRanges],
-  )
+type MarkVariant = 'plain' | 'pending' | 'adopted' | 'ai'
 
-  const hasAiHighlight = aiHighlightRanges.some((range) => range.start < range.end)
-  const hasAdoptedAiHighlight = aiHighlightRanges.some(
-    (range) => range.adopted && range.start < range.end,
-  )
-  const highlightMode = highlightRange
-    ? highlightRange.adopted
-      ? 'proofread-adopted'
-      : 'proofread-pending'
-    : hasAdoptedAiHighlight
-      ? 'proofread-adopted'
-      : hasAiHighlight
-        ? 'ai-write'
-        : null
+const OWN_INDENT = /^[ \t\u3000]/u
 
-  const syncBackdropMetrics = useCallback(() => {
-    const textarea = textareaRef.current
-    const backdrop = backdropRef.current
-    if (!textarea || !backdrop) return
-    // 滚动条占宽会使 textarea 内容区变窄；高亮层必须同步缩进，否则换行/光标错位
-    const scrollbarWidth = Math.max(0, textarea.offsetWidth - textarea.clientWidth)
-    backdrop.style.right = `${scrollbarWidth}px`
-    backdrop.scrollTop = textarea.scrollTop
-    backdrop.scrollLeft = textarea.scrollLeft
-  }, [textareaRef])
+export function plainOffsetFromNode(root: HTMLElement, node: Node, offset: number): number | null {
+  const element = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement
+  const marked = element?.closest<HTMLElement>('[data-plain-start]')
+  if (!marked || !root.contains(marked)) return null
+  const start = Number(marked.getAttribute('data-plain-start'))
+  if (!Number.isFinite(start)) return null
+  if (node.nodeType !== Node.TEXT_NODE) return start + offset
 
-  const syncBackdropScroll = useCallback(() => {
-    syncBackdropMetrics()
-  }, [syncBackdropMetrics])
+  const walker = document.createTreeWalker(marked, NodeFilter.SHOW_TEXT)
+  let extra = 0
+  let current = walker.nextNode()
+  while (current && current !== node) {
+    extra += current.textContent?.length ?? 0
+    current = walker.nextNode()
+  }
+  return start + extra + offset
+}
 
-  const emitSelection = useCallback(() => {
-    if (!onSelectionChange) return
-    const textarea = textareaRef.current
-    if (!textarea) {
-      onSelectionChange(null)
-      return
-    }
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
-    if (end <= start) {
-      onSelectionChange(null)
-      return
-    }
-    onSelectionChange({
-      start,
-      end,
-      text: value.slice(start, end),
-    })
-  }, [onSelectionChange, textareaRef, value])
+function sliceVariant(
+  absStart: number,
+  absEnd: number,
+  highlightRange: TextHighlightRange | null,
+  aiHighlightRanges: TextHighlightRange[],
+): MarkVariant {
+  if (highlightRange && highlightRange.start < absEnd && highlightRange.end > absStart) {
+    return highlightRange.adopted ? 'adopted' : 'pending'
+  }
+  const ai = aiHighlightRanges.find((range) => range.start < absEnd && range.end > absStart)
+  if (!ai) return 'plain'
+  return ai.adopted ? 'adopted' : 'ai'
+}
 
-  useEffect(() => {
-    if (!onSelectionChange) return
-    const textarea = textareaRef.current
-    if (!textarea) return
+function renderMarkedText(
+  text: string,
+  absStart: number,
+  highlightRange: TextHighlightRange | null,
+  aiHighlightRanges: TextHighlightRange[],
+): ReactNode {
+  if (!text) return null
+  const absEnd = absStart + text.length
+  const cuts = new Set<number>([absStart, absEnd])
+  const consider = [
+    highlightRange,
+    ...aiHighlightRanges,
+  ].filter((range): range is TextHighlightRange => !!range && range.end > range.start)
+  for (const range of consider) {
+    cuts.add(Math.max(absStart, Math.min(range.start, absEnd)))
+    cuts.add(Math.max(absStart, Math.min(range.end, absEnd)))
+  }
+  const points = [...cuts].sort((a, b) => a - b)
+  return points.slice(0, -1).map((start, index) => {
+    const end = points[index + 1] ?? start
+    if (end <= start) return null
+    const slice = text.slice(start - absStart, end - absStart)
+    const variant = sliceVariant(start, end, highlightRange, aiHighlightRanges)
+    if (variant === 'plain') return slice
+    const className =
+      variant === 'ai' ? 'document-ai-write-highlight' : `document-issue-highlight ${variant}`
+    return (
+      <mark key={`${start}-${end}`} className={className}>
+        {slice}
+      </mark>
+    )
+  })
+}
 
-    const onSelectionChangeEvent = () => {
-      if (document.activeElement !== textarea) return
-      emitSelection()
-    }
-
-    document.addEventListener('selectionchange', onSelectionChangeEvent)
-    return () => document.removeEventListener('selectionchange', onSelectionChangeEvent)
-  }, [emitSelection, onSelectionChange, textareaRef])
-
-  useEffect(() => {
-    const textarea = textareaRef.current
-    const backdrop = backdropRef.current
-    if (!textarea) return
-
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => syncBackdropMetrics()) : null
-    ro?.observe(textarea)
-    window.addEventListener('resize', syncBackdropMetrics)
-
-    if (highlightRange) {
-      textarea.setSelectionRange(highlightRange.start, highlightRange.end)
-
-      const runScroll = () => {
-        scrollEditorToIssueRange(textarea, highlightRange.start, highlightRange.end, backdrop)
-      }
-
-      // 连续两帧：第一帧应对布局未稳定；第二帧应对上方 locateHint 插入后高度变化
-      runScroll()
-      window.requestAnimationFrame(() => {
-        runScroll()
-        window.requestAnimationFrame(() => {
-          runScroll()
-          syncBackdropMetrics()
-        })
-      })
-    } else {
-      syncBackdropMetrics()
-    }
-
-    return () => {
-      ro?.disconnect()
-      window.removeEventListener('resize', syncBackdropMetrics)
-    }
-  }, [highlightRange, value, displayHtml, syncBackdropMetrics, textareaRef])
-
+function blockNode(
+  block: DocumentPageBlock,
+  highlightRange: TextHighlightRange | null,
+  aiHighlightRanges: TextHighlightRange[],
+): ReactNode {
+  if (block.kind === 'blank') {
+    return <div key={`b-${block.start}`} className="document-page-gap" />
+  }
+  if (block.kind === 'table') {
+    return (
+      <table key={`t-${block.start}`} className="document-page-table">
+        <tbody>
+          {block.rows.map((row) => (
+            <tr key={row.lineStart}>
+              {row.cells.map((cell) => (
+                <td key={cell.start} data-plain-start={cell.start} data-plain-end={cell.end}>
+                  {renderMarkedText(cell.text, cell.start, highlightRange, aiHighlightRanges)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )
+  }
+  const className =
+    block.kind === 'heading'
+      ? 'document-page-heading'
+      : `document-page-body${OWN_INDENT.test(block.text) ? ' document-page-own-indent' : ''}`
   return (
-    <div
-      className={`document-editor-wrap ${className}${
-        highlightMode === 'proofread-pending'
-          ? ' is-highlighting is-highlighting-pending'
-          : highlightMode === 'proofread-adopted'
-            ? ' is-highlighting is-highlighting-adopted'
-            : highlightMode === 'ai-write'
-              ? ' is-highlighting is-highlighting-ai'
-              : ''
-      }`.trim()}
+    <p
+      key={`${block.kind}-${block.start}`}
+      className={className}
+      data-level={block.kind === 'heading' ? block.level : undefined}
+      data-plain-start={block.start}
+      data-plain-end={block.end}
     >
-      <div ref={backdropRef} className="document-editor-backdrop" aria-hidden="true">
-        <pre className="document-editor-backdrop-inner" dangerouslySetInnerHTML={{ __html: displayHtml }} />
-      </div>
-      <textarea
-        ref={textareaRef}
-        className={`document-editor document-editor-ghost${highlightMode ? ' document-editor-highlighting' : ''}`}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onScroll={syncBackdropScroll}
-        onSelect={emitSelection}
-        onKeyUp={emitSelection}
-        onMouseUp={emitSelection}
-        placeholder={placeholder}
-        spellCheck={false}
-      />
-    </div>
+      {renderMarkedText(block.text, block.start, highlightRange, aiHighlightRanges)}
+    </p>
   )
 }
+
+const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEditorProps>(
+  function DocumentTextEditor(
+    {
+      value,
+      onChange: _onChange,
+      highlightRange,
+      aiHighlightRanges = [],
+      className = '',
+      placeholder: _placeholder,
+      onSelectionChange: _onSelectionChange,
+    },
+    ref,
+  ) {
+    const scrollRef = useRef<HTMLDivElement>(null)
+    const pageRef = useRef<HTMLDivElement>(null)
+    const blocks = parseDocumentPage(value)
+
+    useImperativeHandle(ref, () => ({
+      getPlainSelection() {
+        const root = pageRef.current
+        const selection = document.getSelection()
+        if (!root || !selection || selection.rangeCount === 0) return null
+        const range = selection.getRangeAt(0)
+        if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return null
+        const start = plainOffsetFromNode(root, range.startContainer, range.startOffset)
+        const end = plainOffsetFromNode(root, range.endContainer, range.endOffset)
+        if (start == null || end == null) return null
+        const from = Math.min(start, end)
+        const to = Math.max(start, end)
+        if (to <= from) return null
+        return { start: from, end: to, text: value.slice(from, to) }
+      },
+      scrollToRange(start: number) {
+        const root = pageRef.current
+        const scroller = scrollRef.current
+        if (!root || !scroller) return
+        const nodes = [...root.querySelectorAll<HTMLElement>('[data-plain-start]')]
+        let marker = nodes.find((element) => {
+          const from = Number(element.getAttribute('data-plain-start'))
+          const to = Number(element.getAttribute('data-plain-end'))
+          return from <= start && start < to
+        })
+        if (!marker) {
+          let best = -1
+          for (const element of nodes) {
+            const to = Number(element.getAttribute('data-plain-end'))
+            if (to <= start && to >= best) {
+              best = to
+              marker = element
+            }
+          }
+        }
+        if (marker) scrollPageToRange(scroller, marker)
+      },
+      scrollToTop() {
+        if (scrollRef.current) scrollRef.current.scrollTop = 0
+      },
+    }), [value])
+
+    return (
+      <div ref={scrollRef} className={`document-page-scroll ${className}`.trim()}>
+        <div ref={pageRef} className="document-page document-page-editor">
+          {blocks.map((block) => blockNode(block, highlightRange, aiHighlightRanges))}
+        </div>
+      </div>
+    )
+  },
+)
+
+export default DocumentTextEditor
 
 export type { TextHighlightRange }

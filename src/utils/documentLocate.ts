@@ -182,6 +182,16 @@ export function scrollTextareaToRange(
   textarea.scrollTop = Math.min(maxScroll, Math.max(0, centeredTop))
 }
 
+/** 在纸张滚动容器内把标记滚到可视区域中间。不用 scrollIntoView，以免带动窗口。 */
+export function scrollPageToRange(container: HTMLElement, marker: HTMLElement): void {
+  const markerTop = marker.offsetTop
+  const markerHeight = marker.offsetHeight
+  const visibleHeight = container.clientHeight
+  const maxScroll = Math.max(0, container.scrollHeight - visibleHeight)
+  const centeredTop = markerTop - (visibleHeight - markerHeight) / 2
+  container.scrollTop = Math.min(maxScroll, Math.max(0, centeredTop))
+}
+
 /** 将编辑器滚到指定区间，并同步 backdrop；勿用 scrollIntoView，以免带动页面/侧栏滚动 */
 export function scrollEditorToIssueRange(
   textarea: HTMLTextAreaElement,

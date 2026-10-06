@@ -1017,6 +1017,76 @@
   box-sizing: border-box;
 }
 
+.document-page-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #e8eef5;
+}
+
+.document-page {
+  margin: 16px auto;
+  width: min(720px, calc(100% - 32px));
+  padding: 40px 48px;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.1);
+}
+
+.document-page-editor {
+  outline: none;
+}
+
+.document-page-body,
+.document-page-heading,
+.document-page-table td {
+  margin: 0;
+  font-family: SimSun, '宋体', 'Songti SC', serif;
+  font-size: 16px;
+  line-height: 1.85;
+  color: #1e293b;
+}
+
+.document-page-body {
+  text-align: justify;
+  text-indent: 2em;
+}
+
+.document-page-body.document-page-own-indent,
+.document-page-heading,
+.document-page-table td {
+  text-indent: 0;
+}
+
+.document-page-heading {
+  text-align: left;
+  font-weight: 700;
+  margin-top: 10px;
+}
+
+.document-page-heading[data-level='h1'] {
+  font-size: 18px;
+  margin-top: 18px;
+}
+
+.document-page-gap {
+  height: 12px;
+}
+
+.document-page-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+}
+
+.document-page-table td {
+  border: 1px solid #e2e8f0;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
 .document-table-hint {
   flex-shrink: 0;
   margin: 10px 16px 0;
