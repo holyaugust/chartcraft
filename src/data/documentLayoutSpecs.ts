@@ -113,10 +113,22 @@ function officialRoles(): Readonly<Record<string, LayoutRoleStyle>> {
     skip: bodyBase,
     docKind: bodyBase,
     redHeader: roleStyle('小标宋', GBT9704_SIZE_TITLE, true, 'center', 0, { spaceAfter: 120 }),
-    docNumber: roleStyle('仿宋_GB2312', GBT9704_SIZE_BODY, false, 'center', 0, { spaceAfter: 160 }),
-    meta: roleStyle('仿宋_GB2312', GBT9704_SIZE_BODY, false, 'center', 0, { spaceAfter: 200 }),
-    enterpriseBanner: roleStyle('仿宋_GB2312', 28, false, 'center', 0, { spaceAfter: 160 }),
-    metaLabel: roleStyle('仿宋_GB2312', GBT9704_SIZE_BODY, true, 'left', 0, { spaceAfter: 80 }),
+    docNumber: roleStyle('仿宋_GB2312', GBT9704_SIZE_BODY, false, 'center', 0, {
+      spaceBefore: 120,
+      spaceAfter: 160,
+    }),
+    meta: roleStyle('仿宋_GB2312', GBT9704_SIZE_BODY, false, 'center', 0, {
+      spaceBefore: 120,
+      spaceAfter: 200,
+    }),
+    enterpriseBanner: roleStyle('仿宋_GB2312', 28, false, 'center', 0, {
+      spaceBefore: 120,
+      spaceAfter: 160,
+    }),
+    metaLabel: roleStyle('仿宋_GB2312', GBT9704_SIZE_BODY, true, 'left', 0, {
+      spaceBefore: 120,
+      spaceAfter: 80,
+    }),
     title: roleStyle('小标宋', GBT9704_SIZE_TITLE, true, 'center', 0, {
       spaceBefore: 200,
       spaceAfter: 280,
@@ -171,6 +183,7 @@ function officialRoles(): Readonly<Record<string, LayoutRoleStyle>> {
     }),
     signatureDate: roleStyle('仿宋_GB2312', GBT9704_SIZE_BODY, false, 'right', 0, {
       rightIndentChars: GBT9704_SIGNATURE_DATE_RIGHT_CHARS,
+      spaceBefore: 120,
       spaceAfter: 200,
     }),
     footerNote: roleStyle('仿宋_GB2312', GBT9704_SIZE_BODY, false, 'both', 200, {

@@ -28,6 +28,21 @@ describe('getLayoutSpec', () => {
     })
     expect(spec.roles.heading2.sizeHalfPoints).toBe(GBT9704_SIZE_HEADING2)
     expect(spec.roles.heading2.fontEastAsia).toBe('楷体_GB2312')
+    expect(spec.roles.docNumber).toMatchObject({
+      align: 'center',
+      firstLineIndentChars: 0,
+      spaceBefore: 120,
+      spaceAfter: 160,
+    })
+    expect(spec.roles.signatureDate).toMatchObject({
+      align: 'right',
+      firstLineIndentChars: 0,
+      spaceBefore: 120,
+      spaceAfter: 200,
+    })
+    expect(spec.roles.meta.spaceBefore).toBe(120)
+    expect(spec.roles.enterpriseBanner.spaceBefore).toBe(120)
+    expect(spec.roles.metaLabel.spaceBefore).toBe(120)
   })
 
   it('defines contract, feasibility, and general pages from the spec', () => {
