@@ -183,3 +183,196 @@ export function locatePageOffset(text: string, offset: number): PageOffset {
     offsetInCell: null,
   }
 }
+
+export type PageCommand = 'insertText' | 'enter' | 'backspace' | 'delete' | 'tab'
+
+interface CaretSpot {
+  lineStart: number
+  lineEnd: number
+  inTable: boolean
+  row: PageTableRow | null
+  rowIndex: number
+  cellIndex: number
+  isLastRow: boolean
+  isOnlyRow: boolean
+  cellCount: number
+}
+
+function caretSpot(text: string, offset: number): CaretSpot {
+  const blocks = parseDocumentPage(text)
+  for (const block of blocks) {
+    if (offset < block.start || offset > block.end) continue
+    if (block.kind !== 'table') {
+      return {
+        lineStart: block.start,
+        lineEnd: block.end,
+        inTable: false,
+        row: null,
+        rowIndex: 0,
+        cellIndex: 0,
+        isLastRow: false,
+        isOnlyRow: false,
+        cellCount: 0,
+      }
+    }
+    for (let rowIndex = 0; rowIndex < block.rows.length; rowIndex += 1) {
+      const row = block.rows[rowIndex]!
+      if (offset < row.lineStart || offset > row.lineEnd) continue
+      let cellIndex = 0
+      for (let i = 0; i < row.cells.length; i += 1) {
+        if (row.cells[i]!.start <= offset) cellIndex = i
+      }
+      return {
+        lineStart: row.lineStart,
+        lineEnd: row.lineEnd,
+        inTable: true,
+        row,
+        rowIndex,
+        cellIndex,
+        isLastRow: rowIndex === block.rows.length - 1,
+        isOnlyRow: block.rows.length === 1,
+        cellCount: row.cells.length,
+      }
+    }
+  }
+  return {
+    lineStart: 0,
+    lineEnd: text.length,
+    inTable: false,
+    row: null,
+    rowIndex: 0,
+    cellIndex: 0,
+    isLastRow: false,
+    isOnlyRow: false,
+    cellCount: 0,
+  }
+}
+
+function same(text: string, caret: PageCaret): { text: string; caret: PageCaret } {
+  return { text, caret }
+}
+
+function point(text: string, offset: number): { text: string; caret: PageCaret } {
+  return { text, caret: { start: offset, end: offset } }
+}
+
+function emptyRow(cellCount: number): string {
+  return Array.from({ length: Math.max(cellCount, 2) }, () => '').join(TABLE_COL_SEP)
+}
+
+function separatorContains(row: PageTableRow, index: number): boolean {
+  for (let i = 0; i < row.cells.length - 1; i += 1) {
+    const start = row.cells[i]!.end
+    const end = row.cells[i + 1]!.start
+    if (index >= start && index < end) return true
+  }
+  return false
+}
+
+function insertEmptyTableRow(text: string, lineEnd: number, cellCount: number): { text: string; caret: PageCaret } {
+  const next = `${text.slice(0, lineEnd)}\n${emptyRow(cellCount)}${text.slice(lineEnd)}`
+  return point(next, lineEnd + 1)
+}
+
+function deleteTableRow(text: string, spot: CaretSpot): { text: string; caret: PageCaret } {
+  const row = spot.row
+  if (!row) return point(text, spot.lineStart)
+  if (spot.isOnlyRow) {
+    return point(text.slice(0, row.lineStart) + text.slice(row.lineEnd), row.lineStart)
+  }
+  if (spot.isLastRow) {
+    const next = text.slice(0, row.lineStart - 1) + text.slice(row.lineEnd)
+    const caret = Math.min(row.lineStart, next.length)
+    return point(next, caret)
+  }
+  return point(text.slice(0, row.lineStart) + text.slice(row.lineEnd + 1), row.lineStart)
+}
+
+function applyEnter(text: string, offset: number): { text: string; caret: PageCaret } {
+  const spot = caretSpot(text, offset)
+  if (spot.inTable) return insertEmptyTableRow(text, spot.lineEnd, spot.cellCount)
+  return point(`${text.slice(0, offset)}\n${text.slice(offset)}`, offset + 1)
+}
+
+function applyBackspace(text: string, offset: number): { text: string; caret: PageCaret } {
+  const spot = caretSpot(text, offset)
+  if (spot.inTable && spot.row) {
+    const cell = spot.row.cells[spot.cellIndex]
+    if (cell && offset === cell.start) {
+      const allEmpty = spot.row.cells.every((item) => item.text.length === 0)
+      if (allEmpty && spot.cellIndex === 0) return deleteTableRow(text, spot)
+      return point(text, offset)
+    }
+    if (separatorContains(spot.row, offset - 1)) return point(text, offset)
+  } else if (offset === spot.lineStart && offset > 0) {
+    const previous = caretSpot(text, offset - 1)
+    if (previous.inTable) return point(text, offset)
+    return point(text.slice(0, offset - 1) + text.slice(offset), offset - 1)
+  }
+  if (offset <= 0) return point(text, 0)
+  return point(text.slice(0, offset - 1) + text.slice(offset), offset - 1)
+}
+
+function applyDelete(text: string, offset: number): { text: string; caret: PageCaret } {
+  if (offset >= text.length) return point(text, offset)
+  const spot = caretSpot(text, offset)
+  if (spot.inTable && spot.row) {
+    const cell = spot.row.cells[spot.cellIndex]
+    if (cell && offset === cell.end && spot.cellIndex < spot.row.cells.length - 1) {
+      return point(text, offset)
+    }
+    if (separatorContains(spot.row, offset)) return point(text, offset)
+  }
+  if (offset === spot.lineEnd && text[offset] === '\n') {
+    const next = caretSpot(text, offset + 1)
+    if (next.inTable) return point(text, offset)
+    return point(text.slice(0, offset) + text.slice(offset + 1), offset)
+  }
+  return point(text.slice(0, offset) + text.slice(offset + 1), offset)
+}
+
+function applyTab(text: string, offset: number, caret: PageCaret): { text: string; caret: PageCaret } {
+  const spot = caretSpot(text, offset)
+  if (!spot.inTable || !spot.row) return same(text, caret)
+  if (spot.cellIndex < spot.row.cells.length - 1) {
+    const nextCell = spot.row.cells[spot.cellIndex + 1]!
+    return point(text, nextCell.start)
+  }
+  if (!spot.isLastRow) {
+    const blocks = parseDocumentPage(text)
+    const table = blocks.find((block) => block.kind === 'table' && block.start <= offset && offset <= block.end)
+    if (table?.kind === 'table') {
+      const nextRow = table.rows[spot.rowIndex + 1]
+      if (nextRow) return point(text, nextRow.cells[0]!.start)
+    }
+  }
+  return insertEmptyTableRow(text, spot.lineEnd, spot.cellCount)
+}
+
+export function applyPageCommand(
+  text: string,
+  caret: PageCaret,
+  command: PageCommand,
+  insertText = '',
+): { text: string; caret: PageCaret } {
+  if (command === 'tab') {
+    const offset = Math.max(0, Math.min(caret.end, text.length))
+    return applyTab(text, offset, caret)
+  }
+
+  let current = text
+  let offset = caret.start
+  if (caret.start < caret.end) {
+    current = current.slice(0, caret.start) + current.slice(caret.end)
+    offset = caret.start
+  }
+  offset = Math.max(0, Math.min(offset, current.length))
+
+  if (command === 'insertText') {
+    const next = current.slice(0, offset) + insertText + current.slice(offset)
+    return point(next, offset + insertText.length)
+  }
+  if (command === 'enter') return applyEnter(current, offset)
+  if (command === 'backspace') return applyBackspace(current, offset)
+  return applyDelete(current, offset)
+}
