@@ -46,6 +46,14 @@ describe('DocumentTextEditor page', () => {
     act(() => { root.unmount() })
   })
 
+  it('keeps the contract title after a leading whitespace line', () => {
+    const { host, root } = renderEditor('\u3000\n采购合同', { layoutGenre: 'contract' })
+    const title = [...host.querySelectorAll('p')].find((p) => p.textContent === '采购合同') as HTMLElement
+    expect(title.style.textAlign).toBe('center')
+    expect(title.style.fontSize).toBe('22pt')
+    act(() => { root.unmount() })
+  })
+
   it('does not add a first-line indent class when the line already has indent', () => {
     const { host, root } = renderEditor('\u3000已有缩进')
     expect(host.querySelector('.document-page-own-indent')).not.toBeNull()

@@ -226,7 +226,7 @@ function paintPage(
   for (const block of parseDocumentPage(value)) {
     const element = createBlock(block, highlightRange, aiHighlightRanges)
 
-    if (block.kind === 'blank') {
+    if (block.kind === 'blank' || (block.kind !== 'table' && !block.text.trim())) {
       fragment.append(element)
       continue
     }
