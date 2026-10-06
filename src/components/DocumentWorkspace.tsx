@@ -173,6 +173,7 @@ export default function DocumentWorkspace({
   const [structureOptimizeBusy, setStructureOptimizeBusy] = useState(false)
   const [structureOptimizeTarget, setStructureOptimizeTarget] = useState<string | null>(null)
   const [structurePendingPatch, setStructurePendingPatch] = useState<StructureSuggestionPatch | null>(null)
+  const [structureExpanded, setStructureExpanded] = useState(false)
   const [structureAppliedSuggestions, setStructureAppliedSuggestions] = useState<string[]>(
     initialStructure.appliedSuggestions,
   )
@@ -214,6 +215,7 @@ export default function DocumentWorkspace({
   })
   const isStepSidebar =
     workflowStep === 'structure' || workflowStep === 'proofread' || workflowStep === 'format'
+  const structureRail = workflowStep === 'structure' && !structureExpanded && !structurePendingPatch
   const showSourceTab = preferSourceSidebar
   const showTemplatesTab = !docxBuffer
   const showContextTabs = !isStepSidebar && showSourceTab && showTemplatesTab
@@ -1418,7 +1420,9 @@ export default function DocumentWorkspace({
 
   return (
     <main
-      className={`app-main document-main${workflowStep === 'proofread' ? ' document-workspace-proofread' : ''}`}
+      className={`app-main document-main${workflowStep === 'proofread' ? ' document-workspace-proofread' : ''}${
+        hasContent && workflowStep !== 'prepare' ? ' document-workspace-compact' : ''
+      }`}
     >
       <section
         className={`panel panel-document${workflowStep === 'proofread' ? ' document-panel-proofread' : ''}`}
@@ -1506,8 +1510,8 @@ export default function DocumentWorkspace({
 
         <div
           className={`document-layout-split${workflowStep === 'prepare' ? ' prepare-only' : ''}${
-            isStepSidebar ? ' document-layout-wide-sidebar' : ''
-          }`}
+            isStepSidebar && !structureRail ? ' document-layout-wide-sidebar' : ''
+          }${structureRail ? ' document-layout-structure-rail' : ''}`}
         >
           <div className="document-editor-column">
             <div className="document-workspace-main">
@@ -1712,6 +1716,8 @@ export default function DocumentWorkspace({
                   onOptimizeSuggestion={(suggestion) => void handleOptimizeStructureSuggestion(suggestion)}
                   onConfirmPatch={handleConfirmStructurePatch}
                   onCancelPatch={handleCancelStructurePatch}
+                  collapsed={structureRail}
+                  onToggleCollapsed={() => setStructureExpanded((expanded) => !expanded)}
                 />
               ) : workflowStep === 'proofread' ? (
                 <DocumentIssuePanel

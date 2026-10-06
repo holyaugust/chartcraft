@@ -3,6 +3,8 @@ import {
   AlertTriangle,
   Check,
   ChevronDown,
+  ChevronsLeft,
+  ChevronsRight,
   GitBranch,
   Lightbulb,
   ListTree,
@@ -37,6 +39,8 @@ interface DocumentStructurePanelProps {
   onOptimizeSuggestion: (suggestion: string) => void
   onConfirmPatch: () => void
   onCancelPatch: () => void
+  collapsed?: boolean
+  onToggleCollapsed?: () => void
 }
 
 function OutlineTree({
@@ -161,6 +165,8 @@ export default function DocumentStructurePanel({
   onOptimizeSuggestion,
   onConfirmPatch,
   onCancelPatch,
+  collapsed = false,
+  onToggleCollapsed,
 }: DocumentStructurePanelProps) {
   const suggestions = report?.suggestions ?? []
   const locked = busy || optimizeBusy || !!pendingPatch
@@ -174,6 +180,44 @@ export default function DocumentStructurePanel({
     { id: 'suggestions', label: '建议', count: suggestions.length },
   ]
 
+  if (collapsed) {
+    return (
+      <aside className="document-structure-panel is-rail">
+        <div className="document-structure-rail-header">
+          <h3>
+            <ListTree size={15} />
+            结构
+          </h3>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={onToggleCollapsed}
+            aria-label="展开结构梳理"
+            title="展开总体判断和操作"
+          >
+            <ChevronsLeft size={14} />
+          </button>
+        </div>
+        <div className="document-structure-rail-body">
+          {busy && !report ? (
+            <p className="document-structure-muted">
+              <Loader2 size={14} className="spin" /> 梳理中…
+            </p>
+          ) : null}
+          {error ? <p className="document-structure-error">{error}</p> : null}
+          {!busy && !report && !error ? (
+            <button type="button" className="btn btn-sm btn-primary" onClick={onRefresh}>
+              开始梳理
+            </button>
+          ) : null}
+          {report ? (
+            <OutlineTree items={report.outline} activeItem={activeLocateItem} onLocate={onLocateItem} />
+          ) : null}
+        </div>
+      </aside>
+    )
+  }
+
   return (
     <aside className="document-structure-panel">
       <div className="document-structure-panel-header">
@@ -185,6 +229,18 @@ export default function DocumentStructurePanel({
           <p>点击条目可跳转正文；建议可逐条优化。已应用的建议再点一次，可定位到左侧写入处</p>
         </div>
         <div className="document-structure-panel-actions">
+          {onToggleCollapsed ? (
+            <button
+              type="button"
+              className="btn btn-sm btn-icon-only"
+              onClick={onToggleCollapsed}
+              disabled={!!pendingPatch}
+              aria-label="收起结构梳理"
+              title="收起，只留大纲"
+            >
+              <ChevronsRight size={14} />
+            </button>
+          ) : null}
           <button
             type="button"
             className="btn btn-sm btn-ghost"
