@@ -32,6 +32,70 @@ describe('DocumentTextEditor page', () => {
     act(() => root.unmount())
   })
 
+  it('centers a short first line as the document title', () => {
+    const { host, root } = renderEditor('保密承诺函\n一、标题\n正文')
+    const title = host.querySelector('.document-page-title') as HTMLElement
+    expect(title?.textContent).toBe('保密承诺函')
+    expect(title.className).toBe('document-page-title')
+    const css = readFileSync(resolve('src/App.css'), 'utf8')
+    expect(css).toMatch(/\.document-page-title[\s\S]*?text-align:\s*center/)
+    expect(css).toMatch(/\.document-page-title[\s\S]*?text-indent:\s*0/)
+    act(() => root.unmount())
+  })
+
+  it('right-aligns 落款 lines', () => {
+    const { host, root } = renderEditor(
+      '保密承诺函\n承诺方：深圳市特发服务股份有限公司（盖章）\n日期： 年 月 日',
+    )
+    const lines = [...host.querySelectorAll('.document-page-signature')].map((node) => node.textContent)
+    expect(lines).toEqual(['承诺方：深圳市特发服务股份有限公司（盖章）', '日期： 年 月 日'])
+    const css = readFileSync(resolve('src/App.css'), 'utf8')
+    expect(css).toMatch(/\.document-page-signature[\s\S]*?text-align:\s*right/)
+    act(() => root.unmount())
+  })
+
+  it('keeps 致：主送机关 on the left', () => {
+    const { host, root } = renderEditor(
+      '保密承诺函\n致：广东贝润教育投资有限公司\n鉴于深圳市特发服务股份有限公司（以下简称“我方”）与贵方协商一致。',
+    )
+    expect(host.querySelector('.document-page-signature')).toBeNull()
+    expect(host.querySelector('.document-page-addressee')?.textContent).toBe(
+      '致：广东贝润教育投资有限公司',
+    )
+    const css = readFileSync(resolve('src/App.css'), 'utf8')
+    expect(css).toMatch(/\.document-page-addressee[\s\S]*?text-indent:\s*0/)
+    act(() => root.unmount())
+  })
+
+  it('lays out 结构梳理 with official metrics and keeps the editor font', () => {
+    const sample = [
+      '特发服务2027年度资本运作计划报告',
+      '一、企业基本情况',
+      '特发服务以综合物业管理服务为核心业务。',
+      '二、2027年资本运作总体思路和主要方向',
+      '（一）总体思路',
+      '2027年，公司将深入贯彻集团关于资本运作工作的总体部署。',
+    ].join('\n')
+    const { host, root } = renderEditor(sample, { layoutMode: 'official' })
+    expect(host.querySelector('.document-page-editor-official')).not.toBeNull()
+    expect(host.querySelector('.doc-layout-title')?.textContent).toBe(
+      '特发服务2027年度资本运作计划报告',
+    )
+    const headings = [...host.querySelectorAll('.doc-layout-heading1')].map((node) => node.textContent)
+    expect(headings).toEqual(['一、企业基本情况', '二、2027年资本运作总体思路和主要方向'])
+    expect(host.querySelector('.doc-layout-heading2')?.textContent).toBe('（一）总体思路')
+    expect(host.querySelector('.doc-layout-body')?.textContent).toContain('特发服务以综合')
+    const css = readFileSync(resolve('src/App.css'), 'utf8')
+    expect(css).toMatch(
+      /\.document-page-editor-official[\s\S]*?\.doc-layout-heading1[\s\S]*?text-indent:\s*0/,
+    )
+    expect(css).toMatch(
+      /\.document-page-editor-official[\s\S]*?\.doc-layout-body[\s\S]*?text-indent:\s*2em/,
+    )
+    expect(css).not.toMatch(/\.document-page-editor-official[\s\S]{0,800}FangSong/)
+    act(() => root.unmount())
+  })
+
   it('does not add a first-line indent class when the line already has indent', () => {
     const { host, root } = renderEditor('\u3000已有缩进')
     expect(host.querySelector('.document-page-own-indent')).not.toBeNull()

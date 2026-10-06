@@ -34,7 +34,7 @@ export function splitInlineHeadingBodyLine(line: string): string[] {
   if (!trimmed) return [line]
 
   const patterns = [
-    /^[一二三四五六七八九十百零〇]+[、．.](?!(\d|．|\.))/u,
+    HEADING1_PREFIX_RE,
     /^（[一二三四五六七八九十百零〇]+）/u,
     /^（\d+）/u,
     /^\d+[．.、]\s/u,
@@ -82,12 +82,43 @@ export function normalizeDocumentStructure(text: string): string {
 
 export type HeadingLevel = 'h1' | 'h2' | 'h3' | 'h4'
 
+/** 「一、」后可跟年份；「一．2」这种点号+数字不当作一级标题 */
+export const HEADING1_PREFIX_RE =
+  /^[一二三四五六七八九十百零〇]+(?:、|[．.](?!\d))/u
+
 export function detectHeadingLevel(trimmed: string): HeadingLevel | null {
-  if (/^[一二三四五六七八九十百零〇]+[、．.](?!(\d|．|\.))/u.test(trimmed)) return 'h1'
+  if (HEADING1_PREFIX_RE.test(trimmed)) return 'h1'
   if (/^（[一二三四五六七八九十百零〇]+）/u.test(trimmed)) return 'h2'
   if (/^（\d+）/u.test(trimmed)) return 'h4'
   if (/^\d+[．.、]\s/u.test(trimmed) && trimmed.length <= 48 && !/[。；！？]/.test(trimmed)) return 'h3'
   return null
+}
+
+/** 文首首行：较短且无句末标点，按总标题处理 */
+export function looksLikeLeadingDocumentTitle(line: string): boolean {
+  if (/^[ \t\u3000]/.test(line)) return false
+  const trimmed = line.trim()
+  if (detectHeadingLevel(trimmed)) return false
+  return (
+    trimmed.length >= 2 &&
+    trimmed.length <= 72 &&
+    !/[。；！？]$/u.test(trimmed) &&
+    !/^[“"‘']/u.test(trimmed)
+  )
+}
+
+export function looksLikeManuscriptSignatureLine(line: string): boolean {
+  const trimmed = stripLeadingIndent(line.trim())
+  if (!trimmed) return false
+  if (looksLikeManuscriptAddresseeLine(trimmed)) return false
+  if (isSignatureOrgLine(trimmed) || isSignatureDateLine(trimmed)) return true
+  if (/^(承诺方|甲方|乙方|丙方|签字|盖章|法定代表人|授权代表)[：:]/u.test(trimmed)) return true
+  if (/^日期[：:]/u.test(trimmed)) return true
+  return false
+}
+
+export function looksLikeManuscriptAddresseeLine(line: string): boolean {
+  return /^(致|主送|抄送|分送|报送|呈)[：:]/u.test(stripLeadingIndent(line.trim()))
 }
 
 function isStructuralLine(trimmed: string): boolean {
@@ -175,7 +206,7 @@ const SIGNATURE_ORG_INLINE_RE =
 export function isSignatureOrgLine(trimmed: string): boolean {
   const text = stripLeadingIndent(trimmed)
   if (!text || text.startsWith('【') || /[：:].+[：:]/.test(text)) return false
-  if (/^(抄送|分送|附件|主送|报送|编制)/u.test(text)) return false
+  if (/^(抄送|分送|附件|主送|报送|编制|致|呈)/u.test(text)) return false
   if (text.length > 36) return false
   return SIGNATURE_ORG_SUFFIX.test(text)
 }
@@ -332,10 +363,11 @@ export function lineNeedsEditorFirstLineIndent(line: string): boolean {
   if (/^【/.test(trimmed)) return false
   if (/^附件[：:]/u.test(trimmed)) return false
   if (/^抄送[：:]|^分送[：:]/u.test(trimmed)) return false
+  if (looksLikeManuscriptAddresseeLine(trimmed)) return false
   if (/^表\d+/u.test(trimmed)) return false
   if (/^单位[：:]/u.test(trimmed)) return false
 
-  if (/^[一二三四五六七八九十百零〇]+[、．.](?!(\d|．|\.))/u.test(trimmed)) return false
+  if (HEADING1_PREFIX_RE.test(trimmed)) return false
   if (/^（[一二三四五六七八九十百零〇]+）/u.test(trimmed)) return false
   if (/^（\d+）/.test(trimmed)) return false
 

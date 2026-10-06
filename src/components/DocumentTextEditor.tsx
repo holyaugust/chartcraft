@@ -8,6 +8,7 @@ import {
   type PageCaret,
   type PageCommand,
 } from '../utils/documentPageBlocks'
+import { classifyOfficialLines, type OfficialParagraphKind } from '../utils/docxFormattedExport'
 
 interface DocumentTextEditorProps {
   value: string
@@ -16,6 +17,7 @@ interface DocumentTextEditorProps {
   aiHighlightRanges?: TextHighlightRange[]
   className?: string
   placeholder?: string
+  layoutMode?: 'manuscript' | 'official'
   onSelectionChange?: (selection: { start: number; end: number; text: string } | null) => void
 }
 
@@ -31,13 +33,15 @@ const OWN_INDENT = /^[ \t\u3000]/u
 
 const PageSurface = memo(function PageSurface({
   surfaceRef,
+  layoutMode,
 }: {
   surfaceRef: RefObject<HTMLDivElement | null>
+  layoutMode: 'manuscript' | 'official'
 }) {
   return (
     <div
       ref={surfaceRef}
-      className="document-page document-page-editor"
+      className={`document-page document-page-editor${layoutMode === 'official' ? ' document-page-editor-official' : ''}`}
       contentEditable
       suppressContentEditableWarning
       spellCheck={false}
@@ -124,10 +128,16 @@ function appendMarked(
   }
 }
 
+function officialClassName(kind: OfficialParagraphKind, text: string): string {
+  const ownIndent = kind === 'body' && OWN_INDENT.test(text) ? ' document-page-own-indent' : ''
+  return `doc-layout-p doc-layout-${kind}${ownIndent}`
+}
+
 function createBlock(
   block: DocumentPageBlock,
   highlightRange: TextHighlightRange | null,
   aiHighlightRanges: TextHighlightRange[],
+  officialKind?: OfficialParagraphKind,
 ): HTMLElement {
   if (block.kind === 'blank') {
     const gap = document.createElement('div')
@@ -156,11 +166,21 @@ function createBlock(
     return table
   }
   const paragraph = document.createElement('p')
-  paragraph.className =
-    block.kind === 'heading'
-      ? 'document-page-heading'
-      : `document-page-body${OWN_INDENT.test(block.text) ? ' document-page-own-indent' : ''}`
-  if (block.kind === 'heading') paragraph.dataset.level = block.level
+  if (officialKind && officialKind !== 'skip') {
+    paragraph.className = officialClassName(officialKind, block.text)
+    if (block.kind === 'heading') paragraph.dataset.level = block.level
+  } else if (block.kind === 'title') {
+    paragraph.className = 'document-page-title'
+  } else if (block.kind === 'addressee') {
+    paragraph.className = 'document-page-addressee'
+  } else if (block.kind === 'signature') {
+    paragraph.className = 'document-page-signature'
+  } else if (block.kind === 'heading') {
+    paragraph.className = 'document-page-heading'
+    paragraph.dataset.level = block.level
+  } else {
+    paragraph.className = `document-page-body${OWN_INDENT.test(block.text) ? ' document-page-own-indent' : ''}`
+  }
   paragraph.dataset.plainStart = String(block.start)
   paragraph.dataset.plainEnd = String(block.end)
   appendMarked(paragraph, block.text, block.start, highlightRange, aiHighlightRanges)
@@ -172,11 +192,21 @@ function paintPage(
   value: string,
   highlightRange: TextHighlightRange | null,
   aiHighlightRanges: TextHighlightRange[],
+  layoutMode: 'manuscript' | 'official' = 'manuscript',
 ) {
   const fragment = document.createDocumentFragment()
-  for (const block of parseDocumentPage(value)) {
-    fragment.append(createBlock(block, highlightRange, aiHighlightRanges))
-  }
+  const blocks = parseDocumentPage(value)
+  const officialKinds =
+    layoutMode === 'official'
+      ? classifyOfficialLines(blocks.map((block) => ('text' in block ? block.text : '')))
+      : null
+  blocks.forEach((block, index) => {
+    let officialKind: OfficialParagraphKind | undefined
+    if (officialKinds && block.kind !== 'blank' && block.kind !== 'table') {
+      officialKind = officialKinds[index]
+    }
+    fragment.append(createBlock(block, highlightRange, aiHighlightRanges, officialKind))
+  })
   root.replaceChildren(fragment)
 }
 
@@ -239,7 +269,16 @@ function readCaret(root: HTMLElement): PageCaret {
 
 const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEditorProps>(
   function DocumentTextEditor(
-    { value, onChange, highlightRange = null, aiHighlightRanges = [], className = '', placeholder: _placeholder, onSelectionChange },
+    {
+      value,
+      onChange,
+      highlightRange = null,
+      aiHighlightRanges = [],
+      className = '',
+      placeholder: _placeholder,
+      layoutMode = 'manuscript',
+      onSelectionChange,
+    },
     ref,
   ) {
     const scrollRef = useRef<HTMLDivElement>(null)
@@ -252,6 +291,7 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
     const aiRef = useRef(aiHighlightRanges)
     const selectionRef = useRef(onSelectionChange)
     const highlightKeyRef = useRef('')
+    const layoutModeRef = useRef(layoutMode)
     const caretRef = useRef<PageCaret | null>(null)
     const caretAtComposeRef = useRef<PageCaret>({ start: 0, end: 0 })
     const lastSelectionRef = useRef<{ start: number; end: number; text: string } | null>(null)
@@ -264,15 +304,22 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
     const paintCurrent = (next: string) => {
       const page = pageRef.current
       if (!page) return
-      paintPage(page, next, highlightRef.current, aiRef.current)
+      paintPage(page, next, highlightRef.current, aiRef.current, layoutMode)
       textRef.current = next
       emittedRef.current = next
       highlightKeyRef.current = highlightKey
+      layoutModeRef.current = layoutMode
     }
 
     useLayoutEffect(() => {
       if (composingRef.current) return
-      if (emittedRef.current === value && highlightKeyRef.current === highlightKey) return
+      if (
+        emittedRef.current === value &&
+        highlightKeyRef.current === highlightKey &&
+        layoutModeRef.current === layoutMode
+      ) {
+        return
+      }
       const page = pageRef.current
       const highlightOnly = emittedRef.current === value
       if (highlightOnly && page) {
@@ -281,7 +328,7 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
       }
       paintCurrent(value)
       if (highlightOnly && caretRef.current && page) placeCaret(page, caretRef.current.start)
-    }, [value, highlightKey])
+    }, [value, highlightKey, layoutMode])
 
     const paintCurrentRef = useRef(paintCurrent)
     paintCurrentRef.current = paintCurrent
@@ -459,7 +506,7 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
 
     return (
       <div ref={scrollRef} className={`document-page-scroll ${className}`.trim()}>
-        <PageSurface surfaceRef={pageRef} />
+        <PageSurface surfaceRef={pageRef} layoutMode={layoutMode} />
       </div>
     )
   },

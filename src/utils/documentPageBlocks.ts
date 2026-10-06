@@ -1,5 +1,11 @@
 import { TABLE_COL_SEP } from './docxTextExtract'
-import { detectHeadingLevel, type HeadingLevel } from './documentFormatNormalize'
+import {
+  detectHeadingLevel,
+  looksLikeLeadingDocumentTitle,
+  looksLikeManuscriptAddresseeLine,
+  looksLikeManuscriptSignatureLine,
+  type HeadingLevel,
+} from './documentFormatNormalize'
 
 export interface PageCaret {
   start: number
@@ -21,6 +27,9 @@ export interface PageTableRow {
 export type DocumentPageBlock =
   | { kind: 'blank'; start: number; end: number }
   | { kind: 'paragraph'; start: number; end: number; text: string }
+  | { kind: 'title'; start: number; end: number; text: string }
+  | { kind: 'addressee'; start: number; end: number; text: string }
+  | { kind: 'signature'; start: number; end: number; text: string }
   | { kind: 'heading'; level: HeadingLevel; start: number; end: number; text: string }
   | { kind: 'table'; start: number; end: number; rows: PageTableRow[] }
 
@@ -88,9 +97,27 @@ function lineBlock(line: LineSpan): DocumentPageBlock {
 export function parseDocumentPage(text: string): DocumentPageBlock[] {
   const lines = splitLines(text)
   const blocks: DocumentPageBlock[] = []
+  let seenContent = false
 
   for (const line of lines) {
     const block = lineBlock(line)
+    if (
+      !seenContent &&
+      block.kind === 'paragraph' &&
+      looksLikeLeadingDocumentTitle(block.text) &&
+      !looksLikeManuscriptSignatureLine(block.text) &&
+      !looksLikeManuscriptAddresseeLine(block.text)
+    ) {
+      blocks.push({ kind: 'title', start: block.start, end: block.end, text: block.text })
+      seenContent = true
+      continue
+    }
+    if (block.kind === 'paragraph' && looksLikeManuscriptAddresseeLine(block.text)) {
+      blocks.push({ kind: 'addressee', start: block.start, end: block.end, text: block.text })
+      seenContent = true
+      continue
+    }
+    if (block.kind !== 'blank') seenContent = true
     const prev = blocks[blocks.length - 1]
     if (block.kind === 'table' && prev?.kind === 'table') {
       prev.rows.push(block.rows[0]!)
@@ -100,7 +127,40 @@ export function parseDocumentPage(text: string): DocumentPageBlock[] {
     blocks.push(block)
   }
 
-  return blocks
+  return markTrailingSignatures(blocks)
+}
+
+function isAnnexOrCopyLine(block: DocumentPageBlock): boolean {
+  if (!('text' in block)) return false
+  return /^(附件|抄送|分送)[：:]/u.test(block.text.trim())
+}
+
+function markTrailingSignatures(blocks: DocumentPageBlock[]): DocumentPageBlock[] {
+  let index = blocks.length - 1
+  while (index >= 0 && (blocks[index]!.kind === 'blank' || isAnnexOrCopyLine(blocks[index]!))) {
+    index -= 1
+  }
+  const last = index
+  let first = last + 1
+  while (index >= 0) {
+    const block = blocks[index]!
+    if (block.kind === 'blank') {
+      index -= 1
+      continue
+    }
+    if (block.kind === 'paragraph' && looksLikeManuscriptSignatureLine(block.text)) {
+      first = index
+      index -= 1
+      continue
+    }
+    break
+  }
+  if (first > last) return blocks
+  return blocks.map((block, blockIndex) => {
+    if (blockIndex < first || blockIndex > last) return block
+    if (block.kind !== 'paragraph' || !looksLikeManuscriptSignatureLine(block.text)) return block
+    return { kind: 'signature', start: block.start, end: block.end, text: block.text }
+  })
 }
 
 function blockLines(block: DocumentPageBlock): string[] {

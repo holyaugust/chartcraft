@@ -1,7 +1,4 @@
-import {
-  classifyOfficialParagraph,
-  type OfficialParagraphKind,
-} from './docxFormattedExport'
+import { classifyOfficialLines } from './docxFormattedExport'
 
 function escapeHtml(text: string): string {
   return text
@@ -30,12 +27,12 @@ export function buildOfficialLayoutHtml(content: string): string {
     return '<p class="doc-layout-empty">暂无正文</p>'
   }
 
+  const kinds = classifyOfficialLines(lines)
   const parts: string[] = []
-  let previousKind: OfficialParagraphKind | undefined
 
-  for (const line of lines) {
-    const kind = classifyOfficialParagraph(line, previousKind)
-    if (kind !== 'skip') previousKind = kind
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]!
+    const kind = kinds[i] ?? 'skip'
 
     if (kind === 'skip') {
       parts.push('<div class="doc-layout-gap" aria-hidden="true"></div>')

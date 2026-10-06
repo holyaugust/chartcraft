@@ -127,7 +127,7 @@ export default function DocumentWordSourcePanel({
         <li>
           <Eye size={14} />
           <span>
-            切换到「版式预览」对照原 Word 排版
+            点「对照原 Word」查看上传时的排版
             {onOpenPreview ? (
               <button type="button" className="document-word-source-link" onClick={onOpenPreview}>
                 立即查看

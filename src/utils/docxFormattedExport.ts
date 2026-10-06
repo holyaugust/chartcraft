@@ -18,6 +18,8 @@ import {
 import { TABLE_COL_SEP } from './docxTextExtract'
 import {
   expandAttachmentLine,
+  HEADING1_PREFIX_RE,
+  isSignatureDateLine,
   isSignatureOrgLine,
   splitInlineHeadingBodyLine,
   stripLeadingIndent,
@@ -189,7 +191,7 @@ function isPreambleKind(kind?: ParagraphKind): boolean {
 function looksLikeMainTitle(trimmed: string): boolean {
   if (trimmed.length < 4 || trimmed.length > 100) return false
   if (trimmed.startsWith('【')) return false
-  if (/^[一二三四五六七八九十百零〇]+[、．.](?!(\d|．|\.))/u.test(trimmed)) return false
+  if (HEADING1_PREFIX_RE.test(trimmed)) return false
   if (/^（[一二三四五六七八九十百\d]+）/u.test(trimmed)) return false
   if (/^\d+[、．.]\s/u.test(trimmed)) return false
   if (/^附件[：:]|^抄送[：:]|^分送[：:]|^表\d|^单位[：:]/u.test(trimmed)) return false
@@ -273,7 +275,7 @@ function classifyLine(line: string, previousKind?: ParagraphKind): ParagraphKind
   if (/^表\d+/u.test(trimmed)) return 'tableCaption'
   if (/^单位[：:]/u.test(trimmed)) return 'tableUnit'
 
-  if (/^[一二三四五六七八九十百零〇]+[、．.](?!(\d|．|\.))/u.test(trimmed)) return 'heading1'
+  if (HEADING1_PREFIX_RE.test(trimmed)) return 'heading1'
   if (/^（[一二三四五六七八九十百零〇]+）/u.test(trimmed)) return 'heading2'
   if (/^（\d+）/.test(trimmed)) return 'heading4'
 
@@ -295,12 +297,7 @@ function classifyLine(line: string, previousKind?: ParagraphKind): ParagraphKind
     return 'recipient'
   }
 
-  if (/^[\dX×]{4}年[\dX×]{1,2}月[\dX×]{1,2}日/u.test(trimmed)) {
-    if (/印发$/.test(trimmed)) return 'footerNote'
-    return 'signatureDate'
-  }
-  if (isSignatureOrgLine(trimmed)) return 'signatureOrg'
-
+  // 落款只认文末簇，见 classifyOfficialLines；逐行分类阶段不当署名/成文日期
   if (looksLikeTitleLine(trimmed, previousKind)) return 'title'
 
   return 'body'
@@ -630,12 +627,13 @@ function buildTableXml(rows: string[][]): string {
 function buildFormattedDocumentXml(text: string): string {
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   const lines = normalized.split('\n')
+  const kinds = classifyOfficialLines(lines)
   const bodyParts: string[] = []
 
   let i = 0
-  let previousKind: ParagraphKind | undefined
   while (i < lines.length) {
     const line = lines[i]
+    const kind = kinds[i] ?? 'skip'
 
     if (!line.trim()) {
       i += 1
@@ -653,16 +651,12 @@ function buildFormattedDocumentXml(text: string): string {
       continue
     }
 
-    const kind = classifyLine(line, previousKind)
     if (kind !== 'skip' && kind !== 'docKind') {
       for (const part of expandExportParts(line, kind)) {
-        const partKind = part.kind ?? classifyLine(part.text, previousKind)
+        const partKind = part.kind ?? kind
         if (partKind === 'skip' || partKind === 'docKind') continue
         const paragraph = buildParagraphXml(part.text, partKind)
-        if (paragraph) {
-          bodyParts.push(paragraph)
-          previousKind = partKind
-        }
+        if (paragraph) bodyParts.push(paragraph)
       }
     }
     i += 1
@@ -744,6 +738,66 @@ const FORMATTED_SETTINGS = `<?xml version="1.0" encoding="UTF-8" standalone="yes
 /** 按 GB/T 9704-2012 由纯文本生成 .docx */
 /** 供编辑器「公文版式」预览复用的段落分类 */
 export type OfficialParagraphKind = ParagraphKind
+
+function isAnnexOrCopyLineText(trimmed: string): boolean {
+  return /^(附件|抄送|分送)[：:]/u.test(trimmed)
+}
+
+function trailingSignatureKind(trimmed: string): ParagraphKind | null {
+  if (!trimmed) return null
+  if (/^[\dX×]{4}年[\dX×]{1,2}月[\dX×]{1,2}日印发$/u.test(trimmed)) return 'footerNote'
+  if (isSignatureDateLine(trimmed)) return 'signatureDate'
+  if (isSignatureOrgLine(trimmed)) return 'signatureOrg'
+  return null
+}
+
+function markTrailingOfficialSignatures(
+  lines: string[],
+  kinds: OfficialParagraphKind[],
+): OfficialParagraphKind[] {
+  let index = kinds.length - 1
+  while (index >= 0) {
+    const trimmed = lines[index]?.trim() ?? ''
+    if (!trimmed || isAnnexOrCopyLineText(trimmed) || kinds[index] === 'skip') {
+      index -= 1
+      continue
+    }
+    break
+  }
+  const last = index
+  let first = last + 1
+  while (index >= 0) {
+    const trimmed = lines[index]?.trim() ?? ''
+    if (!trimmed || kinds[index] === 'skip') {
+      index -= 1
+      continue
+    }
+    if (trailingSignatureKind(trimmed)) {
+      first = index
+      index -= 1
+      continue
+    }
+    break
+  }
+  if (first > last) return kinds
+  return kinds.map((kind, i) => {
+    if (i < first || i > last) return kind
+    const sig = trailingSignatureKind(lines[i]?.trim() ?? '')
+    return sig ?? kind
+  })
+}
+
+/** 全文分类：落款仅落在文末连续署名/成文日期上 */
+export function classifyOfficialLines(lines: string[]): OfficialParagraphKind[] {
+  const kinds: OfficialParagraphKind[] = []
+  let previousKind: ParagraphKind | undefined
+  for (const line of lines) {
+    const kind = classifyLine(line, previousKind)
+    kinds.push(kind)
+    if (kind !== 'skip') previousKind = kind
+  }
+  return markTrailingOfficialSignatures(lines, kinds)
+}
 
 export function classifyOfficialParagraph(
   line: string,

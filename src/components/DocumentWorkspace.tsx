@@ -49,6 +49,7 @@ import type { TextHighlightRange } from '../utils/documentLocate'
 import { computeAiWriteHighlightRanges } from '../utils/documentAiHighlight'
 import { getIssueCategoryLabel } from '../utils/documentProofread'
 import { exportDocumentToDocx } from '../utils/docxExport'
+import { documentEditorChrome } from '../utils/documentEditorChrome'
 import { saveFile } from '../utils/saveFile'
 import type { DocumentTemplate } from '../data/documentTemplates'
 import type { DocumentWriteMode } from '../utils/documentWrite'
@@ -64,6 +65,7 @@ import {
   type DocumentStructureAnalysisResult,
   type StructureSuggestionPatch,
 } from '../utils/documentStructureAnalysis'
+import { shouldAutoRerunStructureAfterPrepare } from '../utils/documentStructureAutoRefresh'
 import {
   analyzeDocumentFormat,
   applyDocumentFormat,
@@ -186,6 +188,8 @@ export default function DocumentWorkspace({
     initialStructure.fingerprint,
   )
   const [structureActiveItem, setStructureActiveItem] = useState<string | null>(null)
+  /** 准备文档阶段改过正文；进入结构梳理且结果过期时自动重新梳理 */
+  const [prepareContentChanged, setPrepareContentChanged] = useState(false)
   const [formatReport, setFormatReport] = useState<FormatAdjustReport | null>(null)
   const [formatBusy, setFormatBusy] = useState(false)
   const [formatConfirmOpen, setFormatConfirmOpen] = useState(false)
@@ -216,6 +220,7 @@ export default function DocumentWorkspace({
   const isStepSidebar =
     workflowStep === 'structure' || workflowStep === 'proofread' || workflowStep === 'format'
   const structureRail = workflowStep === 'structure' && !structureExpanded && !structurePendingPatch
+  const editorChrome = documentEditorChrome(workflowStep, Boolean(docxBuffer))
   const showSourceTab = preferSourceSidebar
   const showTemplatesTab = !docxBuffer
   const showContextTabs = !isStepSidebar && showSourceTab && showTemplatesTab
@@ -360,6 +365,12 @@ export default function DocumentWorkspace({
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [exportMenuOpen])
+
+  useEffect(() => {
+    if (!editorChrome.showOfficialTab && viewMode === 'official') {
+      setViewMode('text')
+    }
+  }, [editorChrome.showOfficialTab, viewMode])
 
   useEffect(() => {
     if (!docxBuffer || viewMode !== 'preview' || !previewRef.current) {
@@ -518,6 +529,7 @@ export default function DocumentWorkspace({
       setTextDriftedFromDocx(false)
       setPreviewTextMismatch(false)
       setViewMode('text')
+      setPrepareContentChanged(true)
       setWorkflowStep('structure')
       setPreviewError(null)
       resetProofreadSession()
@@ -537,7 +549,7 @@ export default function DocumentWorkspace({
           ? `Word 已导入并已整理段落格式${tableHint}（${warnings.length} 条提示）`
           : hasTables
             ? 'Word 已导入并已整理段落格式；表格文本请切换到「文本编辑」（列以 | 分隔）'
-            : 'Word 已导入并已整理段落格式；可在「版式预览」查看原 Word 排版',
+            : 'Word 已导入并已整理段落格式；可点「对照原 Word」查看原排版',
       )
     } catch (err) {
       setStatusIsError(true)
@@ -566,6 +578,7 @@ export default function DocumentWorkspace({
       setDocxFileName(`${template.name}.docx`)
       setTextDriftedFromDocx(false)
       setViewMode('text')
+      setPrepareContentChanged(true)
       setWorkflowStep('structure')
       setActiveTemplateId(template.id)
       setContentOrigin('template')
@@ -614,6 +627,7 @@ export default function DocumentWorkspace({
       setDocxFileName(`${payload.title.replace(/[\\/:*?"<>|]/g, '') || '公文'}.docx`)
       setTextDriftedFromDocx(false)
       setViewMode('text')
+      setPrepareContentChanged(true)
       setWorkflowStep('structure')
       setActiveTemplateId(payload.templateId ?? null)
       setContentOrigin('ai')
@@ -973,6 +987,9 @@ export default function DocumentWorkspace({
   const handleContentChange = useCallback(
     (value: string) => {
       setContent(value)
+      if (workflowStep === 'prepare') {
+        setPrepareContentChanged(true)
+      }
       setAiHighlightRanges([])
       setHighlightRange(null)
       setLocateHint(null)
@@ -1001,7 +1018,7 @@ export default function DocumentWorkspace({
         setContentOrigin('none')
       }
     },
-    [docxBuffer, issues.length, adoptedIssueIds.length, preferSourceSidebar],
+    [docxBuffer, issues.length, adoptedIssueIds.length, preferSourceSidebar, workflowStep],
   )
 
 
@@ -1302,7 +1319,22 @@ export default function DocumentWorkspace({
   const openOrRunStructureAnalysis = useCallback(() => {
     setSidebarPanel('structure')
     setWorkflowStep('structure')
+    setViewMode('text')
     setStructureError(null)
+    if (
+      shouldAutoRerunStructureAfterPrepare({
+        workflowStep: 'structure',
+        prepareContentChanged,
+        hasContent: Boolean(content.trim()),
+        structureBusy,
+        hasStructureReport: Boolean(structureReport),
+        structureStale,
+      })
+    ) {
+      setStatusIsError(false)
+      setStatusMessage('准备文档已更新，正在重新梳理结构…')
+      return
+    }
     if (structureReport) {
       setStatusIsError(false)
       setStatusMessage(
@@ -1312,8 +1344,49 @@ export default function DocumentWorkspace({
       )
       return
     }
+    setPrepareContentChanged(false)
     void runStructureAnalysis()
-  }, [structureReport, structureStale, runStructureAnalysis])
+  }, [
+    structureReport,
+    structureStale,
+    runStructureAnalysis,
+    prepareContentChanged,
+    content,
+    structureBusy,
+  ])
+
+  useEffect(() => {
+    if (
+      !shouldAutoRerunStructureAfterPrepare({
+        workflowStep,
+        prepareContentChanged,
+        hasContent: Boolean(content.trim()),
+        structureBusy,
+        hasStructureReport: Boolean(structureReport),
+        structureStale,
+      })
+    ) {
+      if (
+        workflowStep === 'structure' &&
+        prepareContentChanged &&
+        structureReport &&
+        !structureStale
+      ) {
+        setPrepareContentChanged(false)
+      }
+      return
+    }
+    setPrepareContentChanged(false)
+    void runStructureAnalysis()
+  }, [
+    workflowStep,
+    prepareContentChanged,
+    content,
+    structureBusy,
+    structureReport,
+    structureStale,
+    runStructureAnalysis,
+  ])
 
   const handleWorkflowStepClick = useCallback(
     (step: DocumentWorkflowStep) => {
@@ -1516,20 +1589,18 @@ export default function DocumentWorkspace({
           <div className="document-editor-column">
             <div className="document-workspace-main">
               <div className="document-editor-shell">
-                {workflowStep !== 'prepare' ? (
-                <div className="document-view-tabs" role="tablist" aria-label="文档视图">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={viewMode === 'preview'}
-                    className={`document-view-tab${viewMode === 'preview' ? ' active' : ''}`}
-                    disabled={!docxBuffer}
-                    onClick={() => setViewMode('preview')}
-                  >
-                    <Eye size={14} />
-                    版式预览
-                    {docxFileName ? <span className="document-view-tab-name">{docxFileName}</span> : null}
-                  </button>
+                {workflowStep !== 'prepare' &&
+                (editorChrome.showTextTab ||
+                  editorChrome.showOfficialTab ||
+                  editorChrome.showOriginalWordLink) ? (
+                <div
+                  className="document-view-tabs"
+                  role={editorChrome.showTextTab || editorChrome.showOfficialTab ? 'tablist' : 'toolbar'}
+                  aria-label={
+                    editorChrome.showTextTab || editorChrome.showOfficialTab ? '文档视图' : '对照原 Word'
+                  }
+                >
+                  {editorChrome.showTextTab ? (
                   <button
                     type="button"
                     role="tab"
@@ -1540,6 +1611,8 @@ export default function DocumentWorkspace({
                     <PenLine size={14} />
                     文本编辑
                   </button>
+                  ) : null}
+                  {editorChrome.showOfficialTab ? (
                   <button
                     type="button"
                     role="tab"
@@ -1551,6 +1624,20 @@ export default function DocumentWorkspace({
                     <BookText size={14} />
                     公文版式
                   </button>
+                  ) : null}
+                  {editorChrome.showOriginalWordLink ? (
+                  <button
+                    type="button"
+                    className={`document-view-original${viewMode === 'preview' ? ' active' : ''}`}
+                    onClick={() => setViewMode(viewMode === 'preview' ? 'text' : 'preview')}
+                  >
+                    <Eye size={14} />
+                    {viewMode === 'preview' ? '返回文本编辑' : '对照原 Word'}
+                    {viewMode !== 'preview' && docxFileName ? (
+                      <span className="document-view-tab-name">{docxFileName}</span>
+                    ) : null}
+                  </button>
+                  ) : null}
                 </div>
                 ) : null}
 
@@ -1589,7 +1676,9 @@ export default function DocumentWorkspace({
 
                   {viewMode === 'text' && hasTableLikeRows(content) ? (
                     <div className="document-table-hint" role="status">
-                      表格文本：列与列之间为「 | 」；切换到「版式预览」可查看 Word 原格式。
+                      表格文本：列与列之间为「 | 」
+                      {editorChrome.showOriginalWordLink ? '；点「对照原 Word」可查看原格式' : ''}
+                      。
                     </div>
                   ) : null}
 
@@ -1626,6 +1715,7 @@ export default function DocumentWorkspace({
                     <DocumentTextEditor
                       ref={editorRef}
                       value={content}
+                      layoutMode={workflowStep === 'structure' ? 'official' : 'manuscript'}
                       highlightRange={highlightRange}
                       aiHighlightRanges={aiHighlightRanges}
                       onChange={handleContentChange}

@@ -747,6 +747,28 @@
   color: #94a3b8;
 }
 
+.document-view-original {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.document-view-original:hover,
+.document-view-original.active {
+  color: #4338ca;
+  background: #eef2ff;
+}
+
 .document-preview-stale-hint {
   flex-shrink: 0;
   margin: 10px 16px 0;
@@ -1109,6 +1131,10 @@
 
 .document-page-body,
 .document-page-heading,
+.document-page-title,
+.document-page-addressee,
+.document-page-signature,
+.document-page-editor-official .doc-layout-p,
 .document-page-table td {
   margin: 0;
   font-family: SimSun, '宋体', 'Songti SC', serif;
@@ -1125,8 +1151,27 @@
 
 .document-page-body.document-page-own-indent,
 .document-page-heading,
+.document-page-title,
+.document-page-addressee,
+.document-page-signature,
 .document-page-table td {
   text-indent: 0;
+}
+
+.document-page-title {
+  text-align: center;
+  font-weight: 700;
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+
+.document-page-addressee {
+  text-align: left;
+}
+
+.document-page-signature {
+  text-align: right;
+  padding-right: 2em;
 }
 
 .document-page-heading {
@@ -1138,6 +1183,72 @@
 .document-page-heading[data-level='h1'] {
   font-size: 18px;
   margin-top: 18px;
+}
+
+.document-page-editor-official .doc-layout-p {
+  margin: 0 0 10px;
+  text-align: justify;
+}
+
+.document-page-editor-official .doc-layout-title {
+  text-align: center;
+  font-weight: 700;
+  text-indent: 0;
+  margin: 12px 0 22px;
+}
+
+.document-page-editor-official .doc-layout-redHeader,
+.document-page-editor-official .doc-layout-enterpriseBanner,
+.document-page-editor-official .doc-layout-docNumber,
+.document-page-editor-official .doc-layout-meta {
+  text-align: center;
+  font-weight: 700;
+  text-indent: 0;
+}
+
+.document-page-editor-official .doc-layout-recipient,
+.document-page-editor-official .doc-layout-heading1,
+.document-page-editor-official .doc-layout-heading2,
+.document-page-editor-official .doc-layout-heading3,
+.document-page-editor-official .doc-layout-heading4,
+.document-page-editor-official .doc-layout-attachment,
+.document-page-editor-official .doc-layout-copyTo,
+.document-page-editor-official .doc-layout-closing,
+.document-page-editor-official .doc-layout-tableCaption,
+.document-page-editor-official .doc-layout-tableUnit {
+  text-indent: 0;
+}
+
+.document-page-editor-official .doc-layout-heading1 {
+  font-weight: 700;
+  margin-top: 18px;
+}
+
+.document-page-editor-official .doc-layout-heading2 {
+  font-weight: 700;
+  margin-top: 14px;
+}
+
+.document-page-editor-official .doc-layout-heading3,
+.document-page-editor-official .doc-layout-heading4 {
+  font-weight: 700;
+  margin-top: 10px;
+}
+
+.document-page-editor-official .doc-layout-body,
+.document-page-editor-official .doc-layout-numberedItem {
+  text-indent: 2em;
+}
+
+.document-page-editor-official .doc-layout-body.document-page-own-indent {
+  text-indent: 0;
+}
+
+.document-page-editor-official .doc-layout-signatureOrg,
+.document-page-editor-official .doc-layout-signatureDate {
+  text-align: right;
+  text-indent: 0;
+  padding-right: 2em;
 }
 
 .document-page-gap {

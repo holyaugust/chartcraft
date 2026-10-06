@@ -12,10 +12,56 @@ const sample = '普通段落\n\n一、总则\n（一）范围\n1. 条目\n（1�
 describe('document page blocks', () => {
   it('exports the existing heading levels', () => {
     expect(detectHeadingLevel('一、总则')).toBe('h1')
+    expect(detectHeadingLevel('二、2027年资本运作总体思路和主要方向')).toBe('h1')
     expect(detectHeadingLevel('（一）范围')).toBe('h2')
     expect(detectHeadingLevel('1. 条目')).toBe('h3')
     expect(detectHeadingLevel('（1）细目')).toBe('h4')
     expect(detectHeadingLevel('普通')).toBeNull()
+  })
+
+  it('treats a short first line without end punctuation as a centered title', () => {
+    const blocks = parseDocumentPage('保密承诺函\n一、保密信息定义')
+    expect(blocks[0]).toMatchObject({ kind: 'title', text: '保密承诺函' })
+    expect(blocks[1]).toMatchObject({ kind: 'heading', level: 'h1' })
+  })
+
+  it('does not treat a first sentence as a title', () => {
+    const blocks = parseDocumentPage('这是一句完整的话。\n下一行')
+    expect(blocks[0]).toMatchObject({ kind: 'paragraph' })
+  })
+
+  it('skips blank lines before the leading title', () => {
+    const blocks = parseDocumentPage('\n\n保密承诺函\n正文')
+    expect(blocks[2]).toMatchObject({ kind: 'title', text: '保密承诺函' })
+  })
+
+  it('right-aligns 落款 lines and keeps a sentence about 甲方 as body', () => {
+    const blocks = parseDocumentPage(
+      '保密承诺函\n甲方应在十日内付款。\n承诺方：深圳市特发服务股份有限公司（盖章）\n日期： 年 月 日',
+    )
+    expect(blocks[1]).toMatchObject({ kind: 'paragraph', text: '甲方应在十日内付款。' })
+    expect(blocks[2]).toMatchObject({
+      kind: 'signature',
+      text: '承诺方：深圳市特发服务股份有限公司（盖章）',
+    })
+    expect(blocks[3]).toMatchObject({ kind: 'signature', text: '日期： 年 月 日' })
+  })
+
+  it('keeps 结语 like 特此承诺 as body', () => {
+    const blocks = parseDocumentPage('正文\n特此承诺！\n承诺方：某某公司（盖章）')
+    expect(blocks[1]).toMatchObject({ kind: 'paragraph', text: '特此承诺！' })
+    expect(blocks[2]).toMatchObject({ kind: 'signature', text: '承诺方：某某公司（盖章）' })
+  })
+
+  it('keeps 致：主送机关 as body, not 落款', () => {
+    const blocks = parseDocumentPage(
+      '保密承诺函\n致：广东贝润教育投资有限公司\n鉴于深圳市特发服务股份有限公司（以下简称“我方”）与贵方协商一致。',
+    )
+    expect(blocks[1]).toMatchObject({
+      kind: 'addressee',
+      text: '致：广东贝润教育投资有限公司',
+    })
+    expect(blocks[2]).toMatchObject({ kind: 'paragraph' })
   })
 
   it('round-trips paragraphs, blanks, headings, cell spaces, ragged rows, and a trailing newline', () => {
