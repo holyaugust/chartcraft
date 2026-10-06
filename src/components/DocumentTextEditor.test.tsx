@@ -32,6 +32,20 @@ describe('DocumentTextEditor page', () => {
     act(() => root.unmount())
   })
 
+  it('applies the contract table without indenting a table row', () => {
+    const { host, root } = renderEditor('采购合同\n甲方应在十日内付款。\n甲 | 乙', { layoutGenre: 'contract' })
+    const title = host.querySelector('p')
+    expect(title?.textContent).toBe('采购合同')
+    expect((title as HTMLElement).style.textAlign).toBe('center')
+    expect((title as HTMLElement).style.fontSize).toBe('22pt')
+    const body = host.querySelectorAll('p')[1] as HTMLElement
+    expect(body.style.textAlign).toBe('justify')
+    expect(body.style.textIndent).toBe('2em')
+    const cell = host.querySelector('td') as HTMLElement
+    expect(cell.style.textIndent).toBe('')
+    act(() => { root.unmount() })
+  })
+
   it('does not add a first-line indent class when the line already has indent', () => {
     const { host, root } = renderEditor('\u3000已有缩进')
     expect(host.querySelector('.document-page-own-indent')).not.toBeNull()

@@ -1,6 +1,13 @@
 import { forwardRef, memo, useEffect, useImperativeHandle, useLayoutEffect, useRef, type RefObject } from 'react'
+import {
+  getLayoutSpec,
+  type LayoutGenre,
+  type LayoutPageSpec,
+  type LayoutRoleStyle,
+} from '../data/documentLayoutSpecs'
 import type { TextHighlightRange } from '../utils/documentLocate'
 import { scrollPageToRange } from '../utils/documentLocate'
+import { layoutRoleForLine } from '../utils/documentLayoutRole'
 import {
   applyPageCommand,
   parseDocumentPage,
@@ -8,6 +15,7 @@ import {
   type PageCaret,
   type PageCommand,
 } from '../utils/documentPageBlocks'
+import type { OfficialParagraphKind } from '../utils/docxFormattedExport'
 
 interface DocumentTextEditorProps {
   value: string
@@ -17,6 +25,7 @@ interface DocumentTextEditorProps {
   className?: string
   placeholder?: string
   onSelectionChange?: (selection: { start: number; end: number; text: string } | null) => void
+  layoutGenre?: LayoutGenre | null
 }
 
 export interface DocumentPageEditorHandle {
@@ -28,6 +37,38 @@ export interface DocumentPageEditorHandle {
 type MarkVariant = 'plain' | 'pending' | 'adopted' | 'ai'
 
 const OWN_INDENT = /^[ \t\u3000]/u
+
+function twipToPx(twip: number): number {
+  return (twip * 96) / 1440
+}
+
+function lineHeightCss(page: LayoutPageSpec): string {
+  return page.lineRule === 'exact' ? `${page.line / 20}pt` : String(page.line / 240)
+}
+
+function paintRoleStyle(
+  element: HTMLElement,
+  style: LayoutRoleStyle,
+  page: LayoutPageSpec,
+  applyIndent: boolean,
+) {
+  element.style.fontFamily = style.fontFamily
+  element.style.fontSize = `${style.sizeHalfPoints / 2}pt`
+  element.style.fontWeight = style.bold ? 'bold' : 'normal'
+  element.style.textAlign = style.align === 'both' ? 'justify' : style.align
+  element.style.lineHeight = lineHeightCss(page)
+  if (applyIndent) {
+    element.style.textIndent = `${style.firstLineIndentChars / 100}em`
+  }
+}
+
+function applyPagePadding(root: HTMLElement, page: LayoutPageSpec) {
+  const { top, right, bottom, left } = page.marginTwip
+  root.style.paddingTop = `${twipToPx(top)}px`
+  root.style.paddingRight = `${twipToPx(right)}px`
+  root.style.paddingBottom = `${twipToPx(bottom)}px`
+  root.style.paddingLeft = `${twipToPx(left)}px`
+}
 
 const PageSurface = memo(function PageSurface({
   surfaceRef,
@@ -172,11 +213,58 @@ function paintPage(
   value: string,
   highlightRange: TextHighlightRange | null,
   aiHighlightRanges: TextHighlightRange[],
+  layoutGenre: LayoutGenre | null,
 ) {
+  const genre = layoutGenre ?? 'general'
+  const spec = getLayoutSpec(genre)
+  applyPagePadding(root, spec.page)
+
   const fragment = document.createDocumentFragment()
+  let isFirstContentLine = true
+  let previousOfficialKind: OfficialParagraphKind | undefined
+
   for (const block of parseDocumentPage(value)) {
-    fragment.append(createBlock(block, highlightRange, aiHighlightRanges))
+    const element = createBlock(block, highlightRange, aiHighlightRanges)
+
+    if (block.kind === 'blank') {
+      fragment.append(element)
+      continue
+    }
+
+    if (block.kind === 'table') {
+      for (const row of block.rows) {
+        const line = value.slice(row.lineStart, row.lineEnd)
+        const role = layoutRoleForLine(genre, line, { isFirstContentLine, previousOfficialKind })
+        isFirstContentLine = false
+        if (genre === 'official' && role !== 'table' && role !== 'skip' && role !== 'docKind') {
+          previousOfficialKind = role as OfficialParagraphKind
+        }
+      }
+      const bodyStyle = spec.roles.body
+      if (bodyStyle) {
+        for (const cell of element.querySelectorAll('td')) {
+          paintRoleStyle(cell, bodyStyle, spec.page, false)
+        }
+      }
+      fragment.append(element)
+      continue
+    }
+
+    const role = layoutRoleForLine(genre, block.text, {
+      isFirstContentLine,
+      previousOfficialKind,
+    })
+    const roleStyle = spec.roles[role] ?? spec.roles.body
+    if (roleStyle) {
+      paintRoleStyle(element, roleStyle, spec.page, !OWN_INDENT.test(block.text))
+    }
+    isFirstContentLine = false
+    if (genre === 'official' && role !== 'table' && role !== 'skip' && role !== 'docKind') {
+      previousOfficialKind = role as OfficialParagraphKind
+    }
+    fragment.append(element)
   }
+
   root.replaceChildren(fragment)
 }
 
@@ -239,7 +327,16 @@ function readCaret(root: HTMLElement): PageCaret {
 
 const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEditorProps>(
   function DocumentTextEditor(
-    { value, onChange, highlightRange = null, aiHighlightRanges = [], className = '', placeholder: _placeholder, onSelectionChange },
+    {
+      value,
+      onChange,
+      highlightRange = null,
+      aiHighlightRanges = [],
+      className = '',
+      placeholder: _placeholder,
+      onSelectionChange,
+      layoutGenre = null,
+    },
     ref,
   ) {
     const scrollRef = useRef<HTMLDivElement>(null)
@@ -252,6 +349,7 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
     const aiRef = useRef(aiHighlightRanges)
     const selectionRef = useRef(onSelectionChange)
     const highlightKeyRef = useRef('')
+    const paintedGenreRef = useRef<LayoutGenre | null>(null)
     const caretRef = useRef<PageCaret | null>(null)
     const caretAtComposeRef = useRef<PageCaret>({ start: 0, end: 0 })
     const lastSelectionRef = useRef<{ start: number; end: number; text: string } | null>(null)
@@ -264,15 +362,22 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
     const paintCurrent = (next: string) => {
       const page = pageRef.current
       if (!page) return
-      paintPage(page, next, highlightRef.current, aiRef.current)
+      paintPage(page, next, highlightRef.current, aiRef.current, layoutGenre)
       textRef.current = next
       emittedRef.current = next
       highlightKeyRef.current = highlightKey
+      paintedGenreRef.current = layoutGenre
     }
 
     useLayoutEffect(() => {
       if (composingRef.current) return
-      if (emittedRef.current === value && highlightKeyRef.current === highlightKey) return
+      if (
+        emittedRef.current === value &&
+        highlightKeyRef.current === highlightKey &&
+        paintedGenreRef.current === layoutGenre
+      ) {
+        return
+      }
       const page = pageRef.current
       const highlightOnly = emittedRef.current === value
       if (highlightOnly && page) {
@@ -281,7 +386,7 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
       }
       paintCurrent(value)
       if (highlightOnly && caretRef.current && page) placeCaret(page, caretRef.current.start)
-    }, [value, highlightKey])
+    }, [value, highlightKey, layoutGenre])
 
     const paintCurrentRef = useRef(paintCurrent)
     paintCurrentRef.current = paintCurrent
