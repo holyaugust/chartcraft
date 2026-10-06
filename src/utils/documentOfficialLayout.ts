@@ -1,7 +1,39 @@
 import {
+  getLayoutSpec,
+  type LayoutPageSpec,
+  type LayoutRoleStyle,
+} from '../data/documentLayoutSpecs'
+import {
   classifyOfficialParagraph,
   type OfficialParagraphKind,
 } from './docxFormattedExport'
+
+const OWN_INDENT = /^[ \t\u3000]/u
+
+function lineHeightCss(page: LayoutPageSpec): string {
+  return page.lineRule === 'exact' ? `${page.line / 20}pt` : String(page.line / 240)
+}
+
+function inlineStyleForRole(
+  style: LayoutRoleStyle,
+  page: LayoutPageSpec,
+  applyIndent: boolean,
+): string {
+  const parts = [
+    `font-family:${style.fontFamily}`,
+    `font-size:${style.sizeHalfPoints / 2}pt`,
+    `font-weight:${style.bold ? 'bold' : 'normal'}`,
+    `text-align:${style.align === 'both' ? 'justify' : style.align}`,
+    `line-height:${lineHeightCss(page)}`,
+  ]
+  if (style.color) {
+    parts.push(`color:#${style.color}`)
+  }
+  if (applyIndent && style.firstLineIndentChars) {
+    parts.push(`text-indent:${style.firstLineIndentChars / 100}em`)
+  }
+  return parts.join(';')
+}
 
 function escapeHtml(text: string): string {
   return text
@@ -30,6 +62,7 @@ export function buildOfficialLayoutHtml(content: string): string {
     return '<p class="doc-layout-empty">暂无正文</p>'
   }
 
+  const spec = getLayoutSpec('official')
   const parts: string[] = []
   let previousKind: OfficialParagraphKind | undefined
 
@@ -43,7 +76,11 @@ export function buildOfficialLayoutHtml(content: string): string {
     }
 
     const text = escapeHtml(unwrapMarkerLine(line) || ' ')
-    parts.push(`<p class="doc-layout-p doc-layout-${kind}">${text}</p>`)
+    const roleStyle = spec.roles[kind] ?? spec.roles.body
+    const styleAttr = inlineStyleForRole(roleStyle, spec.page, !OWN_INDENT.test(line))
+    parts.push(
+      `<p class="doc-layout-p doc-layout-${kind}" style="${styleAttr}">${text}</p>`,
+    )
   }
 
   return parts.join('')
