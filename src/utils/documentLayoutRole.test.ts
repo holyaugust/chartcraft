@@ -21,15 +21,29 @@ describe('layoutRoleForLine', () => {
   it('classifies contract title, article, and signature', () => {
     expect(layoutRoleForLine('contract', '采购合同', { isFirstContentLine: true })).toBe('contractTitle')
     expect(layoutRoleForLine('contract', '第一条 标的')).toBe('article')
+    expect(layoutRoleForLine('contract', '第一条')).toBe('article')
     expect(layoutRoleForLine('contract', '1.1 价款')).toBe('article')
     expect(layoutRoleForLine('contract', '甲方：某某公司')).toBe('signature')
+  })
+
+  it('keeps a sentence that mentions 条 as body, not an article', () => {
+    expect(
+      layoutRoleForLine('contract', '第一阶段按第十条执行。', { isFirstContentLine: false }),
+    ).toBe('body')
   })
 
   it('classifies feasibility title and chapter', () => {
     expect(layoutRoleForLine('feasibility', '某某项目可行性研究报告', { isFirstContentLine: true })).toBe('reportTitle')
     expect(layoutRoleForLine('feasibility', '第一章 总论')).toBe('chapter')
+    expect(layoutRoleForLine('feasibility', '第一章')).toBe('chapter')
     expect(layoutRoleForLine('feasibility', '一、编制依据')).toBe('chapter')
     expect(layoutRoleForLine('feasibility', '本章说明范围。')).toBe('body')
+  })
+
+  it('keeps a sentence that mentions 章 as body, not a chapter', () => {
+    expect(
+      layoutRoleForLine('feasibility', '第一次评审见第三章。', { isFirstContentLine: false }),
+    ).toBe('body')
   })
 
   it('does not assign a paragraph role to a table line', () => {

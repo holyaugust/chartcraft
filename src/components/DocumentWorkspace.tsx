@@ -913,9 +913,11 @@ export default function DocumentWorkspace({
         handleExportTxt()
         return
       }
-      void handleExportDocx(action === 'formatted-docx')
+      const unconfirmedWithOriginal = confirmedGenre === null && Boolean(docxBuffer)
+      const preferFormatted = action === 'formatted-docx' && !unconfirmedWithOriginal
+      void handleExportDocx(preferFormatted)
     },
-    [handleExportDocx, handleExportTxt],
+    [handleExportDocx, handleExportTxt, confirmedGenre, docxBuffer],
   )
 
   const selectedPreview = useMemo(() => {

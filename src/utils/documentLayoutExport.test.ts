@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
 import { createFormattedDocxFromPlainText } from './docxFormattedExport'
@@ -58,5 +61,17 @@ describe('document layout export', () => {
     )
     expect(xml).toContain('w:line="560"')
     expect(xml).not.toContain('w:line="444"')
+  })
+
+  it('routes the main Word export through write-back when the genre is unconfirmed', () => {
+    const source = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), '../components/DocumentWorkspace.tsx'),
+      'utf8',
+    )
+    expect(source).toContain('const unconfirmedWithOriginal = confirmedGenre === null && Boolean(docxBuffer)')
+    expect(source).toContain(
+      "const preferFormatted = action === 'formatted-docx' && !unconfirmedWithOriginal",
+    )
+    expect(source).toContain("onClick={() => handleExportMenuAction('original-docx')}")
   })
 })

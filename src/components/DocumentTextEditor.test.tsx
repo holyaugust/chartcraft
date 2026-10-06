@@ -32,6 +32,21 @@ describe('DocumentTextEditor page', () => {
     act(() => root.unmount())
   })
 
+  it('paints role color on an official red header', () => {
+    const { host, root } = renderEditor('【红头：某某集团文件】', { layoutGenre: 'official' })
+    const header = [...host.querySelectorAll('p')].find((p) => p.textContent?.includes('某某集团文件')) as HTMLElement
+    expect(header.style.color.toLowerCase()).toMatch(/^(#ff0000|rgb\(255,\s*0,\s*0\))$/)
+    act(() => root.unmount())
+  })
+
+  it('paints signature org right indent from the layout table', () => {
+    const { host, root } = renderEditor('某某有限公司', { layoutGenre: 'official' })
+    const line = [...host.querySelectorAll('p')].find((p) => p.textContent === '某某有限公司') as HTMLElement
+    const right = line.style.paddingRight || line.style.marginRight
+    expect(right).toBe('4em')
+    act(() => root.unmount())
+  })
+
   it('applies the contract table without indenting a table row', () => {
     const { host, root } = renderEditor('采购合同\n甲方应在十日内付款。\n甲 | 乙', { layoutGenre: 'contract' })
     const title = host.querySelector('p')

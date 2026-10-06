@@ -32,6 +32,15 @@ function inlineStyleForRole(
   if (applyIndent && style.firstLineIndentChars) {
     parts.push(`text-indent:${style.firstLineIndentChars / 100}em`)
   }
+  if (style.rightIndentChars) {
+    parts.push(`padding-right:${style.rightIndentChars / 100}em`)
+  }
+  if (style.spaceBefore != null) {
+    parts.push(`margin-top:${style.spaceBefore / 20}pt`)
+  }
+  if (style.spaceAfter != null) {
+    parts.push(`margin-bottom:${style.spaceAfter / 20}pt`)
+  }
   return parts.join(';')
 }
 

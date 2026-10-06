@@ -60,6 +60,18 @@ function paintRoleStyle(
   if (applyIndent) {
     element.style.textIndent = `${style.firstLineIndentChars / 100}em`
   }
+  if (style.color) {
+    element.style.color = `#${style.color}`
+  }
+  if (style.rightIndentChars) {
+    element.style.paddingRight = `${style.rightIndentChars / 100}em`
+  }
+  if (style.spaceBefore != null) {
+    element.style.marginTop = `${style.spaceBefore / 20}pt`
+  }
+  if (style.spaceAfter != null) {
+    element.style.marginBottom = `${style.spaceAfter / 20}pt`
+  }
 }
 
 function applyPagePadding(root: HTMLElement, page: LayoutPageSpec) {

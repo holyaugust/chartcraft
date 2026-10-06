@@ -6,11 +6,11 @@ import {
 } from './docxFormattedExport'
 import { TABLE_COL_SEP } from './docxTextExtract'
 
-const CONTRACT_ARTICLE_RE = /^第.+条/u
+const CONTRACT_ARTICLE_RE = /^第[0-9一二三四五六七八九十百千零〇]+条/u
 const CONTRACT_DECIMAL_ARTICLE_RE = /^\d+\.\d+/
 const CONTRACT_SIGNATURE_RE =
   /^(甲方|乙方|丙方|签字|盖章|法定代表人|授权代表)([：:]|$)/u
-const FEASIBILITY_CHAPTER_RE = /^第.+章/u
+const FEASIBILITY_CHAPTER_RE = /^第[0-9一二三四五六七八九十百千零〇]+章/u
 
 function isContractArticle(line: string): boolean {
   const trimmed = line.trim()
