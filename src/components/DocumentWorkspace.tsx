@@ -150,6 +150,7 @@ export default function DocumentWorkspace({
   const [issues, setIssues] = useState<DocumentIssue[]>([])
   const [, setReviewMode] = useState<ProofreadMode | null>(null)
   const [proofreadGenreLabel, setProofreadGenreLabel] = useState<string | null>(null)
+  const [proofreadGenreId, setProofreadGenreId] = useState<string | null>(null)
   const [proofreadSetupOpen, setProofreadSetupOpen] = useState(false)
   const [pendingProofreadMode, setPendingProofreadMode] = useState<ProofreadMode>('standard')
   const [contentOrigin, setContentOrigin] = useState<DocumentContentOrigin>('none')
@@ -220,7 +221,10 @@ export default function DocumentWorkspace({
 
   const adoptedIssueIdSet = useMemo(() => new Set(adoptedIssueIds), [adoptedIssueIds])
   const hasContent = content.trim().length > 0
-  const suggestedGenre = useMemo(() => suggestLayoutGenre(null, content), [content])
+  const suggestedGenre = useMemo(
+    () => suggestLayoutGenre(proofreadGenreId, content),
+    [proofreadGenreId, content],
+  )
   const preferSourceSidebar = contentOrigin === 'ai' || contentOrigin === 'word' || !!docxBuffer
   const fallbackSidebarPanel: DocumentSidebarPanel = preferSourceSidebar ? 'source' : 'templates'
   const workflowCompletedThrough = completedThroughStep({
@@ -463,6 +467,7 @@ export default function DocumentWorkspace({
       setIssues(dsIssues)
       setReviewMode(mode)
       setProofreadGenreLabel(promptContext.genreLabel)
+      setProofreadGenreId(promptContext.genreId)
       resetProofreadSession()
       setSidebarPanel('proofread')
       setProofreadCompleted(true)
@@ -500,6 +505,7 @@ export default function DocumentWorkspace({
       setIssues([])
       setReviewMode(null)
       setProofreadGenreLabel(null)
+      setProofreadGenreId(null)
       setSidebarPanel(preferSourceSidebar ? 'source' : 'templates')
     } finally {
       setBusy(false)
@@ -539,6 +545,7 @@ export default function DocumentWorkspace({
       setIssues([])
       setReviewMode(null)
       setProofreadGenreLabel(null)
+      setProofreadGenreId(null)
       setSidebarPanel('source')
       setActiveIssueId(null)
       setLocateHint(null)
@@ -588,6 +595,7 @@ export default function DocumentWorkspace({
       setIssues([])
       setReviewMode(null)
       setProofreadGenreLabel(null)
+      setProofreadGenreId(null)
       setSidebarPanel('templates')
       setActiveIssueId(null)
       setLocateHint(null)
@@ -636,6 +644,7 @@ export default function DocumentWorkspace({
       setIssues([])
       setReviewMode(null)
       setProofreadGenreLabel(null)
+      setProofreadGenreId(null)
       setSidebarPanel('source')
       setActiveIssueId(null)
       setLocateHint(null)
@@ -1012,6 +1021,7 @@ export default function DocumentWorkspace({
         setIssues([])
         setReviewMode(null)
         setProofreadGenreLabel(null)
+        setProofreadGenreId(null)
         setSidebarPanel(preferSourceSidebar ? 'source' : 'templates')
         setProofreadCompleted(false)
         setAdoptedIssueIds([])
