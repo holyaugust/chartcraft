@@ -184,8 +184,10 @@ export function scrollTextareaToRange(
 
 /** 在纸张滚动容器内把标记滚到可视区域中间。不用 scrollIntoView，以免带动窗口。 */
 export function scrollPageToRange(container: HTMLElement, marker: HTMLElement): void {
-  const markerTop = marker.offsetTop
-  const markerHeight = marker.offsetHeight
+  const containerRect = container.getBoundingClientRect()
+  const markerRect = marker.getBoundingClientRect()
+  const markerTop = markerRect.top - containerRect.top + container.scrollTop
+  const markerHeight = markerRect.height
   const visibleHeight = container.clientHeight
   const maxScroll = Math.max(0, container.scrollHeight - visibleHeight)
   const centeredTop = markerTop - (visibleHeight - markerHeight) / 2
