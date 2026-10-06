@@ -43,6 +43,9 @@ describe('getLayoutSpec', () => {
     expect(spec.roles.meta.spaceBefore).toBe(120)
     expect(spec.roles.enterpriseBanner.spaceBefore).toBe(120)
     expect(spec.roles.metaLabel.spaceBefore).toBe(120)
+    expect(spec.roles.redHeader.color).toBe('FF0000')
+    expect(spec.roles.body.color).toBeUndefined()
+    expect(spec.roles.title.color).toBeUndefined()
   })
 
   it('defines contract, feasibility, and general pages from the spec', () => {

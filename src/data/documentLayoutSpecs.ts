@@ -23,6 +23,7 @@ export interface LayoutRoleStyle {
   rightIndentChars?: number
   spaceBefore?: number
   spaceAfter?: number
+  color?: string
 }
 
 export interface LayoutPageSpec {
@@ -88,7 +89,7 @@ function roleStyle(
   bold: boolean,
   align: LayoutRoleStyle['align'],
   firstLineIndentChars: number,
-  extras?: Pick<LayoutRoleStyle, 'rightIndentChars' | 'spaceBefore' | 'spaceAfter'>,
+  extras?: Pick<LayoutRoleStyle, 'rightIndentChars' | 'spaceBefore' | 'spaceAfter' | 'color'>,
 ): LayoutRoleStyle {
   return {
     fontEastAsia,
@@ -112,7 +113,10 @@ function officialRoles(): Readonly<Record<string, LayoutRoleStyle>> {
   return {
     skip: bodyBase,
     docKind: bodyBase,
-    redHeader: roleStyle('小标宋', GBT9704_SIZE_TITLE, true, 'center', 0, { spaceAfter: 120 }),
+    redHeader: roleStyle('小标宋', GBT9704_SIZE_TITLE, true, 'center', 0, {
+      spaceAfter: 120,
+      color: 'FF0000',
+    }),
     docNumber: roleStyle('仿宋_GB2312', GBT9704_SIZE_BODY, false, 'center', 0, {
       spaceBefore: 120,
       spaceAfter: 160,

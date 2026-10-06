@@ -39,6 +39,13 @@ describe('document layout export', () => {
     expect(xml).toContain('黑体')
   })
 
+  it('keeps the official redHeader run color', async () => {
+    const xml = await documentXml(
+      await createFormattedDocxFromPlainText('【红头：某某集团文件】', 'official'),
+    )
+    expect(xml).toContain('w:color w:val="FF0000"')
+  })
+
   it('writes back into the original document when the genre is unconfirmed', async () => {
     const original = await createFormattedDocxFromPlainText('旧公文', 'official')
     const xml = await documentXml(

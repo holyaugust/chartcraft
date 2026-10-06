@@ -316,6 +316,7 @@ function styleFromRole(kind: ParagraphKind, role: LayoutRoleStyle): ParagraphSty
     rightIndentChars: role.rightIndentChars,
     spaceBefore: role.spaceBefore,
     spaceAfter: role.spaceAfter,
+    color: role.color,
   }
 }
 
