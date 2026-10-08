@@ -10,6 +10,21 @@ import {
 } from '../utils/documentPageBlocks'
 import { classifyOfficialLines, type OfficialParagraphKind } from '../utils/docxFormattedExport'
 
+export interface DocumentEditorSelectionRect {
+  top: number
+  left: number
+  bottom: number
+  width: number
+  height: number
+}
+
+export interface DocumentEditorSelection {
+  start: number
+  end: number
+  text: string
+  rect: DocumentEditorSelectionRect | null
+}
+
 interface DocumentTextEditorProps {
   value: string
   onChange: (value: string) => void
@@ -18,11 +33,12 @@ interface DocumentTextEditorProps {
   className?: string
   placeholder?: string
   layoutMode?: 'manuscript' | 'official'
-  onSelectionChange?: (selection: { start: number; end: number; text: string } | null) => void
+  onSelectionChange?: (selection: DocumentEditorSelection | null) => void
 }
 
 export interface DocumentPageEditorHandle {
   getPlainSelection(): { start: number; end: number; text: string } | null
+  selectRange(start: number, end: number): void
   scrollToRange(start: number, end: number): void
   scrollToTop(): void
 }
@@ -226,30 +242,56 @@ function blockAt(root: HTMLElement, offset: number): HTMLElement | null {
   return best
 }
 
-function placeCaret(root: HTMLElement, offset: number) {
+function setRangeBoundary(
+  range: Range,
+  root: HTMLElement,
+  offset: number,
+  edge: 'start' | 'end',
+) {
   const target = blockAt(root, offset)
-  const selection = document.getSelection()
-  if (!target || !selection) return
+  if (!target) return false
   const local = offset - Number(target.dataset.plainStart)
-  const range = document.createRange()
   const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT)
   let remaining = local
   let node = walker.nextNode()
   if (!node) {
-    range.setStart(target, 0)
-  } else {
-    while (node) {
-      const length = node.textContent?.length ?? 0
-      const next = walker.nextNode()
-      if (remaining <= length || !next) {
-        range.setStart(node, Math.min(remaining, length))
-        break
-      }
-      remaining -= length
-      node = next
-    }
+    if (edge === 'start') range.setStart(target, 0)
+    else range.setEnd(target, 0)
+    return true
   }
+  while (node) {
+    const length = node.textContent?.length ?? 0
+    const next = walker.nextNode()
+    if (remaining <= length || !next) {
+      const point = Math.min(remaining, length)
+      if (edge === 'start') range.setStart(node, point)
+      else range.setEnd(node, point)
+      return true
+    }
+    remaining -= length
+    node = next
+  }
+  return false
+}
+
+function placeCaret(root: HTMLElement, offset: number) {
+  const selection = document.getSelection()
+  if (!selection) return
+  const range = document.createRange()
+  if (!setRangeBoundary(range, root, offset, 'start')) return
   range.collapse(true)
+  selection.removeAllRanges()
+  selection.addRange(range)
+}
+
+function placeSelectionRange(root: HTMLElement, start: number, end: number) {
+  const selection = document.getSelection()
+  if (!selection) return
+  const from = Math.min(start, end)
+  const to = Math.max(start, end)
+  const range = document.createRange()
+  if (!setRangeBoundary(range, root, from, 'start')) return
+  if (!setRangeBoundary(range, root, to, 'end')) return
   selection.removeAllRanges()
   selection.addRange(range)
 }
@@ -265,6 +307,22 @@ function readCaret(root: HTMLElement): PageCaret {
   const end = plainOffsetFromNode(root, range.endContainer, range.endOffset)
   if (start == null || end == null) return { start: 0, end: 0 }
   return { start, end }
+}
+
+function readSelectionRect(root: HTMLElement): DocumentEditorSelectionRect | null {
+  const selection = document.getSelection()
+  if (!selection || selection.rangeCount === 0) return null
+  const range = selection.getRangeAt(0)
+  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return null
+  const rect = range.getBoundingClientRect()
+  if (!rect.width && !rect.height) return null
+  return {
+    top: rect.top,
+    left: rect.left,
+    bottom: rect.bottom,
+    width: rect.width,
+    height: rect.height,
+  }
 }
 
 const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEditorProps>(
@@ -440,7 +498,7 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
           text: textRef.current.slice(caret.start, caret.end),
         }
         lastSelectionRef.current = next
-        report(next)
+        report({ ...next, rect: readSelectionRect(page) })
       }
 
       page.addEventListener('keydown', onKeyDown)
@@ -476,6 +534,26 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
         const next = { start: from, end: to, text: textRef.current.slice(from, to) }
         lastSelectionRef.current = next
         return next
+      },
+      selectRange(start: number, end: number) {
+        const root = pageRef.current
+        if (!root) return
+        const from = Math.max(0, Math.min(start, end, textRef.current.length))
+        const to = Math.max(from, Math.min(Math.max(start, end), textRef.current.length))
+        placeSelectionRange(root, from, to)
+        const next = {
+          start: from,
+          end: to,
+          text: textRef.current.slice(from, to),
+          rect: readSelectionRect(root),
+        }
+        if (to > from) {
+          lastSelectionRef.current = { start: from, end: to, text: next.text }
+          selectionRef.current?.(next)
+        } else {
+          lastSelectionRef.current = null
+          selectionRef.current?.(null)
+        }
       },
       scrollToRange(start: number) {
         const root = pageRef.current

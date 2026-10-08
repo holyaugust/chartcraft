@@ -11,6 +11,7 @@ import {
   Loader2,
   RefreshCw,
   Sparkles,
+  Undo2,
   X,
 } from 'lucide-react'
 import {
@@ -19,11 +20,13 @@ import {
   type DocumentStructureAnalysisResult,
   type StructureSuggestionPatch,
 } from '../utils/documentStructureAnalysis'
+import type { OutlineDirectoryEntry } from '../utils/documentOutlineSections'
 
 type StructureViewTab = 'outline' | 'logic' | 'gaps' | 'suggestions'
 
 interface DocumentStructurePanelProps {
   report: DocumentStructureAnalysisResult | null
+  outlineDirectory?: OutlineDirectoryEntry[]
   busy?: boolean
   error?: string | null
   optimizeBusy?: boolean
@@ -36,41 +39,86 @@ interface DocumentStructurePanelProps {
   onRefresh: () => void
   onDismiss: () => void
   onLocateItem: (item: string) => void
+  onRefineSection?: (item: string) => void
   onOptimizeSuggestion: (suggestion: string) => void
   onConfirmPatch: () => void
   onCancelPatch: () => void
+  canUndoLastWrite?: boolean
+  onUndoLastWrite?: () => void
   collapsed?: boolean
   onToggleCollapsed?: () => void
 }
 
 function OutlineTree({
   items,
+  directory,
   activeItem,
   onLocate,
+  onRefineSection,
+  refineDisabled = false,
 }: {
   items: string[]
+  directory?: OutlineDirectoryEntry[]
   activeItem?: string | null
   onLocate: (item: string) => void
+  onRefineSection?: (item: string) => void
+  refineDisabled?: boolean
 }) {
-  if (items.length === 0) {
-    return <p className="document-structure-muted">暂无识别到的章节大纲</p>
+  const rows =
+    directory && directory.length > 0
+      ? directory
+      : items.map((title) => ({
+          title,
+          found: false,
+          charCount: 0,
+          short: false,
+          section: null as OutlineDirectoryEntry['section'],
+        }))
+
+  if (rows.length === 0) {
+    return <p className="document-structure-muted">正文未识别到标题，请使用「一、」「（一）」等标题格式</p>
   }
+
   return (
     <ol className="document-structure-outline">
-      {items.map((item, index) => {
-        const level = detectOutlineLevel(item)
+      {rows.map((entry, index) => {
+        const item = entry.title
+        const level = entry.level ?? detectOutlineLevel(item)
         const active = activeItem === item
         return (
           <li key={`${index}-${item.slice(0, 32)}`} data-level={level} className={`is-level-${level}`}>
-            <button
-              type="button"
-              className={`document-structure-locate-btn${active ? ' is-active' : ''}`}
-              title="点击定位到正文对应位置"
-              onClick={() => onLocate(item)}
-            >
-              <span className="document-structure-outline-dot" aria-hidden="true" />
-              <span className="document-structure-outline-text">{item.trim()}</span>
-            </button>
+            <div className={`document-structure-outline-row${active ? ' is-active' : ''}`}>
+              <button
+                type="button"
+                className={`document-structure-locate-btn${active ? ' is-active' : ''}`}
+                title="点击定位到该节正文"
+                onClick={() => onLocate(item)}
+              >
+                <span className="document-structure-outline-dot" aria-hidden="true" />
+                <span className="document-structure-outline-text">{item.trim()}</span>
+              </button>
+              <div className="document-structure-outline-meta">
+                {entry.found ? (
+                  <span className={entry.short ? 'is-short' : undefined}>
+                    约{entry.charCount}字
+                    {entry.short ? ' · 偏短' : ''}
+                  </span>
+                ) : (
+                  <span className="is-missing">未找到</span>
+                )}
+                {onRefineSection ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost document-structure-outline-refine"
+                    disabled={refineDisabled || !entry.found || !entry.section}
+                    title="选中本节正文并按指令改写"
+                    onClick={() => onRefineSection(item)}
+                  >
+                    改本节
+                  </button>
+                ) : null}
+              </div>
+            </div>
           </li>
         )
       })}
@@ -150,6 +198,7 @@ function GapList({
 
 export default function DocumentStructurePanel({
   report,
+  outlineDirectory,
   busy = false,
   error = null,
   optimizeBusy = false,
@@ -162,9 +211,12 @@ export default function DocumentStructurePanel({
   onRefresh,
   onDismiss,
   onLocateItem,
+  onRefineSection,
   onOptimizeSuggestion,
   onConfirmPatch,
   onCancelPatch,
+  canUndoLastWrite = false,
+  onUndoLastWrite,
   collapsed = false,
   onToggleCollapsed,
 }: DocumentStructurePanelProps) {
@@ -173,8 +225,9 @@ export default function DocumentStructurePanel({
   const [tab, setTab] = useState<StructureViewTab>('outline')
   const [summaryOpen, setSummaryOpen] = useState(true)
 
+  const tocCount = outlineDirectory?.length ?? 0
   const tabs: Array<{ id: StructureViewTab; label: string; count: number }> = [
-    { id: 'outline', label: '大纲', count: report?.outline.length ?? 0 },
+    { id: 'outline', label: '大纲', count: tocCount },
     { id: 'logic', label: '逻辑', count: report?.logicFlow.length ?? 0 },
     { id: 'gaps', label: '缺口', count: report?.gaps.length ?? 0 },
     { id: 'suggestions', label: '建议', count: suggestions.length },
@@ -210,8 +263,15 @@ export default function DocumentStructurePanel({
               开始梳理
             </button>
           ) : null}
-          {report ? (
-            <OutlineTree items={report.outline} activeItem={activeLocateItem} onLocate={onLocateItem} />
+          {report || (outlineDirectory && outlineDirectory.length > 0) ? (
+            <OutlineTree
+              items={outlineDirectory?.map((entry) => entry.title) ?? report?.outline ?? []}
+              directory={outlineDirectory}
+              activeItem={activeLocateItem}
+              onLocate={onLocateItem}
+              onRefineSection={onRefineSection}
+              refineDisabled={locked}
+            />
           ) : null}
         </div>
       </aside>
@@ -226,7 +286,7 @@ export default function DocumentStructurePanel({
             <ListTree size={15} />
             结构梳理
           </h3>
-          <p>点击条目可跳转正文；建议可逐条优化。已应用的建议再点一次，可定位到左侧写入处</p>
+          <p>大纲按正文标题生成目录，点击跳转；建议可逐条优化，已应用的再点可定位写入处</p>
         </div>
         <div className="document-structure-panel-actions">
           {onToggleCollapsed ? (
@@ -300,6 +360,21 @@ export default function DocumentStructurePanel({
             </div>
           ) : null}
 
+          {canUndoLastWrite && onUndoLastWrite ? (
+            <div className="document-structure-undo-banner">
+              <p>上次结构写入可撤销，恢复应用前的正文与「已应用」状态。</p>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                disabled={locked}
+                onClick={onUndoLastWrite}
+              >
+                <Undo2 size={12} />
+                撤销上次结构写入
+              </button>
+            </div>
+          ) : null}
+
           <section className="document-structure-summary">
             <button
               type="button"
@@ -337,13 +412,16 @@ export default function DocumentStructurePanel({
               <>
                 <div className="document-structure-tab-title">
                   <ListTree size={14} />
-                  结构大纲
-                  <span className="document-structure-tab-hint">点击跳转</span>
+                  正文目录
+                  <span className="document-structure-tab-hint">按正文标题生成 · 点击跳转 · 改本节</span>
                 </div>
                 <OutlineTree
-                  items={report.outline}
+                  items={outlineDirectory?.map((entry) => entry.title) ?? []}
+                  directory={outlineDirectory}
                   activeItem={activeLocateItem}
                   onLocate={onLocateItem}
+                  onRefineSection={onRefineSection}
+                  refineDisabled={locked}
                 />
               </>
             ) : null}

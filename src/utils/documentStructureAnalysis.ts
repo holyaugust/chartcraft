@@ -1,4 +1,5 @@
 import { getDeepSeekProofreadModel, requestDeepSeekPlainText } from './deepseek'
+import { extractDocumentHeadings } from './documentHeadings'
 
 export interface DocumentStructureAnalysisResult {
   summary: string
@@ -26,26 +27,6 @@ function extractSection(markdown: string, title: string): string[] {
     .split('\n')
     .map((line) => line.replace(/^[-*·]\s*/, '').trim())
     .filter(Boolean)
-}
-
-function extractHeadingsLocally(text: string, limit = 40): string[] {
-  const lines = text.replace(/\r\n/g, '\n').split('\n')
-  const headings: string[] = []
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    if (
-      /^第[一二三四五六七八九十\d]+[章节部分篇]/u.test(trimmed) ||
-      /^[一二三四五六七八九十]+[、．.]/u.test(trimmed) ||
-      /^（[一二三四五六七八九十]）/u.test(trimmed) ||
-      /^\d+[、．.]\s*\S/u.test(trimmed) ||
-      /^#{1,3}\s+\S/u.test(trimmed)
-    ) {
-      headings.push(trimmed.replace(/^#+\s*/, ''))
-      if (headings.length >= limit) break
-    }
-  }
-  return headings
 }
 
 function clipDocument(text: string, maxChars = 14000): string {
@@ -87,7 +68,7 @@ export async function analyzeDocumentStructure(
   }
 
   const genreLabel = options.genreLabel?.trim() || '职场文书'
-  const localHeadings = extractHeadingsLocally(text)
+  const localHeadings = extractDocumentHeadings(text, 40).map((item) => item.title)
   const clipped = clipDocument(text)
 
   const systemPrompt = `你是中文${genreLabel}结构与论证梳理专家。
@@ -247,8 +228,21 @@ export interface StoredStructureAnalysis {
   contentFingerprint: string
   report: DocumentStructureAnalysisResult
   appliedSuggestions: string[]
+  /** 建议文案 → 写入正文后的片段，用于再次定位 */
+  appliedSnippets: Record<string, string>
   analyzedAt: number
   genreLabel?: string | null
+}
+
+function normalizeAppliedSnippets(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object') return {}
+  const next: Record<string, string> = {}
+  for (const [key, snippet] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof key === 'string' && typeof snippet === 'string' && snippet.trim()) {
+      next[key] = snippet
+    }
+  }
+  return next
 }
 
 /** 正文指纹：用于判断缓存是否仍对应当前文档 */
@@ -287,6 +281,7 @@ export function loadStoredStructureAnalysis(): StoredStructureAnalysis | null {
       appliedSuggestions: Array.isArray(parsed.appliedSuggestions)
         ? parsed.appliedSuggestions.filter((item): item is string => typeof item === 'string')
         : [],
+      appliedSnippets: normalizeAppliedSnippets(parsed.appliedSnippets),
       analyzedAt: parsed.analyzedAt,
       genreLabel: parsed.genreLabel ?? null,
     }

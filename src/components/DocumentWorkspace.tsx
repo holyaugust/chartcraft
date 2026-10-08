@@ -14,7 +14,17 @@ import DocumentIssuePanel from './DocumentIssuePanel'
 import DocumentStructurePanel from './DocumentStructurePanel'
 import DocumentFormatPanel from './DocumentFormatPanel'
 import DocumentOfficialLayoutPreview from './DocumentOfficialLayoutPreview'
-import DocumentTextEditor, { type DocumentPageEditorHandle } from './DocumentTextEditor'
+import DocumentTextEditor, {
+  type DocumentEditorSelection,
+  type DocumentPageEditorHandle,
+} from './DocumentTextEditor'
+import DocumentSelectionRefinePopover from './DocumentSelectionRefinePopover'
+import DocumentSelectionRefineHint from './DocumentSelectionRefineHint'
+import {
+  loadSelectionRefineHintDismissed,
+  saveSelectionRefineHintDismissed,
+  shouldShowSelectionRefineHint,
+} from '../utils/documentSelectionRefineHint'
 import DocumentTemplateSidebar from './DocumentTemplateSidebar'
 import DocumentWordSourcePanel from './DocumentWordSourcePanel'
 import DocumentTemplatePickerModal from './DocumentTemplatePickerModal'
@@ -66,6 +76,7 @@ import {
   type StructureSuggestionPatch,
 } from '../utils/documentStructureAnalysis'
 import { shouldAutoRerunStructureAfterPrepare } from '../utils/documentStructureAutoRefresh'
+import { buildDocumentTocDirectory } from '../utils/documentOutlineSections'
 import {
   analyzeDocumentFormat,
   applyDocumentFormat,
@@ -82,6 +93,8 @@ const DOCUMENT_STORAGE_KEY = 'chartcraft-document-draft'
 interface DocumentUndoSnapshot {
   content: string
   adoptedIssueIds: string[]
+  structureAppliedSuggestions?: string[]
+  structureAppliedSnippets?: Record<string, string>
 }
 
 type DocumentViewMode = 'preview' | 'text' | 'official'
@@ -108,16 +121,24 @@ function saveDocumentDraft(content: string) {
 function loadInitialStructureState(): {
   report: DocumentStructureAnalysisResult | null
   appliedSuggestions: string[]
+  appliedSnippets: Record<string, string>
   analyzedAt: number | null
   fingerprint: string | null
 } {
   const stored = loadStoredStructureAnalysis()
   if (!stored) {
-    return { report: null, appliedSuggestions: [], analyzedAt: null, fingerprint: null }
+    return {
+      report: null,
+      appliedSuggestions: [],
+      appliedSnippets: {},
+      analyzedAt: null,
+      fingerprint: null,
+    }
   }
   return {
     report: stored.report,
     appliedSuggestions: stored.appliedSuggestions,
+    appliedSnippets: stored.appliedSnippets ?? {},
     analyzedAt: stored.analyzedAt,
     fingerprint: stored.contentFingerprint,
   }
@@ -180,7 +201,10 @@ export default function DocumentWorkspace({
     initialStructure.appliedSuggestions,
   )
   /** 已应用建议 → 写入正文的片段，便于再次点击定位 */
-  const [structureAppliedSnippets, setStructureAppliedSnippets] = useState<Record<string, string>>({})
+  const [structureAppliedSnippets, setStructureAppliedSnippets] = useState<Record<string, string>>(
+    () => initialStructure.appliedSnippets,
+  )
+  const [canUndoStructureWrite, setCanUndoStructureWrite] = useState(false)
   const [structureAnalyzedAt, setStructureAnalyzedAt] = useState<number | null>(
     initialStructure.analyzedAt,
   )
@@ -194,11 +218,10 @@ export default function DocumentWorkspace({
   const [formatBusy, setFormatBusy] = useState(false)
   const [formatConfirmOpen, setFormatConfirmOpen] = useState(false)
   const [formatCompleted, setFormatCompleted] = useState(false)
-  const [editorSelection, setEditorSelection] = useState<{
-    start: number
-    end: number
-    text: string
-  } | null>(null)
+  const [editorSelection, setEditorSelection] = useState<DocumentEditorSelection | null>(null)
+  const [selectionRefineHintDismissed, setSelectionRefineHintDismissed] = useState(
+    loadSelectionRefineHintDismissed,
+  )
   const fileInputRef = useRef<HTMLInputElement>(null)
   const exportMenuRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<DocumentPageEditorHandle>(null)
@@ -248,21 +271,31 @@ export default function DocumentWorkspace({
     undoPastRef.current.push({
       content,
       adoptedIssueIds: [...adoptedIssueIds],
+      structureAppliedSuggestions: [...structureAppliedSuggestions],
+      structureAppliedSnippets: { ...structureAppliedSnippets },
     })
     if (undoPastRef.current.length > 80) {
       undoPastRef.current.shift()
     }
-  }, [content, adoptedIssueIds])
+    setCanUndoStructureWrite(false)
+  }, [content, adoptedIssueIds, structureAppliedSuggestions, structureAppliedSnippets])
 
   const restoreUndoSnapshot = useCallback((snapshot: DocumentUndoSnapshot) => {
     setContent(snapshot.content)
     setAdoptedIssueIds(snapshot.adoptedIssueIds)
+    if (snapshot.structureAppliedSuggestions) {
+      setStructureAppliedSuggestions(snapshot.structureAppliedSuggestions)
+    }
+    if (snapshot.structureAppliedSnippets) {
+      setStructureAppliedSnippets(snapshot.structureAppliedSnippets)
+    }
     if (docxBuffer && snapshot.content !== importedTextRef.current) {
       setTextDriftedFromDocx(true)
     }
     setAiHighlightRanges([])
     setHighlightRange(null)
     setLocateHint(null)
+    setCanUndoStructureWrite(false)
   }, [docxBuffer])
 
   const handleUndo = useCallback(() => {
@@ -277,6 +310,14 @@ export default function DocumentWorkspace({
     setStatusMessage('已撤销上一步')
     return true
   }, [restoreUndoSnapshot])
+
+  const handleUndoStructureWrite = useCallback(() => {
+    if (!canUndoStructureWrite) return
+    const ok = handleUndo()
+    if (ok) {
+      setStatusMessage('已撤销上次结构写入')
+    }
+  }, [canUndoStructureWrite, handleUndo])
 
   useEffect(() => {
     if (!hasContent) {
@@ -906,7 +947,21 @@ export default function DocumentWorkspace({
     return compact.length > 160 ? `${compact.slice(0, 160)}…` : compact
   }, [editorSelection])
 
-  const handleLocalRefine = useCallback(async () => {
+  const showSelectionRefineHint = shouldShowSelectionRefineHint({
+    dismissed: selectionRefineHintDismissed,
+    hasContent,
+    viewMode,
+    workflowStep,
+    hasSelection: Boolean(selectedPreview),
+  })
+
+  useEffect(() => {
+    if (!selectedPreview || selectionRefineHintDismissed) return
+    saveSelectionRefineHintDismissed()
+    setSelectionRefineHintDismissed(true)
+  }, [selectedPreview, selectionRefineHintDismissed])
+
+  const handleLocalRefine = useCallback(async (options?: { stayOnStep?: boolean }) => {
     if (!content.trim()) {
       setRefineError('正文为空，无法优化')
       return
@@ -960,7 +1015,9 @@ export default function DocumentWorkspace({
       setLocateHint(null)
       setRefineAnswer(null)
       setViewMode('text')
-      setWorkflowStep('structure')
+      if (!options?.stayOnStep) {
+        setWorkflowStep('structure')
+      }
       if (docxBuffer) setTextDriftedFromDocx(true)
       setStatusIsError(false)
       setStatusMessage(
@@ -1058,6 +1115,7 @@ export default function DocumentWorkspace({
         contentFingerprint: fingerprint,
         report,
         appliedSuggestions: [],
+        appliedSnippets: {},
         analyzedAt,
         genreLabel: proofreadGenreLabel,
       })
@@ -1077,6 +1135,11 @@ export default function DocumentWorkspace({
     [structureAppliedSuggestions],
   )
 
+  const outlineDirectory = useMemo(() => {
+    if (!content.trim()) return []
+    return buildDocumentTocDirectory(content)
+  }, [content])
+
   const structureStale = useMemo(() => {
     if (!structureReport || !structureFingerprint) return false
     const current = fingerprintDocumentContent(content)
@@ -1092,6 +1155,7 @@ export default function DocumentWorkspace({
       contentFingerprint: structureFingerprint,
       report: structureReport,
       appliedSuggestions: structureAppliedSuggestions,
+      appliedSnippets: structureAppliedSnippets,
       analyzedAt: structureAnalyzedAt,
       genreLabel: proofreadGenreLabel,
     })
@@ -1100,6 +1164,7 @@ export default function DocumentWorkspace({
     structureFingerprint,
     structureAnalyzedAt,
     structureAppliedSuggestions,
+    structureAppliedSnippets,
     proofreadGenreLabel,
     content,
   ])
@@ -1230,8 +1295,9 @@ export default function DocumentWorkspace({
         : [...prev, structurePendingPatch.suggestion],
     )
     setStructurePendingPatch(null)
+    setCanUndoStructureWrite(true)
     setStatusIsError(false)
-    setStatusMessage('已应用该条结构优化，左侧已高亮修改处；Ctrl+Z 可撤销')
+    setStatusMessage('已应用该条结构优化，左侧已高亮修改处；可点侧栏「撤销上次结构写入」或 Ctrl+Z')
   }, [structurePendingPatch, content, captureUndoSnapshot, docxBuffer])
 
   const handleCancelStructurePatch = useCallback(() => {
@@ -1459,6 +1525,31 @@ export default function DocumentWorkspace({
           }
         }
 
+        const tocSection = outlineDirectory.find((entry) => entry.title === item)?.section ?? null
+        if (tocSection) {
+          const visual = {
+            start: tocSection.headingStart,
+            end: Math.max(
+              tocSection.headingEnd,
+              Math.min(tocSection.sectionEnd, tocSection.bodyStart + 1),
+            ),
+          }
+          const highlightEnd =
+            tocSection.bodyStart < tocSection.sectionEnd
+              ? tocSection.sectionEnd
+              : tocSection.headingEnd
+          setHighlightRange({ start: tocSection.headingStart, end: highlightEnd })
+          setAiHighlightRanges([])
+          editor.scrollToRange(visual.start, visual.end)
+          setLocateHint(`已定位本节：${item.replace(/\s+/g, ' ').trim().slice(0, 48)}`)
+          setStatusIsError(false)
+          window.requestAnimationFrame(() => {
+            if (token !== locateTokenRef.current) return
+            editor.scrollToRange(visual.start, visual.end)
+          })
+          return
+        }
+
         const range = locateStructureItemInContent(content, item)
         if (token !== locateTokenRef.current) return
 
@@ -1488,7 +1579,51 @@ export default function DocumentWorkspace({
 
       window.requestAnimationFrame(() => runLocate())
     },
-    [content, structureAppliedSnippets],
+    [content, structureAppliedSnippets, outlineDirectory],
+  )
+
+  const handleRefineOutlineSection = useCallback(
+    (item: string) => {
+      const section = outlineDirectory.find((entry) => entry.title === item)?.section ?? null
+      if (!section || section.bodyStart >= section.sectionEnd) {
+        setStatusIsError(true)
+        setStatusMessage('未找到该节正文，无法改写；可先点标题定位')
+        return
+      }
+
+      const bodyStart = section.bodyStart
+      let bodyEnd = section.sectionEnd
+      while (bodyEnd > bodyStart && /\s/.test(content[bodyEnd - 1] ?? '')) {
+        bodyEnd -= 1
+      }
+      if (bodyEnd <= bodyStart) {
+        setStatusIsError(true)
+        setStatusMessage('该节几乎没有正文，可先手写几句再改写')
+        return
+      }
+
+      setStructureActiveItem(item)
+      setViewMode('text')
+      setWorkflowStep('structure')
+      setHighlightRange({ start: bodyStart, end: bodyEnd })
+      setAiHighlightRanges([])
+      setLocateHint('已选中本节正文，可在浮层输入指令后应用')
+      setStatusIsError(false)
+      setStatusMessage(null)
+      setRefineError(null)
+
+      const selectBody = (attempt = 0) => {
+        const editor = editorRef.current
+        if (!editor) {
+          if (attempt < 24) window.requestAnimationFrame(() => selectBody(attempt + 1))
+          return
+        }
+        editor.selectRange(bodyStart, bodyEnd)
+        editor.scrollToRange(bodyStart, bodyEnd)
+      }
+      window.requestAnimationFrame(() => selectBody())
+    },
+    [content, outlineDirectory],
   )
 
   return (
@@ -1642,6 +1777,10 @@ export default function DocumentWorkspace({
                 ) : null}
 
                 <div className={`document-single-view${workflowStep === 'prepare' ? ' prepare-view' : ''}`}>
+                  <DocumentSelectionRefineHint
+                    open={showSelectionRefineHint}
+                    onDismiss={() => setSelectionRefineHintDismissed(true)}
+                  />
                   {viewMode === 'preview' && previewTextMismatch ? (
                     <div className="document-preview-stale-hint document-preview-mismatch-hint" role="status">
                       版式预览可能存在漏字，请切换到「文本编辑」查看完整内容。
@@ -1791,6 +1930,7 @@ export default function DocumentWorkspace({
               ) : workflowStep === 'structure' ? (
                 <DocumentStructurePanel
                   report={structureReport}
+                  outlineDirectory={outlineDirectory}
                   busy={structureBusy}
                   error={structureError}
                   optimizeBusy={structureOptimizeBusy}
@@ -1803,9 +1943,12 @@ export default function DocumentWorkspace({
                   onRefresh={() => void runStructureAnalysis()}
                   onDismiss={dismissStepSidebar}
                   onLocateItem={handleLocateStructureItem}
+                  onRefineSection={handleRefineOutlineSection}
                   onOptimizeSuggestion={(suggestion) => void handleOptimizeStructureSuggestion(suggestion)}
                   onConfirmPatch={handleConfirmStructurePatch}
                   onCancelPatch={handleCancelStructurePatch}
+                  canUndoLastWrite={canUndoStructureWrite}
+                  onUndoLastWrite={handleUndoStructureWrite}
                   collapsed={structureRail}
                   onToggleCollapsed={() => setStructureExpanded((expanded) => !expanded)}
                 />
@@ -1891,6 +2034,30 @@ export default function DocumentWorkspace({
           ) : null}
         </div>
       </section>
+
+      {selectedPreview && viewMode === 'text' && hasContent && workflowStep !== 'prepare' ? (
+        <DocumentSelectionRefinePopover
+          open
+          selectedPreview={selectedPreview}
+          prompt={refinePrompt}
+          onPromptChange={(value) => {
+            setRefinePrompt(value)
+            setRefineAnswer(null)
+          }}
+          busy={refineBusy}
+          error={refineError}
+          answer={refineAnswer}
+          disabled={!hasContent || busy}
+          onSubmit={() => void handleLocalRefine({ stayOnStep: true })}
+          onDismiss={() => setEditorSelection(null)}
+          onApplyAnswerAsRewrite={handleApplyAnswerAsRewrite}
+          anchor={
+            editorSelection?.rect && (editorSelection.rect.width || editorSelection.rect.height)
+              ? editorSelection.rect
+              : { top: 120, left: 72, bottom: 168, width: 280, height: 48 }
+          }
+        />
+      ) : null}
 
       <DocumentWriteModal
         open={showWriteModal}

@@ -218,6 +218,8 @@ function normalizeLocateChars(text: string): string {
     .replace(/[；]/g, ';')
     .replace(/[（]/g, '(')
     .replace(/[）]/g, ')')
+    .replace(/[、]/g, ',')
+    .replace(/[\uFF10-\uFF19]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xff10 + 0x30))
     .replace(/\s+/g, '')
 }
 
@@ -398,11 +400,81 @@ function stripStructureLabelNoise(text: string): string {
     .replace(/^#+\s*/, '')
     .replace(/^第[一二三四五六七八九十\d]+[章节部分篇]\s*/u, '')
     .replace(/^[一二三四五六七八九十]+[、．.]\s*/u, '')
-    .replace(/^（[一二三四五六七八九十\d]+）\s*/u, '')
+    // AI 大纲常写成「（一）、标题」，正文多为「（一）标题」
+    .replace(/^（[一二三四五六七八九十\d]+）[、．.]?\s*/u, '')
+    .replace(/^\(([一二三四五六七八九十\d]+)\)[、．.]?\s*/u, '')
     .replace(/^\d+[、．.]\s*/u, '')
-    .replace(/^[（(]\d+[）)]\s*/u, '')
+    .replace(/^[（(]\d+[）)][、．.]?\s*/u, '')
     .replace(/^(提出问题|分析问题|分析|结论|建议|背景|现状|对策|措施)[:：]\s*/u, '')
     .trim()
+}
+
+function headingMatchKey(text: string): string {
+  return normalizeLocateChars(stripStructureLabelNoise(text))
+}
+
+function looksLikeHeadingLine(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed) return false
+  return (
+    /^第[一二三四五六七八九十\d]+[章节部分篇]/u.test(trimmed) ||
+    /^[一二三四五六七八九十]+[、．.]/u.test(trimmed) ||
+    /^（[一二三四五六七八九十\d]+）/u.test(trimmed) ||
+    /^\([一二三四五六七八九十\d]+\)/u.test(trimmed) ||
+    /^\d+[、．.]\s*\S/u.test(trimmed) ||
+    /^#{1,3}\s+\S/u.test(trimmed)
+  )
+}
+
+/**
+ * 将大纲标题锚定到正文标题行：优先整行/行首匹配，避免「总体思路」
+ * 误命中「二、……总体思路和主要方向」这类父标题。
+ */
+export function locateOutlineHeadingInContent(
+  content: string,
+  title: string,
+): { start: number; end: number } | null {
+  const raw = title.replace(/\s+/g, ' ').trim()
+  if (!raw || !content.trim()) return null
+
+  const wanted = headingMatchKey(raw)
+  if (!wanted || wanted.length < 2) return null
+
+  const normalized = content.replace(/\r\n/g, '\n')
+  const lines = normalized.split('\n')
+
+  // Pass 1: 标题核完全一致的标题行
+  let offset = 0
+  for (const line of lines) {
+    const key = headingMatchKey(line)
+    if (key && key === wanted && looksLikeHeadingLine(line)) {
+      const lead = line.match(/^\s*/)?.[0].length ?? 0
+      return { start: offset + lead, end: offset + line.length }
+    }
+    offset += line.length + 1
+  }
+
+  // Pass 2: 去编号后相等，即使正文行号形式略有不同
+  offset = 0
+  for (const line of lines) {
+    const key = headingMatchKey(line)
+    if (key && key === wanted) {
+      const lead = line.match(/^\s*/)?.[0].length ?? 0
+      return { start: offset + lead, end: offset + line.length }
+    }
+    offset += line.length + 1
+  }
+
+  // Pass 3: 回退到通用定位，但只接受落在标题行行首附近的命中
+  const loose = locateStructureItemInContent(normalized, raw)
+  if (!loose) return null
+  const lineStart = normalized.lastIndexOf('\n', Math.max(0, loose.start - 1)) + 1
+  const lineEnd = normalized.indexOf('\n', loose.start)
+  const line = normalized.slice(lineStart, lineEnd < 0 ? normalized.length : lineEnd)
+  if (!looksLikeHeadingLine(line)) return null
+  // 命中点应靠近行首（允许少量空白/编号宽度）
+  if (loose.start - lineStart > 24) return null
+  return { start: lineStart + (line.match(/^\s*/)?.[0].length ?? 0), end: lineStart + line.length }
 }
 
 /** 将结构梳理条目（大纲/逻辑/建议等）锚定到正文区间 */
