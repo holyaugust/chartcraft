@@ -1,5 +1,5 @@
 import { PROFESSIONAL_TYPO_DICTIONARY } from '../data/documentTypoDictionary'
-import { resolveIssueRange } from './documentLocate'
+import { findTextRange, resolveIssueRange } from './documentLocate'
 import { normalizeDocumentStructure, stripLeadingIndent } from './documentFormatNormalize'
 
 export type IssueCategory = 'typo' | 'grammar' | 'punctuation' | 'style' | 'format' | 'logic' | 'rigor'
@@ -390,11 +390,51 @@ export function proofreadDocument(text: string, options?: { autoFormat?: boolean
   return { issues, formatted }
 }
 
+function resolveOriginalRange(
+  text: string,
+  issue: DocumentIssue,
+): { start: number; end: number } | null {
+  if (!issue.original) return null
+  const hintStart = issue.start < issue.end ? issue.start : undefined
+  if (
+    issue.start < issue.end &&
+    issue.end <= text.length &&
+    text.slice(issue.start, issue.end) === issue.original
+  ) {
+    return { start: issue.start, end: issue.end }
+  }
+  return findTextRange(text, issue.original, hintStart)
+}
+
+function resolveAppliedSuggestionRange(
+  text: string,
+  issue: DocumentIssue,
+): { start: number; end: number } | null {
+  // 正文仍是原文时不应按 suggestion 前缀“撤销”，否则会叠字
+  if (resolveOriginalRange(text, issue)) return null
+
+  if (!issue.suggestion) {
+    const insertAt = Math.min(Math.max(0, issue.start), text.length)
+    return { start: insertAt, end: insertAt }
+  }
+
+  const hintStart = issue.start < issue.end ? issue.start : undefined
+  if (
+    issue.start < issue.end &&
+    issue.end <= text.length &&
+    text.slice(issue.start, issue.end) === issue.suggestion
+  ) {
+    return { start: issue.start, end: issue.end }
+  }
+  return findTextRange(text, issue.suggestion, hintStart)
+}
+
 export function applyFixableIssues(text: string, issues: DocumentIssue[]): string {
   const fixable = issues.filter((issue) => issue.autoFixable && issue.start !== issue.end && issue.original)
   const resolved = fixable
     .map((issue) => {
-      const range = resolveIssueRange(text, issue)
+      // 只替换仍存在的原文，避免 suggestion 为原文前缀时误命中短片段
+      const range = resolveOriginalRange(text, issue)
       return range ? { issue, start: range.start, end: range.end } : null
     })
     .filter((item): item is { issue: DocumentIssue; start: number; end: number } => item !== null)
@@ -411,7 +451,7 @@ export function applyFixableIssues(text: string, issues: DocumentIssue[]): strin
 export function applySingleFix(text: string, issue: DocumentIssue): string {
   if (!issue.autoFixable || issue.start === issue.end) return text
 
-  const range = resolveIssueRange(text, issue)
+  const range = resolveOriginalRange(text, issue)
   if (!range) return text
 
   const suggestion = trimDuplicateTrailingPunctuation(text, range.end, issue.suggestion)
@@ -422,12 +462,7 @@ export function applySingleFix(text: string, issue: DocumentIssue): string {
 export function revertSingleFix(text: string, issue: DocumentIssue): string {
   if (!issue.autoFixable || issue.start === issue.end) return text
 
-  const revertIssue: DocumentIssue = {
-    ...issue,
-    original: issue.suggestion,
-    suggestion: issue.original,
-  }
-  const range = resolveIssueRange(text, revertIssue)
+  const range = resolveAppliedSuggestionRange(text, issue)
   if (!range) return text
 
   return text.slice(0, range.start) + issue.original + text.slice(range.end)

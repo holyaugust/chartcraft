@@ -35,6 +35,7 @@ import DocumentWriteModal from './DocumentWriteModal'
 import DocumentProofreadSetupModal, {
   type ProofreadSetupSubmitPayload,
 } from './DocumentProofreadSetupModal'
+import DocumentProofreadBusyOverlay from './DocumentProofreadBusyOverlay'
 import DocumentEmptyState from './DocumentEmptyState'
 import DocumentWorkflowBar, {
   canNavigateToWorkflowStep,
@@ -90,6 +91,7 @@ import {
   type FormatAdjustReport,
 } from '../utils/documentFormatAdjust'
 import { isDeepSeekConfigured, type ProofreadMode, type ProofreadPromptContext } from '../utils/deepseek'
+import { prepareAutoProofreadSetup } from '../utils/documentProofreadSetup'
 import DocumentLocalRefineCard from './DocumentLocalRefineCard'
 
 const DOCUMENT_STORAGE_KEY = 'chartcraft-document-draft'
@@ -478,6 +480,7 @@ export default function DocumentWorkspace({
   const runReview = useCallback(async (mode: ProofreadMode, promptContext: ProofreadPromptContext) => {
     const { checkWithDeepSeek, isDeepSeekConfigured } = await import('../utils/deepseek')
     if (!isDeepSeekConfigured()) {
+      setBusy(false)
       setStatusIsError(true)
       setStatusMessage('未配置 DeepSeek：请在项目根目录 .env.local 中设置 DEEPSEEK_API_KEY 后重启 dev')
       return
@@ -546,6 +549,39 @@ export default function DocumentWorkspace({
       setBusy(false)
     }
   }, [content, resetProofreadSession, preferSourceSidebar, proofreadCompleted])
+
+  const startProofreadDirect = useCallback(
+    async (mode: ProofreadMode) => {
+      if (!content.trim()) {
+        setStatusIsError(true)
+        setStatusMessage('请先输入或上传文档内容')
+        return
+      }
+
+      setBusy(true)
+      setStatusIsError(false)
+      setSidebarPanel('proofread')
+      setWorkflowStep('proofread')
+      setStatusMessage('正在识别文体并准备校对方案…')
+
+      try {
+        const { promptContext } = await prepareAutoProofreadSetup({
+          content,
+          mode,
+          isTableDocument: hasTableLikeRows(content),
+        })
+        await runReview(mode, {
+          ...promptContext,
+          rescan: proofreadCompleted,
+        })
+      } catch (err) {
+        setBusy(false)
+        setStatusIsError(true)
+        setStatusMessage(err instanceof Error ? err.message : '智能校对失败')
+      }
+    },
+    [content, proofreadCompleted, runReview],
+  )
 
   const handleProofreadSetupSubmit = useCallback(
     (payload: ProofreadSetupSubmitPayload) => {
@@ -1738,8 +1774,18 @@ export default function DocumentWorkspace({
         />
 
         {statusMessage && (workflowStep !== 'prepare' || statusIsError) ? (
-          <div className={`document-status-bar${statusIsError ? ' error' : ' success'}`}>
-            {statusIsError ? <AlertCircle size={14} /> : <Sparkles size={14} />}
+          <div
+            className={`document-status-bar${
+              statusIsError ? ' error' : busy && workflowStep === 'proofread' ? ' working' : ' success'
+            }`}
+          >
+            {statusIsError ? (
+              <AlertCircle size={14} />
+            ) : busy && workflowStep === 'proofread' ? (
+              <Loader2 size={14} className="spin" />
+            ) : (
+              <Sparkles size={14} />
+            )}
             {statusMessage}
           </div>
         ) : null}
@@ -1752,6 +1798,10 @@ export default function DocumentWorkspace({
           <div className="document-editor-column">
             <div className="document-workspace-main">
               <div className="document-editor-shell">
+                <DocumentProofreadBusyOverlay
+                  open={busy && workflowStep === 'proofread' && !statusIsError}
+                  message={statusMessage?.trim() || '正在智能校对…'}
+                />
                 {workflowStep !== 'prepare' &&
                 (editorChrome.showTextTab ||
                   editorChrome.showOfficialTab ||
@@ -1980,7 +2030,6 @@ export default function DocumentWorkspace({
                   onConfirmApply={handleConfirmFormatApply}
                   onCancelApply={() => setFormatConfirmOpen(false)}
                   onDismiss={dismissStepSidebar}
-                  onShowOfficialPreview={() => setViewMode('official')}
                   onGoExport={() => {
                     const fp = fingerprintDocumentContent(content)
                     setFormatCompleted(true)
@@ -2027,7 +2076,8 @@ export default function DocumentWorkspace({
                   onToggleAdopt={handleToggleAdopt}
                   onToggleAdoptGroup={handleToggleAdoptGroup}
                   onApplyAll={handleApplyAll}
-                  onStartProofread={() => openProofreadSetup('standard')}
+                  onStartProofread={() => void startProofreadDirect('standard')}
+                  onAdjustProofreadPlan={() => openProofreadSetup('standard')}
                   onGoFormat={() => openFormatStep()}
                   onDismiss={() => {
                     dismissStepSidebar()

@@ -2396,10 +2396,86 @@
   border: 1px solid #a7f3d0;
 }
 
+.document-status-bar.working {
+  background: #eef2ff;
+  color: #3730a3;
+  border: 1px solid #c7d2fe;
+  font-weight: 600;
+}
+
 .document-status-bar.error {
   background: #fef2f2;
   color: #b91c1c;
   border: 1px solid #fecaca;
+}
+
+.document-proofread-busy-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.document-proofread-busy-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 360px;
+  padding: 28px 32px;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.22);
+  text-align: center;
+  color: #312e81;
+}
+
+.document-proofread-busy-card .spin {
+  color: #4f46e5;
+}
+
+.document-proofread-busy-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #1e1b4b;
+}
+
+.document-proofread-busy-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.document-issue-busy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 16px;
+  text-align: center;
+  color: #4338ca;
+  background: linear-gradient(180deg, #eef2ff 0%, #f8fafc 100%);
+}
+
+.document-issue-busy p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.document-issue-busy span {
+  font-size: 13px;
+  color: #64748b;
 }
 
 .document-issue-panel {
@@ -3761,6 +3837,14 @@
   font-size: 13px;
   line-height: 1.55;
   max-width: 260px;
+}
+
+.document-issue-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .spin {

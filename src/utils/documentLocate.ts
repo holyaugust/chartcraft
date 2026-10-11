@@ -322,8 +322,18 @@ export function resolveIssueRange(
 
   if (issue.start < issue.end && issue.end <= content.length) {
     const slice = content.slice(issue.start, issue.end)
-    if (slice === issue.original || (issue.suggestion && slice === issue.suggestion)) {
+    if (issue.original && slice === issue.original) {
       return { start: issue.start, end: issue.end }
+    }
+    // 缓存范围若只覆盖 suggestion（常为 original 前缀），且正文仍是完整原文，扩回 original
+    if (
+      issue.original &&
+      issue.suggestion &&
+      slice === issue.suggestion &&
+      issue.start + issue.original.length <= content.length &&
+      content.slice(issue.start, issue.start + issue.original.length) === issue.original
+    ) {
+      return { start: issue.start, end: issue.start + issue.original.length }
     }
     // 偏移附近仍像原片段时，允许小范围漂移（采纳其它项后常见）
     if (issue.original && issue.original.length >= 2) {
@@ -337,10 +347,17 @@ export function resolveIssueRange(
     }
   }
 
+  // 正文仍含原文时优先匹配 original，避免 suggestion 是其前缀时误命中短片段
   const fromOriginal = issue.original ? findTextRange(content, issue.original, hintStart) : null
   if (fromOriginal) return fromOriginal
 
   // 已采纳后正文为 suggestion，需回退匹配
+  if (issue.start < issue.end && issue.end <= content.length) {
+    const slice = content.slice(issue.start, issue.end)
+    if (issue.suggestion && slice === issue.suggestion) {
+      return { start: issue.start, end: issue.end }
+    }
+  }
   if (issue.suggestion) {
     return findTextRange(content, issue.suggestion, hintStart)
   }

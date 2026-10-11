@@ -137,7 +137,7 @@ export function analyzeDocumentFormat(content: string): FormatAdjustReport {
       kind: 'advisory',
       title: '文本格式已较规范',
       detail:
-        '可切换到「公文版式」查看标题居中、正文首行缩进等视觉效果；确认后直接「导出 Word」即可',
+        '请点上方「公文版式」查看标题居中、正文首行缩进等视觉效果；确认后直接「导出 Word」即可',
       autoApply: false,
     })
   }

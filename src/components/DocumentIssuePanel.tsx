@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Check, Sparkles, Type, Wand2, X } from 'lucide-react'
+import { Check, Loader2, Sparkles, Type, Wand2, X } from 'lucide-react'
 import type { DocumentIssue } from '../utils/documentProofread'
 import {
   buildIssueContextSnippet,
@@ -19,6 +19,7 @@ interface DocumentIssuePanelProps {
   onApplyAll: () => void
   onDismiss: () => void
   onStartProofread?: () => void
+  onAdjustProofreadPlan?: () => void
   onGoFormat?: () => void
   busy?: boolean
 }
@@ -59,6 +60,7 @@ export default function DocumentIssuePanel({
   onApplyAll,
   onDismiss,
   onStartProofread,
+  onAdjustProofreadPlan,
   onGoFormat,
   busy = false,
 }: DocumentIssuePanelProps) {
@@ -89,14 +91,27 @@ export default function DocumentIssuePanel({
         <div>
           <h3>校对结果</h3>
           <p>
-            {!hasRun
-              ? '在侧栏启动智能校对后，建议会显示在这里'
-              : issues.length === 0
-                ? `未发现问题${genreLabel ? ` · ${genreLabel}` : ''}`
-                : `共 ${issues.length} 项${genreLabel ? ` · ${genreLabel}` : ''}${issueGroups.length !== issues.length ? `（${issueGroups.length} 类）` : ''}${adoptedCount ? `，已采纳 ${adoptedCount} 项` : ''}${fixableCount ? `，${fixableCount} 项待采纳` : ''}`}
+            {busy
+              ? '正在智能校对，请稍候…'
+              : !hasRun
+                ? '在侧栏启动智能校对后，建议会显示在这里'
+                : issues.length === 0
+                  ? `未发现问题${genreLabel ? ` · ${genreLabel}` : ''}`
+                  : `共 ${issues.length} 项${genreLabel ? ` · ${genreLabel}` : ''}${issueGroups.length !== issues.length ? `（${issueGroups.length} 类）` : ''}${adoptedCount ? `，已采纳 ${adoptedCount} 项` : ''}${fixableCount ? `，${fixableCount} 项待采纳` : ''}`}
           </p>
         </div>
         <div className="document-issue-panel-actions">
+          {onAdjustProofreadPlan ? (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              disabled={busy}
+              onClick={onAdjustProofreadPlan}
+              title="调整文体与校对提示词后再校对"
+            >
+              调整方案
+            </button>
+          ) : null}
           {onStartProofread ? (
             <button
               type="button"
@@ -115,16 +130,34 @@ export default function DocumentIssuePanel({
         </div>
       </div>
 
-      {!hasRun ? (
+      {busy ? (
+        <div className="document-issue-busy" role="status" aria-live="polite" aria-busy="true">
+          <Loader2 size={28} className="spin" aria-hidden />
+          <p>正在智能校对</p>
+          <span>完成后建议将显示在这里</span>
+        </div>
+      ) : !hasRun ? (
         <div className="document-issue-empty-start">
           <Sparkles size={22} />
-          <p>先确认文体与校对要求，再由 AI 检查用语、逻辑与格式问题。</p>
-          {onStartProofread ? (
-            <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={onStartProofread}>
-              <Sparkles size={14} />
-              开始智能校对
-            </button>
-          ) : null}
+          <p>点击开始后将自动识别文体并完成智能校对，结果会显示在这里。也可先「调整方案」。</p>
+          <div className="document-issue-empty-actions">
+            {onStartProofread ? (
+              <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={onStartProofread}>
+                <Sparkles size={14} />
+                开始智能校对
+              </button>
+            ) : null}
+            {onAdjustProofreadPlan ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                disabled={busy}
+                onClick={onAdjustProofreadPlan}
+              >
+                调整方案
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : issues.length > 0 ? (
         <>

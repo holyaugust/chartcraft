@@ -23,7 +23,6 @@ interface DocumentFormatPanelProps {
   onCancelApply: () => void
   onDismiss: () => void
   onGoExport?: () => void
-  onShowOfficialPreview?: () => void
 }
 
 export default function DocumentFormatPanel({
@@ -37,7 +36,6 @@ export default function DocumentFormatPanel({
   onCancelApply,
   onDismiss,
   onGoExport,
-  onShowOfficialPreview,
 }: DocumentFormatPanelProps) {
   const autoCount = report?.items.filter((item) => item.autoApply).length ?? 0
   const advisoryCount = report?.items.filter((item) => !item.autoApply).length ?? 0
@@ -145,11 +143,6 @@ export default function DocumentFormatPanel({
               <header>
                 <Eye size={13} />
                 排版后预览
-                {onShowOfficialPreview ? (
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={onShowOfficialPreview}>
-                    在左侧查看
-                  </button>
-                ) : null}
               </header>
               <div
                 className="document-format-preview-layout"
@@ -168,12 +161,6 @@ export default function DocumentFormatPanel({
               >
                 <Wand2 size={14} />
                 应用智能排版
-              </button>
-            ) : null}
-            {onShowOfficialPreview ? (
-              <button type="button" className="btn btn-sm btn-ghost" onClick={onShowOfficialPreview}>
-                <Eye size={14} />
-                查看公文版式
               </button>
             ) : null}
             {(applied || !report.changed) && onGoExport ? (

@@ -170,11 +170,11 @@ export default function DocumentProofreadSetupModal({
               <Sparkles size={16} />
             </span>
             <div>
-              <h2 id="doc-proofread-setup-title">智能校对 · 校对方案</h2>
+              <h2 id="doc-proofread-setup-title">智能校对 · 调整方案</h2>
               <p className="doc-proofread-setup-subtitle">
                 {aiRefining
                   ? '正在自动识别文体并生成校对提示词…'
-                  : '平台已识别文体并生成侧重提示词，您可修改后提交'}
+                  : '可修改文体与提示词后重新校对；日常使用可直接点「开始智能校对」'}
               </p>
             </div>
           </div>
@@ -244,7 +244,7 @@ export default function DocumentProofreadSetupModal({
               }}
             />
             <p className="doc-proofread-prompt-hint">
-              提交后将按此文体的校对侧重 + 您修改后的要求，由 AI 执行智能校对。
+              确认后将按此文体的校对侧重 + 您修改后的要求，由 AI 执行智能校对。
             </p>
           </section>
         </div>
@@ -260,7 +260,7 @@ export default function DocumentProofreadSetupModal({
             onClick={handleSubmit}
           >
             <Sparkles size={14} />
-            开始智能校对
+            按此方案校对
           </button>
         </footer>
       </div>
