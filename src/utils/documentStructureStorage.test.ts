@@ -9,9 +9,16 @@ import {
 const sampleReport: DocumentStructureAnalysisResult = {
   summary: '主题清晰',
   outline: ['一、概况'],
-  logicFlow: ['先交代背景'],
+  logicFlow: [],
   gaps: ['缺风险专节'],
-  suggestions: ['补充风险专节'],
+  suggestions: [
+    {
+      tag: '补缺',
+      target: '全文',
+      text: '补充风险专节',
+      raw: '【补缺｜全文】补充风险专节',
+    },
+  ],
   rawMarkdown: '',
 }
 

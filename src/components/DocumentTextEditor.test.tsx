@@ -110,6 +110,24 @@ describe('DocumentTextEditor page', () => {
     act(() => root.unmount())
   })
 
+  it('renders a structure revision as deletion plus insertion in the page', () => {
+    const { host, root } = renderEditor('前文旧句后文', {
+      revisionPreview: {
+        start: 2,
+        end: 4,
+        replacement: '新句',
+      },
+    })
+    const deleted = host.querySelector('del.document-revision-del')
+    const inserted = host.querySelector('ins.document-revision-ins')
+    expect(deleted?.textContent).toBe('旧句')
+    expect(inserted?.textContent).toBe('新句')
+    expect(inserted?.previousElementSibling?.tagName).toBe('BR')
+    expect(host.textContent).toContain('前文')
+    expect(host.textContent).toContain('后文')
+    act(() => root.unmount())
+  })
+
   it('reads a cross-table selection as a slice of the plain text', () => {
     const text = '甲 | 乙'
     const { host, ref, root } = renderEditor(text)

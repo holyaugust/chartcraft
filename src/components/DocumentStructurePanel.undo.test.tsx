@@ -9,7 +9,14 @@ const report: DocumentStructureAnalysisResult = {
   outline: ['一、概况'],
   logicFlow: [],
   gaps: [],
-  suggestions: ['补充风险专节'],
+  suggestions: [
+    {
+      tag: '补缺',
+      target: '全文',
+      text: '补充风险专节',
+      raw: '【补缺｜全文】补充风险专节',
+    },
+  ],
   rawMarkdown: '',
 }
 
@@ -28,7 +35,7 @@ function renderPanel(props: Record<string, unknown> = {}) {
         onOptimizeSuggestion={() => {}}
         onConfirmPatch={() => {}}
         onCancelPatch={() => {}}
-        appliedSuggestions={new Set(['补充风险专节'])}
+        appliedSuggestions={new Set(['【补缺｜全文】补充风险专节'])}
         canUndoLastWrite={false}
         onUndoLastWrite={onUndoLastWrite}
         {...props}

@@ -9,6 +9,8 @@ import {
   FileDown,
   ChevronDown,
   BookText,
+  Check,
+  X,
 } from 'lucide-react'
 import DocumentIssuePanel from './DocumentIssuePanel'
 import DocumentStructurePanel from './DocumentStructurePanel'
@@ -17,6 +19,7 @@ import DocumentOfficialLayoutPreview from './DocumentOfficialLayoutPreview'
 import DocumentTextEditor, {
   type DocumentEditorSelection,
   type DocumentPageEditorHandle,
+  type DocumentRevisionPreview,
 } from './DocumentTextEditor'
 import DocumentSelectionRefinePopover from './DocumentSelectionRefinePopover'
 import DocumentSelectionRefineHint from './DocumentSelectionRefineHint'
@@ -70,6 +73,7 @@ import {
   clearStoredStructureAnalysis,
   fingerprintDocumentContent,
   loadStoredStructureAnalysis,
+  normalizeStructureSuggestions,
   proposeStructureSuggestionPatch,
   saveStoredStructureAnalysis,
   type DocumentStructureAnalysisResult,
@@ -196,7 +200,7 @@ export default function DocumentWorkspace({
   const [structureOptimizeBusy, setStructureOptimizeBusy] = useState(false)
   const [structureOptimizeTarget, setStructureOptimizeTarget] = useState<string | null>(null)
   const [structurePendingPatch, setStructurePendingPatch] = useState<StructureSuggestionPatch | null>(null)
-  const [structureExpanded, setStructureExpanded] = useState(false)
+  const [structureExpanded, setStructureExpanded] = useState(true)
   const [structureAppliedSuggestions, setStructureAppliedSuggestions] = useState<string[]>(
     initialStructure.appliedSuggestions,
   )
@@ -1095,7 +1099,7 @@ export default function DocumentWorkspace({
     setBusy(true)
     setStructureError(null)
     setStatusIsError(false)
-    setStatusMessage('正在梳理全文结构与逻辑…')
+    setStatusMessage('正在梳理全文结构…')
     setSidebarPanel('structure')
 
     try {
@@ -1145,6 +1149,30 @@ export default function DocumentWorkspace({
     const current = fingerprintDocumentContent(content)
     return Boolean(current) && current !== structureFingerprint
   }, [structureReport, structureFingerprint, content])
+
+  /** 展示时按当前正文目录重推断标签/目标节，并按先后重排 */
+  const structureReportForUi = useMemo(() => {
+    if (!structureReport) return null
+    const sectionOrder = outlineDirectory.map((entry) => entry.title)
+    return {
+      ...structureReport,
+      suggestions: normalizeStructureSuggestions(
+        structureReport.suggestions,
+        sectionOrder,
+      ),
+    }
+  }, [structureReport, outlineDirectory])
+
+  const structureRevisionPreview = useMemo((): DocumentRevisionPreview | null => {
+    if (!structurePendingPatch) return null
+    const start = content.indexOf(structurePendingPatch.original)
+    if (start < 0) return null
+    return {
+      start,
+      end: start + structurePendingPatch.original.length,
+      replacement: structurePendingPatch.replacement,
+    }
+  }, [structurePendingPatch, content])
 
   useEffect(() => {
     if (!structureReport || !structureFingerprint || !structureAnalyzedAt) {
@@ -1202,21 +1230,21 @@ export default function DocumentWorkspace({
         setStructurePendingPatch(patch)
         setViewMode('text')
         setWorkflowStep('structure')
+        setHighlightRange(null)
+        setAiHighlightRanges([])
         const originalIndex = content.indexOf(patch.original)
         if (originalIndex >= 0) {
           const range = {
             start: originalIndex,
             end: originalIndex + patch.original.length,
           }
-          setHighlightRange(range)
-          setAiHighlightRanges([])
-          setLocateHint('左侧高亮为即将改写的原文片段，确认后才会写入')
+          setLocateHint('左侧正文以修订样式预览：删除线为原文，绿色为拟写入内容')
           window.requestAnimationFrame(() => {
             const editor = editorRef.current
             if (editor) editor.scrollToRange(range.start, range.end)
           })
         }
-        setStatusMessage('已生成改写预览，请确认后再应用到正文')
+        setStatusMessage('已生成修订预览，请在左侧原文核对后应用')
       } catch (err) {
         setStructureError(err instanceof Error ? err.message : '生成优化方案失败，请重试')
         setStatusIsError(true)
@@ -1832,9 +1860,42 @@ export default function DocumentWorkspace({
                     </div>
                   ) : null}
 
-                  {locateHint && viewMode === 'text' ? (
+                  {locateHint && viewMode === 'text' && !structurePendingPatch ? (
                     <div className="document-locate-hint" role="status">
                       {locateHint}
+                    </div>
+                  ) : null}
+
+                  {viewMode === 'text' && structurePendingPatch ? (
+                    <div className="document-revision-bar" role="region" aria-label="结构修订预览">
+                      <div className="document-revision-bar-copy">
+                        <strong>修订预览（尚未写入正文）</strong>
+                        <p>
+                          {structurePendingPatch.note?.trim() ||
+                            structurePendingPatch.suggestion}
+                          {!structureRevisionPreview
+                            ? '（未能在正文定位原文，仍可强制应用或取消）'
+                            : ''}
+                        </p>
+                      </div>
+                      <div className="document-revision-bar-actions">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          onClick={handleCancelStructurePatch}
+                        >
+                          <X size={14} />
+                          取消
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          onClick={handleConfirmStructurePatch}
+                        >
+                          <Check size={14} />
+                          应用修订
+                        </button>
+                      </div>
                     </div>
                   ) : null}
 
@@ -1857,6 +1918,7 @@ export default function DocumentWorkspace({
                       layoutMode={workflowStep === 'structure' ? 'official' : 'manuscript'}
                       highlightRange={highlightRange}
                       aiHighlightRanges={aiHighlightRanges}
+                      revisionPreview={structureRevisionPreview}
                       onChange={handleContentChange}
                       onSelectionChange={setEditorSelection}
                       placeholder="在此输入报告正文…"
@@ -1929,7 +1991,7 @@ export default function DocumentWorkspace({
                 />
               ) : workflowStep === 'structure' ? (
                 <DocumentStructurePanel
-                  report={structureReport}
+                  report={structureReportForUi}
                   outlineDirectory={outlineDirectory}
                   busy={structureBusy}
                   error={structureError}

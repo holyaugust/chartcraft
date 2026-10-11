@@ -74,6 +74,34 @@ describe('DocumentSelectionRefinePopover', () => {
     act(() => root.unmount())
   })
 
+  it('dismisses when clicking outside the popover', () => {
+    const { host, root, onDismiss } = renderPopover({ prompt: '更简洁' })
+    const outside = document.createElement('button')
+    outside.type = 'button'
+    outside.textContent = 'outside'
+    document.body.appendChild(outside)
+
+    act(() => {
+      outside.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+    outside.remove()
+    act(() => root.unmount())
+  })
+
+  it('does not dismiss when clicking inside the popover', () => {
+    const { host, root, onDismiss } = renderPopover({ prompt: '更简洁' })
+    const popover = host.querySelector('[aria-label="按指令修改选中内容"]') as HTMLElement
+
+    act(() => {
+      popover.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+
+    expect(onDismiss).not.toHaveBeenCalled()
+    act(() => root.unmount())
+  })
+
   it('shows a consultative answer in the popover', () => {
     const { host, root } = renderPopover({
       prompt: '这段和国资整合有什么关联？',

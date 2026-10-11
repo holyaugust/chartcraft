@@ -1,11 +1,9 @@
 import { useState } from 'react'
 import {
-  AlertTriangle,
   Check,
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
-  GitBranch,
   Lightbulb,
   ListTree,
   Loader2,
@@ -15,14 +13,16 @@ import {
   X,
 } from 'lucide-react'
 import {
+  countActionableStructureSuggestions,
   detectOutlineLevel,
   formatStructureAnalyzedAt,
+  isNoIssueStructureSuggestion,
   type DocumentStructureAnalysisResult,
   type StructureSuggestionPatch,
 } from '../utils/documentStructureAnalysis'
 import type { OutlineDirectoryEntry } from '../utils/documentOutlineSections'
 
-type StructureViewTab = 'outline' | 'logic' | 'gaps' | 'suggestions'
+type StructureViewTab = 'outline' | 'suggestions'
 
 interface DocumentStructurePanelProps {
   report: DocumentStructureAnalysisResult | null
@@ -126,76 +126,6 @@ function OutlineTree({
   )
 }
 
-function LogicTimeline({
-  items,
-  activeItem,
-  onLocate,
-}: {
-  items: string[]
-  activeItem?: string | null
-  onLocate: (item: string) => void
-}) {
-  if (items.length === 0) {
-    return <p className="document-structure-muted">暂无逻辑链条</p>
-  }
-  return (
-    <ol className="document-structure-flow">
-      {items.map((item, index) => {
-        const active = activeItem === item
-        return (
-          <li key={`${index}-${item.slice(0, 32)}`}>
-            <span className="document-structure-flow-step">{index + 1}</span>
-            <button
-              type="button"
-              className={`document-structure-locate-btn document-structure-flow-card${active ? ' is-active' : ''}`}
-              title="点击定位到正文对应位置"
-              onClick={() => onLocate(item)}
-            >
-              {item}
-            </button>
-          </li>
-        )
-      })}
-    </ol>
-  )
-}
-
-function GapList({
-  items,
-  activeItem,
-  onLocate,
-}: {
-  items: string[]
-  activeItem?: string | null
-  onLocate: (item: string) => void
-}) {
-  if (items.length === 0) {
-    return <p className="document-structure-muted">暂无结构缺口说明</p>
-  }
-  const benign = items.length === 1 && /未见明显|暂无|没有/.test(items[0])
-  return (
-    <ul className={`document-structure-gaps${benign ? ' is-benign' : ''}`}>
-      {items.map((item) => {
-        const active = activeItem === item
-        return (
-          <li key={item.slice(0, 48)} className={active ? 'is-active' : undefined}>
-            <button
-              type="button"
-              className="document-structure-locate-btn document-structure-gap-btn"
-              title={benign ? undefined : '点击定位到正文相关位置'}
-              disabled={benign}
-              onClick={() => onLocate(item)}
-            >
-              {!benign ? <AlertTriangle size={13} /> : <Check size={13} />}
-              <span>{item}</span>
-            </button>
-          </li>
-        )
-      })}
-    </ul>
-  )
-}
-
 export default function DocumentStructurePanel({
   report,
   outlineDirectory,
@@ -228,9 +158,11 @@ export default function DocumentStructurePanel({
   const tocCount = outlineDirectory?.length ?? 0
   const tabs: Array<{ id: StructureViewTab; label: string; count: number }> = [
     { id: 'outline', label: '大纲', count: tocCount },
-    { id: 'logic', label: '逻辑', count: report?.logicFlow.length ?? 0 },
-    { id: 'gaps', label: '缺口', count: report?.gaps.length ?? 0 },
-    { id: 'suggestions', label: '建议', count: suggestions.length },
+    {
+      id: 'suggestions',
+      label: '建议',
+      count: countActionableStructureSuggestions(suggestions),
+    },
   ]
 
   if (collapsed) {
@@ -320,7 +252,7 @@ export default function DocumentStructurePanel({
       {busy && !report ? (
         <div className="document-structure-empty">
           <Loader2 size={18} className="spin" />
-          <p>正在梳理全文结构与逻辑…</p>
+          <p>正在梳理全文结构…</p>
         </div>
       ) : null}
 
@@ -329,7 +261,7 @@ export default function DocumentStructurePanel({
       {!busy && !report && !error ? (
         <div className="document-structure-empty">
           <ListTree size={22} />
-          <p>点击「开始梳理」，生成可读的章节大纲、逻辑链条与调整建议。结果会保存在本机，下次打开可直接查看。</p>
+          <p>点击「开始梳理」，生成章节大纲与调整建议；论证是否顺畅见「总体判断」。结果会保存在本机，下次打开可直接查看。</p>
           <button type="button" className="btn btn-sm btn-primary" onClick={onRefresh}>
             开始梳理
           </button>
@@ -426,79 +358,85 @@ export default function DocumentStructurePanel({
               </>
             ) : null}
 
-            {tab === 'logic' ? (
-              <>
-                <div className="document-structure-tab-title">
-                  <GitBranch size={14} />
-                  逻辑链条
-                  <span className="document-structure-tab-hint">点击跳转</span>
-                </div>
-                <LogicTimeline
-                  items={report.logicFlow}
-                  activeItem={activeLocateItem}
-                  onLocate={onLocateItem}
-                />
-              </>
-            ) : null}
-
-            {tab === 'gaps' ? (
-              <>
-                <div className="document-structure-tab-title">
-                  <AlertTriangle size={14} />
-                  结构缺口
-                  <span className="document-structure-tab-hint">点击跳转</span>
-                </div>
-                <GapList items={report.gaps} activeItem={activeLocateItem} onLocate={onLocateItem} />
-              </>
-            ) : null}
-
             {tab === 'suggestions' ? (
               <>
                 <div className="document-structure-tab-title">
                   <Sparkles size={14} />
                   梳理建议
-                  <span className="document-structure-tab-hint">点击条目跳转</span>
+                  <span className="document-structure-tab-hint">按正文顺序 · 点击跳转</span>
                 </div>
                 {suggestions.length === 0 ? (
                   <p className="document-structure-muted">暂无梳理建议</p>
                 ) : (
                   <ul className="document-structure-suggestion-list">
                     {suggestions.map((item, index) => {
-                      const applied = appliedSuggestions?.has(item)
-                      const loading = optimizeBusy && optimizeTarget === item
-                      const active = activeLocateItem === item
+                      const applied = appliedSuggestions?.has(item.raw)
+                      const loading = optimizeBusy && optimizeTarget === item.raw
+                      const active = activeLocateItem === item.raw || activeLocateItem === item.text
+                      const noIssue = isNoIssueStructureSuggestion(item)
                       return (
                         <li
-                          key={item}
-                          className={`${applied ? 'is-applied' : ''}${active ? ' is-active' : ''}`.trim()}
+                          key={item.raw}
+                          className={`${applied ? 'is-applied' : ''}${active ? ' is-active' : ''}${noIssue ? ' is-benign' : ''}`.trim()}
                         >
                           <button
                             type="button"
                             className="document-structure-suggestion-body"
-                            title="点击定位到正文相关位置"
-                            onClick={() => onLocateItem(item)}
+                            title={noIssue ? undefined : '点击定位到正文相关位置'}
+                            disabled={noIssue}
+                            onClick={() => onLocateItem(item.target !== '全文' ? item.target : item.text)}
                           >
                             <div className="document-structure-suggestion-head">
-                              <span>建议 {index + 1}</span>
+                              <span className="document-structure-suggestion-meta">
+                                {noIssue ? (
+                                  <span className="document-structure-suggestion-tag is-order">
+                                    正常
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`document-structure-suggestion-tag is-${
+                                      item.tag === '补缺'
+                                        ? 'fill'
+                                        : item.tag === '理顺'
+                                          ? 'order'
+                                          : 'tighten'
+                                    }`}
+                                  >
+                                    {item.tag}
+                                  </span>
+                                )}
+                                {!noIssue ? (
+                                  <span className="document-structure-suggestion-target">
+                                    动：{item.target}
+                                  </span>
+                                ) : null}
+                                {!noIssue ? (
+                                  <span className="document-structure-suggestion-index">
+                                    建议 {index + 1}
+                                  </span>
+                                ) : null}
+                              </span>
                               {applied ? <em>已应用</em> : null}
                             </div>
-                            <p>{item}</p>
+                            <p>{item.text}</p>
                           </button>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-ghost document-structure-optimize-btn"
-                            disabled={locked || applied}
-                            onClick={() => onOptimizeSuggestion(item)}
-                          >
-                            {loading ? (
-                              <Loader2 size={12} className="spin" />
-                            ) : applied ? (
-                              <Check size={12} />
-                            ) : (
-                              <Sparkles size={12} />
-                            )}
-                            {applied ? '已应用' : loading ? '生成方案…' : '智能优化'}
-                          </button>
+                          {!noIssue ? (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-ghost document-structure-optimize-btn"
+                              disabled={locked || applied}
+                              onClick={() => onOptimizeSuggestion(item.raw)}
+                            >
+                              {loading ? (
+                                <Loader2 size={12} className="spin" />
+                              ) : applied ? (
+                                <Check size={12} />
+                              ) : (
+                                <Sparkles size={12} />
+                              )}
+                              {applied ? '已应用' : loading ? '生成方案…' : '智能优化'}
+                            </button>
+                          ) : null}
                         </li>
                       )
                     })}
@@ -511,43 +449,16 @@ export default function DocumentStructurePanel({
       ) : null}
 
       {pendingPatch ? (
-        <div
-          className="document-structure-confirm"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="structure-confirm-title"
-        >
-          <div className="document-structure-confirm-card">
-            <header>
-              <h4 id="structure-confirm-title">确认应用优化</h4>
-              <p>请核对改写预览，确认后才会修改正文。</p>
-            </header>
-            <div className="document-structure-confirm-tip">
-              <span>对应建议</span>
-              <p>{pendingPatch.suggestion}</p>
-            </div>
-            {pendingPatch.note ? (
-              <p className="document-structure-confirm-note">{pendingPatch.note}</p>
-            ) : null}
-            <div className="document-structure-confirm-diff">
-              <div>
-                <span>原文片段</span>
-                <pre>{pendingPatch.original}</pre>
-              </div>
-              <div>
-                <span>优化后</span>
-                <pre>{pendingPatch.replacement}</pre>
-              </div>
-            </div>
-            <footer>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={onCancelPatch}>
-                取消
-              </button>
-              <button type="button" className="btn btn-sm btn-primary" onClick={onConfirmPatch}>
-                <Check size={14} />
-                确认修改
-              </button>
-            </footer>
+        <div className="document-structure-revision-hint" role="status">
+          <p>左侧正文已进入修订预览，请在原文处核对后应用或取消。</p>
+          <div className="document-structure-revision-hint-actions">
+            <button type="button" className="btn btn-sm btn-ghost" onClick={onCancelPatch}>
+              取消
+            </button>
+            <button type="button" className="btn btn-sm btn-primary" onClick={onConfirmPatch}>
+              <Check size={14} />
+              应用修订
+            </button>
           </div>
         </div>
       ) : null}

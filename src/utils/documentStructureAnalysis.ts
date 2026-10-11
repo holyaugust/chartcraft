@@ -1,13 +1,316 @@
 import { getDeepSeekProofreadModel, requestDeepSeekPlainText } from './deepseek'
 import { extractDocumentHeadings } from './documentHeadings'
 
+export type StructureSuggestionTag = '补缺' | '理顺' | '收紧'
+
+export interface StructureSuggestion {
+  tag: StructureSuggestionTag
+  /** 大致动哪一节，如「二、风险」或「全文」 */
+  target: string
+  /** 建议正文 */
+  text: string
+  /** 完整条目（已应用 / 智能优化 / 定位用） */
+  raw: string
+}
+
 export interface DocumentStructureAnalysisResult {
   summary: string
   outline: string[]
+  /** 已收拢进「总体判断」，始终为空；保留字段以兼容旧缓存 */
   logicFlow: string[]
   gaps: string[]
-  suggestions: string[]
+  suggestions: StructureSuggestion[]
   rawMarkdown: string
+}
+
+const SUGGESTION_TAGS = new Set<string>(['补缺', '理顺', '收紧'])
+
+const CN_SECTION_NUM = '一二三四五六七八九十百零〇O0-9'
+
+function inferSuggestionTag(text: string): StructureSuggestionTag {
+  if (
+    /(增设|新增|补上|补写|补充).{0,12}(专节|专章|一节|章节|小节)|缺少|缺失|尚未设置|没有.{0,6}(专节|章节)/u.test(
+      text,
+    )
+  ) {
+    return '补缺'
+  }
+  if (/(删|压缩|精简|套话|润色|冗长|啰嗦|语气|表述过|篇幅)/u.test(text)) {
+    return '收紧'
+  }
+  if (/(合并|拆分|调整顺序|理顺|过渡|挪到|调换|前后矛盾|衔接|归并)/u.test(text)) {
+    return '理顺'
+  }
+  return '理顺'
+}
+
+function extractQuotedFragments(text: string): string[] {
+  const fragments: string[] = []
+  for (const match of text.matchAll(/[「『“"]([^」』”"]{1,40})[」』”"]/gu)) {
+    const value = match[1]?.trim()
+    if (value) fragments.push(value)
+  }
+  return fragments
+}
+
+function matchSectionTitle(
+  needle: string,
+  sectionOrder: readonly string[],
+): string | null {
+  const trimmed = needle.trim()
+  if (!trimmed || trimmed === '全文') return null
+
+  const exact = sectionOrder.find((section) => section.trim() === trimmed)
+  if (exact) return exact.trim()
+
+  const byInclude = sectionOrder.find((section) => {
+    const title = section.trim()
+    return title.includes(trimmed) || trimmed.includes(title)
+  })
+  if (byInclude) return byInclude.trim()
+
+  // 「三」「四」这类仅序号：对齐「三、…」标题
+  if (new RegExp(`^[${CN_SECTION_NUM}]+$`, 'u').test(trimmed)) {
+    const numbered = sectionOrder.find((section) =>
+      new RegExp(`^[${CN_SECTION_NUM}]*${trimmed}[、．.]`, 'u').test(section.trim()),
+    )
+    if (numbered) return numbered.trim()
+  }
+
+  return null
+}
+
+function inferSuggestionTarget(
+  text: string,
+  sectionOrder: readonly string[],
+): string {
+  if (sectionOrder.length === 0) return '全文'
+
+  const hits: Array<{ title: string; index: number }> = []
+  const pushHit = (title: string) => {
+    const index = sectionOrder.findIndex((section) => section.trim() === title)
+    if (index < 0) return
+    if (!hits.some((hit) => hit.index === index)) {
+      hits.push({ title, index })
+    }
+  }
+
+  for (const fragment of extractQuotedFragments(text)) {
+    const matched = matchSectionTitle(fragment, sectionOrder)
+    if (matched) pushHit(matched)
+  }
+
+  for (const section of sectionOrder) {
+    const title = section.trim()
+    if (title && text.includes(title)) pushHit(title)
+  }
+
+  // 正文里的「二、总体思路」式片段
+  const numPattern = new RegExp(`[${CN_SECTION_NUM}]+、[^，。；\\s「」『』]{1,24}`, 'gu')
+  for (const match of text.matchAll(numPattern)) {
+    const matched = matchSectionTitle(match[0], sectionOrder)
+    if (matched) pushHit(matched)
+  }
+
+  if (hits.length === 0) return '全文'
+  hits.sort((a, b) => a.index - b.index)
+  return hits[0].title
+}
+
+function looksLikeStructuredSuggestionPrefix(raw: string): boolean {
+  return /^【(补缺|理顺|收紧)\s*[｜|]/u.test(raw)
+}
+
+/** 解析单条梳理建议：优先读【标签｜目标节】；否则从正文推断 */
+export function parseStructureSuggestionLine(
+  line: string,
+  sectionOrder: readonly string[] = [],
+): StructureSuggestion {
+  const raw = line.replace(/^[-*·\d.、）)\s]+/u, '').trim() || line.trim()
+  const match = raw.match(/^【(补缺|理顺|收紧)\s*[｜|]\s*(.+?)】\s*(.+)$/u)
+  if (match) {
+    return {
+      tag: match[1] as StructureSuggestionTag,
+      target: match[2].trim() || '全文',
+      text: match[3].trim(),
+      raw,
+    }
+  }
+  return {
+    tag: inferSuggestionTag(raw),
+    target: inferSuggestionTarget(raw, sectionOrder),
+    text: raw,
+    raw,
+  }
+}
+
+/** 目标节在正文目录中的最早位置；全文/未匹配排到最后 */
+export function suggestionTargetOrderIndex(
+  target: string,
+  sectionOrder: readonly string[],
+): number {
+  const trimmed = target.trim()
+  if (!trimmed || trimmed === '全文' || sectionOrder.length === 0) {
+    return Number.POSITIVE_INFINITY
+  }
+  let best = Number.POSITIVE_INFINITY
+  sectionOrder.forEach((section, index) => {
+    const title = section.trim()
+    if (!title) return
+    if (trimmed === title || trimmed.includes(title) || title.includes(trimmed)) {
+      best = Math.min(best, index)
+    }
+  })
+  return best
+}
+
+/** 按正文章节先后排序；全文与未匹配目标靠后 */
+export function sortStructureSuggestions(
+  items: StructureSuggestion[],
+  sectionOrder: readonly string[] = [],
+): StructureSuggestion[] {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const orderDiff =
+        suggestionTargetOrderIndex(a.item.target, sectionOrder) -
+        suggestionTargetOrderIndex(b.item.target, sectionOrder)
+      if (orderDiff !== 0) return orderDiff
+      return a.index - b.index
+    })
+    .map((entry) => entry.item)
+}
+
+const STRUCTURAL_SIGNAL =
+  /(专节|专章|空壳|归并|调序|调整顺序|过渡段|增设|合并.{0,12}节|拆分.{0,8}(节|章)|补充.{0,10}(专节|专章|模块|一节)|缺.{0,10}(专节|专章|模块|章节)|删除重复段落|压缩整节)/u
+
+const HARD_STRUCTURE_SIGNAL =
+  /(增设|补充).{0,12}(专节|专章|模块)|缺.{0,12}(专节|专章|模块|章节)|合并.{0,16}节|拆分.{0,12}(节|章)|空壳|归并|调序|调整顺序|章节顺序|明显(断档|跳跃|脱节).{0,24}过渡/u
+
+const SENTENCE_POLISH_SIGNAL =
+  /(拆成两句|拆为两句|分为两句|一长句|句号断开|标点|用词|近义|语气|润色|精简表述|语义重复|改为「|删去「|开展实施|逻辑更清楚)/u
+
+const NO_STRUCTURE_ISSUE_TEXT = '暂无明显结构调整建议'
+const NO_STRUCTURE_ISSUE_RE = /暂无(明显)?结构|未见明显结构|没有明显结构/
+
+function noStructureIssueSuggestion(): StructureSuggestion {
+  return {
+    tag: '理顺',
+    target: '全文',
+    text: NO_STRUCTURE_ISSUE_TEXT,
+    raw: `【理顺｜全文】${NO_STRUCTURE_ISSUE_TEXT}`,
+  }
+}
+
+/** 「暂无明显结构调整建议」等占位句，不算真实建议 */
+export function isNoIssueStructureSuggestion(item: StructureSuggestion): boolean {
+  return NO_STRUCTURE_ISSUE_RE.test(item.text.trim())
+}
+
+export function countActionableStructureSuggestions(
+  items: readonly StructureSuggestion[],
+): number {
+  return items.filter((item) => !isNoIssueStructureSuggestion(item)).length
+}
+
+/** 句级润色 / 无关痛痒建议：结构梳理侧不展示 */
+export function isLowValueStructureSuggestion(item: StructureSuggestion): boolean {
+  const text = item.text.trim()
+  if (!text) return true
+  if (NO_STRUCTURE_ISSUE_RE.test(text)) return false
+
+  const hasStructural = STRUCTURAL_SIGNAL.test(text)
+  const hasPolish = SENTENCE_POLISH_SIGNAL.test(text)
+  if (hasPolish && !hasStructural) return true
+
+  // 「收紧」若只是语气/用词，无结构动作 → 丢弃
+  if (item.tag === '收紧' && !hasStructural) return true
+
+  return false
+}
+
+/** 结构硬伤：缺节/并节/调序/空壳归并/明显断档补过渡 */
+export function isHardStructureSuggestion(item: StructureSuggestion): boolean {
+  const text = item.text.trim()
+  if (!text || NO_STRUCTURE_ISSUE_RE.test(text)) return false
+  if (HARD_STRUCTURE_SIGNAL.test(text)) return true
+  return item.tag === '补缺' && STRUCTURAL_SIGNAL.test(text)
+}
+
+function suggestionDedupeKey(item: StructureSuggestion): string {
+  return `${item.tag}::${item.target.trim()}`
+}
+
+/** 同标签+同目标节只留第一条；仅保留硬伤，全无则坍缩为「暂无明显」 */
+export function finalizeStructureSuggestions(
+  items: StructureSuggestion[],
+  sectionOrder: readonly string[] = [],
+): StructureSuggestion[] {
+  const usable = items.filter((item) => !isLowValueStructureSuggestion(item))
+  const hard = usable.filter((item) => isHardStructureSuggestion(item))
+  if (hard.length === 0) return [noStructureIssueSuggestion()]
+
+  const seen = new Set<string>()
+  const deduped: StructureSuggestion[] = []
+  for (const item of hard) {
+    const key = suggestionDedupeKey(item)
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(item)
+  }
+  return sortStructureSuggestions(deduped, sectionOrder)
+}
+
+/** 兼容旧缓存的 string[] 与已结构化对象，并按正文先后排序 */
+export function normalizeStructureSuggestions(
+  value: unknown,
+  sectionOrder: readonly string[] = [],
+): StructureSuggestion[] {
+  if (!Array.isArray(value)) return []
+  const parsed: StructureSuggestion[] = []
+  for (const item of value) {
+    if (typeof item === 'string') {
+      const trimmed = item.trim()
+      if (trimmed) parsed.push(parseStructureSuggestionLine(trimmed, sectionOrder))
+      continue
+    }
+    if (!item || typeof item !== 'object') continue
+    const record = item as Partial<StructureSuggestion>
+    const text = typeof record.text === 'string' ? record.text.trim() : ''
+    const raw =
+      typeof record.raw === 'string' && record.raw.trim()
+        ? record.raw.trim()
+        : text
+    if (!text && !raw) continue
+    const body = text || raw
+    const hasPrefix = looksLikeStructuredSuggestionPrefix(raw)
+    let tag =
+      typeof record.tag === 'string' && SUGGESTION_TAGS.has(record.tag)
+        ? (record.tag as StructureSuggestionTag)
+        : null
+    let target =
+      typeof record.target === 'string' && record.target.trim()
+        ? record.target.trim()
+        : ''
+
+    // 旧结果常落成「理顺｜全文」占位：无前缀时按正文重推断
+    if (!hasPrefix && (!tag || !target || (tag === '理顺' && target === '全文'))) {
+      const inferred = parseStructureSuggestionLine(body, sectionOrder)
+      tag = inferred.tag
+      target = inferred.target
+    } else {
+      if (!tag) tag = parseStructureSuggestionLine(body, sectionOrder).tag
+      if (!target) target = '全文'
+    }
+
+    parsed.push({
+      tag,
+      target,
+      text: body,
+      raw: raw || text,
+    })
+  }
+  return finalizeStructureSuggestions(parsed, sectionOrder)
 }
 
 function stripCodeFence(text: string): string {
@@ -39,19 +342,30 @@ function clipDocument(text: string, maxChars = 14000): string {
   return `${normalized.slice(0, head)}\n\n……（中间省略）……\n\n${normalized.slice(midStart, midStart + midLen)}\n\n……（后文接续）……\n\n${normalized.slice(-tail)}`
 }
 
-function parseStructureMarkdown(raw: string): DocumentStructureAnalysisResult {
+function sectionOrderFromOutline(outline: string[]): string[] {
+  return outline.map((item) => item.trim()).filter(Boolean)
+}
+
+function parseStructureMarkdown(
+  raw: string,
+  sectionOrder: readonly string[] = [],
+): DocumentStructureAnalysisResult {
   const markdown = stripCodeFence(raw)
   const summaryLines = extractSection(markdown, '总体判断')
   const outline = extractSection(markdown, '结构大纲')
-  const logicFlow = extractSection(markdown, '逻辑链条')
-  const gaps = extractSection(markdown, '结构缺口')
-  const suggestions = extractSection(markdown, '梳理建议')
+  const order =
+    sectionOrder.length > 0 ? sectionOrder : sectionOrderFromOutline(outline)
+  const suggestions = normalizeStructureSuggestions(
+    extractSection(markdown, '梳理建议'),
+    order,
+  )
 
   return {
     summary: summaryLines.join('\n') || markdown.slice(0, 280),
     outline,
-    logicFlow,
-    gaps,
+    logicFlow: [],
+    // 缺口已并入「梳理建议」的补缺类；保留字段兼容旧缓存，新结果恒为空
+    gaps: [],
     suggestions,
     rawMarkdown: markdown,
   }
@@ -72,24 +386,20 @@ export async function analyzeDocumentStructure(
   const clipped = clipDocument(text)
 
   const systemPrompt = `你是中文${genreLabel}结构与论证梳理专家。
-任务是帮助作者看清全文骨架与逻辑，而不是做错别字校对。
+任务是帮助作者看清全文骨架与结构安排，而不是做错别字校对。
 只输出 Markdown，使用且仅使用以下二级标题（顺序固定）：
 ## 总体判断
 ## 结构大纲
-## 逻辑链条
-## 结构缺口
 ## 梳理建议
 要求：
-1. 「总体判断」用 2～4 句概括主题、文种匹配度、整体是否顺畅
+1. 「总体判断」用 2～4 句概括主题、文种匹配度；其中须用 1～2 句说明论证/叙述是否顺畅，若有明显跳跃可点明何处缺过渡（勿另开逻辑链条章节）
 2. 「结构大纲」用条目列出当前实际章节/层次（可据正文归纳，不必照搬错误标题）；一级顶格，二级前加两个空格，三级前加四个空格
-3. 「逻辑链条」用条目按推进顺序写清论证步骤（提出问题→分析→结论/建议等），标出断裂处；每条尽量短、一句一事
-4. 「结构缺口」只写确实缺失或错位的模块；没有则写「未见明显结构缺口」
-5. 「梳理建议」给 3～6 条可执行的结构调整建议（如合并、拆分、补节、调整顺序），不要改写成全文
-6. 不要做错别字/标点校对，不要输出 JSON，不要代码块`
+3. 「梳理建议」默认可以为空：没有结构硬伤时只输出一条「暂无明显结构调整建议」，禁止「可优化但非必要」的建议，禁止为凑数硬提。仅当存在硬伤才写具体条目（可多条），硬伤仅限：缺关键专节/模块；章节须合并/拆分/调序；节与节明显断档/跳跃须补过渡段；空壳节堆砌或大段结构重复须归并。缺模块用【补缺｜…】，勿另开「结构缺口」章节。禁止：拆句、标点、近义替换、个别用词、纯语气润色、「补一句更顺」类轻建议、错别字（留给校对）。有硬伤时按正文从前往后输出；每条必须以【补缺｜目标节】或【理顺｜目标节】或【收紧｜目标节】开头；目标节尽量照抄【本地标题线索】；不要改写成全文
+4. 不要输出「结构缺口」「逻辑链条」章节，不要做错别字/标点校对，不要输出 JSON，不要代码块`
 
-  const userPrompt = `请梳理以下文档的结构与逻辑。
+  const userPrompt = `请梳理以下文档的结构。
 
-【本地提取到的标题线索】
+【本地标题线索】
 ${localHeadings.length > 0 ? localHeadings.map((item, i) => `${i + 1}. ${item}`).join('\n') : '（未识别到明显标题，请自行从正文归纳）'}
 
 【正文】
@@ -109,11 +419,19 @@ ${clipped}
     maxContinuations: 2,
   })
 
-  const parsed = parseStructureMarkdown(raw)
+  const parsed = parseStructureMarkdown(raw, localHeadings)
   if (!parsed.rawMarkdown.trim()) {
     throw new Error('未能生成结构梳理结果，请重试')
   }
-  return parsed
+  return {
+    ...parsed,
+    suggestions: sortStructureSuggestions(
+      parsed.suggestions,
+      localHeadings.length > 0
+        ? localHeadings
+        : sectionOrderFromOutline(parsed.outline),
+    ),
+  }
 }
 
 export interface StructureSuggestionPatch {
@@ -273,9 +591,14 @@ export function loadStoredStructureAnalysis(): StoredStructureAnalysis | null {
       report: {
         summary: parsed.report.summary ?? '',
         outline: Array.isArray(parsed.report.outline) ? parsed.report.outline : [],
-        logicFlow: Array.isArray(parsed.report.logicFlow) ? parsed.report.logicFlow : [],
+        logicFlow: [],
         gaps: Array.isArray(parsed.report.gaps) ? parsed.report.gaps : [],
-        suggestions: Array.isArray(parsed.report.suggestions) ? parsed.report.suggestions : [],
+        suggestions: normalizeStructureSuggestions(
+          parsed.report.suggestions,
+          sectionOrderFromOutline(
+            Array.isArray(parsed.report.outline) ? parsed.report.outline : [],
+          ),
+        ),
         rawMarkdown: parsed.report.rawMarkdown ?? '',
       },
       appliedSuggestions: Array.isArray(parsed.appliedSuggestions)

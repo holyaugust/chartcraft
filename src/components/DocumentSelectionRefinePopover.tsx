@@ -84,6 +84,7 @@ export default function DocumentSelectionRefinePopover({
   const asking = isConsultativePrompt(prompt)
   const canSubmit = Boolean(prompt.trim()) && !busy && !disabled
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const rootRef = useRef<HTMLElement | null>(null)
   const dragSessionRef = useRef<{
     startX: number
     startY: number
@@ -112,8 +113,18 @@ export default function DocumentSelectionRefinePopover({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onDismiss()
     }
+    const onPointerDown = (event: MouseEvent) => {
+      const root = rootRef.current
+      if (!root) return
+      if (root.contains(event.target as Node)) return
+      onDismiss()
+    }
     document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
+    document.addEventListener('mousedown', onPointerDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('mousedown', onPointerDown)
+    }
   }, [open, onDismiss])
 
   useEffect(() => {
@@ -145,6 +156,7 @@ export default function DocumentSelectionRefinePopover({
 
   return (
     <section
+      ref={rootRef}
       className="document-selection-refine"
       aria-label="按指令修改选中内容"
       style={selectionRefinePopoverStyle(anchor, undefined, dragOffset)}
