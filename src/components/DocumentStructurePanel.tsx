@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   Check,
   ChevronDown,
@@ -47,6 +47,8 @@ interface DocumentStructurePanelProps {
   onUndoLastWrite?: () => void
   collapsed?: boolean
   onToggleCollapsed?: () => void
+  /** 结构阶段附加区（如本地润色）；折叠窄轨时隐藏 */
+  footer?: ReactNode
 }
 
 function OutlineTree({
@@ -149,6 +151,7 @@ export default function DocumentStructurePanel({
   onUndoLastWrite,
   collapsed = false,
   onToggleCollapsed,
+  footer = null,
 }: DocumentStructurePanelProps) {
   const suggestions = report?.suggestions ?? []
   const locked = busy || optimizeBusy || !!pendingPatch
@@ -462,6 +465,8 @@ export default function DocumentStructurePanel({
           </div>
         </div>
       ) : null}
+
+      {footer ? <div className="document-structure-footer">{footer}</div> : null}
     </aside>
   )
 }

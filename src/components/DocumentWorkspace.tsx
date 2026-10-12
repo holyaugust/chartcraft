@@ -6,8 +6,6 @@ import {
   AlertCircle,
   Eye,
   PenLine,
-  FileDown,
-  ChevronDown,
   BookText,
   Check,
   X,
@@ -28,7 +26,6 @@ import {
   saveSelectionRefineHintDismissed,
   shouldShowSelectionRefineHint,
 } from '../utils/documentSelectionRefineHint'
-import DocumentTemplateSidebar from './DocumentTemplateSidebar'
 import DocumentWordSourcePanel from './DocumentWordSourcePanel'
 import DocumentTemplatePickerModal from './DocumentTemplatePickerModal'
 import DocumentWriteModal from './DocumentWriteModal'
@@ -229,7 +226,7 @@ export default function DocumentWorkspace({
     loadSelectionRefineHintDismissed,
   )
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const exportMenuRef = useRef<HTMLDivElement>(null)
+  const exportMenuRef = useRef<HTMLLIElement>(null)
   const editorRef = useRef<DocumentPageEditorHandle>(null)
   const previewRef = useRef<HTMLDivElement>(null)
   const importedTextRef = useRef<string>('')
@@ -240,7 +237,6 @@ export default function DocumentWorkspace({
   const adoptedIssueIdSet = useMemo(() => new Set(adoptedIssueIds), [adoptedIssueIds])
   const hasContent = content.trim().length > 0
   const preferSourceSidebar = contentOrigin === 'ai' || contentOrigin === 'word' || !!docxBuffer
-  const fallbackSidebarPanel: DocumentSidebarPanel = preferSourceSidebar ? 'source' : 'templates'
   const workflowCompletedThrough = completedThroughStep({
     hasContent,
     proofreadFinished: proofreadCompleted,
@@ -250,23 +246,16 @@ export default function DocumentWorkspace({
     workflowStep === 'structure' || workflowStep === 'proofread' || workflowStep === 'format'
   const structureRail = workflowStep === 'structure' && !structureExpanded && !structurePendingPatch
   const editorChrome = documentEditorChrome(workflowStep, Boolean(docxBuffer))
-  const showSourceTab = preferSourceSidebar
-  const showTemplatesTab = !docxBuffer
-  const showContextTabs = !isStepSidebar && showSourceTab && showTemplatesTab
-  const contextSidebarPanel: 'source' | 'templates' =
-    sidebarPanel === 'templates' && showTemplatesTab
-      ? 'templates'
-      : showSourceTab
-        ? 'source'
-        : 'templates'
+  const showExportSourceSidebar = !isStepSidebar && preferSourceSidebar
+  const showRightSidebar = isStepSidebar || showExportSourceSidebar
 
   const dismissStepSidebar = useCallback(() => {
     setWorkflowStep('export')
-    setSidebarPanel(fallbackSidebarPanel)
+    setSidebarPanel(preferSourceSidebar ? 'source' : 'templates')
     setActiveIssueId(null)
     setLocateHint(null)
     setHighlightRange(null)
-  }, [fallbackSidebarPanel])
+  }, [preferSourceSidebar])
 
   const resetProofreadSession = useCallback(() => {
     undoPastRef.current = []
@@ -1528,9 +1517,7 @@ export default function DocumentWorkspace({
         setStatusMessage(null)
       }
 
-      if (step === 'export') {
-        setExportMenuOpen(true)
-      } else {
+      if (step !== 'export') {
         setExportMenuOpen(false)
       }
 
@@ -1715,54 +1702,6 @@ export default function DocumentWorkspace({
               hidden
               onChange={handleFileChange}
             />
-            {hasContent && workflowStep !== 'prepare' ? (
-              <div className="document-export-dropdown" ref={exportMenuRef}>
-                <button
-                  type="button"
-                  className={`btn btn-sm document-export-trigger${workflowStep === 'export' ? ' btn-primary' : ' btn-ghost'}`}
-                  disabled={busy}
-                  aria-expanded={exportMenuOpen}
-                  aria-haspopup="menu"
-                  onClick={() => setExportMenuOpen((open) => !open)}
-                >
-                  {busy ? <Loader2 size={14} className="spin" /> : <FileDown size={14} />}
-                  导出文件
-                  <ChevronDown size={14} className={`document-export-chevron${exportMenuOpen ? ' open' : ''}`} />
-                </button>
-                {exportMenuOpen ? (
-                  <div className="document-export-menu" role="menu">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={busy}
-                      title="按智能排版步骤的结果生成 Word（GB/T 9704）"
-                      onClick={() => handleExportMenuAction('formatted-docx')}
-                    >
-                      导出 Word
-                    </button>
-                    {docxBuffer ? (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        disabled={busy}
-                        title="写回上传的 Word 并保留原文件版式"
-                        onClick={() => handleExportMenuAction('original-docx')}
-                      >
-                        保留原版式导出
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={busy}
-                      onClick={() => handleExportMenuAction('txt')}
-                    >
-                      导出 TXT
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
           </div>
         </div>
 
@@ -1771,6 +1710,12 @@ export default function DocumentWorkspace({
           completedThrough={workflowCompletedThrough}
           hasContent={hasContent}
           onStepClick={handleWorkflowStepClick}
+          exportMenuOpen={exportMenuOpen}
+          exportBusy={busy}
+          canKeepOriginalLayout={Boolean(docxBuffer)}
+          exportMenuRef={exportMenuRef}
+          onExportMenuToggle={() => setExportMenuOpen((open) => !open)}
+          onExportAction={handleExportMenuAction}
         />
 
         {statusMessage && (workflowStep !== 'prepare' || statusIsError) ? (
@@ -1791,9 +1736,11 @@ export default function DocumentWorkspace({
         ) : null}
 
         <div
-          className={`document-layout-split${workflowStep === 'prepare' ? ' prepare-only' : ''}${
-            isStepSidebar && !structureRail ? ' document-layout-wide-sidebar' : ''
-          }${structureRail ? ' document-layout-structure-rail' : ''}`}
+          className={`document-layout-split${
+            workflowStep === 'prepare' || !showRightSidebar ? ' prepare-only' : ''
+          }${isStepSidebar && !structureRail ? ' document-layout-wide-sidebar' : ''}${
+            structureRail ? ' document-layout-structure-rail' : ''
+          }`}
         >
           <div className="document-editor-column">
             <div className="document-workspace-main">
@@ -1994,30 +1941,8 @@ export default function DocumentWorkspace({
             </div>
           </div>
 
-          {workflowStep !== 'prepare' ? (
+          {workflowStep !== 'prepare' && showRightSidebar ? (
           <aside className="document-sidebar">
-            {!isStepSidebar && showContextTabs ? (
-              <div className="document-sidebar-tabs" role="tablist" aria-label="右侧面板">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={contextSidebarPanel === 'source'}
-                  className={`document-sidebar-tab${contextSidebarPanel === 'source' ? ' active' : ''}`}
-                  onClick={() => setSidebarPanel('source')}
-                >
-                  文档信息
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={contextSidebarPanel === 'templates'}
-                  className={`document-sidebar-tab${contextSidebarPanel === 'templates' ? ' active' : ''}`}
-                  onClick={() => setSidebarPanel('templates')}
-                >
-                  职场模板
-                </button>
-              </div>
-            ) : null}
             <div className="document-sidebar-panel">
               {workflowStep === 'format' ? (
                 <DocumentFormatPanel
@@ -2062,6 +1987,24 @@ export default function DocumentWorkspace({
                   onUndoLastWrite={handleUndoStructureWrite}
                   collapsed={structureRail}
                   onToggleCollapsed={() => setStructureExpanded((expanded) => !expanded)}
+                  footer={
+                    <DocumentLocalRefineCard
+                      prompt={refinePrompt}
+                      onPromptChange={(value) => {
+                        setRefinePrompt(value)
+                        setRefineAnswer(null)
+                      }}
+                      selectedPreview={selectedPreview}
+                      busy={refineBusy}
+                      error={refineError}
+                      answer={refineAnswer}
+                      disabled={!hasContent || busy}
+                      onSubmit={() => void handleLocalRefine()}
+                      onApplyAnswerAsRewrite={
+                        selectedPreview?.trim() ? handleApplyAnswerAsRewrite : undefined
+                      }
+                    />
+                  }
                 />
               ) : workflowStep === 'proofread' ? (
                 <DocumentIssuePanel
@@ -2084,7 +2027,7 @@ export default function DocumentWorkspace({
                     resetProofreadSession()
                   }}
                 />
-              ) : contextSidebarPanel === 'source' && preferSourceSidebar ? (
+              ) : (
                 <DocumentWordSourcePanel
                   kind={contentOrigin === 'ai' || !docxBuffer ? 'ai' : 'word'}
                   fileName={docxFileName}
@@ -2094,52 +2037,11 @@ export default function DocumentWorkspace({
                   onBrowseTemplates={
                     contentOrigin === 'ai'
                       ? () => {
-                          setSidebarPanel('templates')
                           setShowTemplateModal(true)
                         }
                       : undefined
                   }
-                  refinePrompt={refinePrompt}
-                  onRefinePromptChange={(value) => {
-                    setRefinePrompt(value)
-                    setRefineAnswer(null)
-                  }}
-                  selectedPreview={selectedPreview}
-                  refineBusy={refineBusy}
-                  refineError={refineError}
-                  refineAnswer={refineAnswer}
-                  refineDisabled={!hasContent || busy}
-                  onRefine={() => void handleLocalRefine()}
-                  onApplyAnswerAsRewrite={
-                    selectedPreview?.trim() ? handleApplyAnswerAsRewrite : undefined
-                  }
                 />
-              ) : (
-                <div className="document-sidebar-stack">
-                  {hasContent ? (
-                    <DocumentLocalRefineCard
-                      prompt={refinePrompt}
-                      onPromptChange={(value) => {
-                        setRefinePrompt(value)
-                        setRefineAnswer(null)
-                      }}
-                      selectedPreview={selectedPreview}
-                      busy={refineBusy}
-                      error={refineError}
-                      answer={refineAnswer}
-                      disabled={!hasContent || busy}
-                      onSubmit={() => void handleLocalRefine()}
-                      onApplyAnswerAsRewrite={
-                        selectedPreview?.trim() ? handleApplyAnswerAsRewrite : undefined
-                      }
-                    />
-                  ) : null}
-                  <DocumentTemplateSidebar
-                    activeTemplateId={activeTemplateId}
-                    onOpenLibrary={() => setShowTemplateModal(true)}
-                    onApply={handleApplyTemplate}
-                  />
-                </div>
               )}
             </div>
           </aside>

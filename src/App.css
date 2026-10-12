@@ -2303,18 +2303,17 @@
   align-items: center;
 }
 
-.document-export-dropdown {
+.document-workflow-export {
   position: relative;
 }
 
-.document-export-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.document-workflow-step.is-export {
+  padding-right: 8px;
 }
 
 .document-export-chevron {
   transition: transform 0.15s ease;
+  flex-shrink: 0;
 }
 
 .document-export-chevron.open {
@@ -3071,6 +3070,22 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.document-structure-footer {
+  flex-shrink: 0;
+  margin-top: auto;
+  padding: 10px 12px 14px;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.document-structure-footer .document-local-refine {
+  margin: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
 }
 
 .document-structure-revision-hint {

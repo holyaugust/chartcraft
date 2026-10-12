@@ -1,5 +1,4 @@
 import { Eye, FileText, Sparkles, FileDown, Upload, Wand2 } from 'lucide-react'
-import DocumentLocalRefineCard from './DocumentLocalRefineCard'
 
 export type DocumentSourceKind = 'word' | 'ai'
 
@@ -10,15 +9,6 @@ interface DocumentWordSourcePanelProps {
   onOpenPreview?: () => void
   onBrowseTemplates?: () => void
   onReupload?: () => void
-  refinePrompt: string
-  onRefinePromptChange: (value: string) => void
-  selectedPreview: string | null
-  refineBusy: boolean
-  refineError: string | null
-  refineAnswer?: string | null
-  refineDisabled?: boolean
-  onRefine: () => void
-  onApplyAnswerAsRewrite?: () => void
 }
 
 export default function DocumentWordSourcePanel({
@@ -28,30 +18,7 @@ export default function DocumentWordSourcePanel({
   onOpenPreview,
   onBrowseTemplates,
   onReupload,
-  refinePrompt,
-  onRefinePromptChange,
-  selectedPreview,
-  refineBusy,
-  refineError,
-  refineAnswer = null,
-  refineDisabled = false,
-  onRefine,
-  onApplyAnswerAsRewrite,
 }: DocumentWordSourcePanelProps) {
-  const refineCard = (
-    <DocumentLocalRefineCard
-      prompt={refinePrompt}
-      onPromptChange={onRefinePromptChange}
-      selectedPreview={selectedPreview}
-      busy={refineBusy}
-      error={refineError}
-      answer={refineAnswer}
-      disabled={refineDisabled}
-      onSubmit={onRefine}
-      onApplyAnswerAsRewrite={onApplyAnswerAsRewrite}
-    />
-  )
-
   if (kind === 'ai') {
     return (
       <section className="document-word-source-panel" aria-label="AI 生成文档">
@@ -64,10 +31,8 @@ export default function DocumentWordSourcePanel({
         </div>
 
         <p className="document-word-source-lead">
-          正文已由 AI 生成。可在下方输入提示词，对选中段落或指定局部做调整优化。
+          正文已由 AI 生成。局部润色请到流程「结构梳理」；也可直接进入校对与排版。
         </p>
-
-        {refineCard}
 
         <ul className="document-word-source-steps">
           <li>
@@ -112,10 +77,8 @@ export default function DocumentWordSourcePanel({
       </div>
 
       <p className="document-word-source-lead">
-        正文已从 Word 提取。可在下方输入提示词，对局部内容进行调整优化。
+        正文已从 Word 提取。局部润色请到流程「结构梳理」；导出前请完成校对与排版。
       </p>
-
-      {refineCard}
 
       {textDrifted ? (
         <p className="document-word-source-note" role="status">
