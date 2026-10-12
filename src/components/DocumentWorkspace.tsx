@@ -60,6 +60,7 @@ import type { TextHighlightRange } from '../utils/documentLocate'
 import { computeAiWriteHighlightRanges } from '../utils/documentAiHighlight'
 import { getIssueCategoryLabel } from '../utils/documentProofread'
 import { exportDocumentToDocx } from '../utils/docxExport'
+import { exportDocumentToPdf } from '../utils/documentPdfExport'
 import { documentEditorChrome } from '../utils/documentEditorChrome'
 import { saveFile } from '../utils/saveFile'
 import type { DocumentTemplate } from '../data/documentTemplates'
@@ -956,16 +957,49 @@ export default function DocumentWorkspace({
     [content, docxBuffer, docxFileName],
   )
 
+  const handleExportPdf = useCallback(async () => {
+    if (!content.trim()) {
+      setStatusIsError(true)
+      setStatusMessage('文档内容为空，无法导出 PDF')
+      return
+    }
+
+    setBusy(true)
+    setStatusMessage(null)
+    setStatusIsError(false)
+
+    try {
+      setStatusMessage('正在按公文版式导出 PDF…')
+      const baseName = (docxFileName || '报告文档').replace(/\.docx$/i, '')
+      const saved = await exportDocumentToPdf(content, { fileName: `${baseName}.pdf` })
+      if (!saved) {
+        setStatusMessage(null)
+        return
+      }
+      setStatusIsError(false)
+      setStatusMessage(`PDF 已导出：${baseName}.pdf`)
+    } catch (err) {
+      setStatusIsError(true)
+      setStatusMessage(err instanceof Error ? err.message : 'PDF 导出失败')
+    } finally {
+      setBusy(false)
+    }
+  }, [content, docxFileName])
+
   const handleExportMenuAction = useCallback(
-    (action: 'original-docx' | 'formatted-docx' | 'txt') => {
+    (action: 'original-docx' | 'formatted-docx' | 'pdf' | 'txt') => {
       setExportMenuOpen(false)
       if (action === 'txt') {
         handleExportTxt()
         return
       }
+      if (action === 'pdf') {
+        void handleExportPdf()
+        return
+      }
       void handleExportDocx(action === 'formatted-docx')
     },
-    [handleExportDocx, handleExportTxt],
+    [handleExportDocx, handleExportPdf, handleExportTxt],
   )
 
   const selectedPreview = useMemo(() => {

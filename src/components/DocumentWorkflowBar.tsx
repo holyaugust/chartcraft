@@ -3,7 +3,7 @@ import { Check, ChevronDown, FileDown, ListTree, Loader2, Sparkles, Type, Upload
 
 export type DocumentWorkflowStep = 'prepare' | 'structure' | 'proofread' | 'format' | 'export'
 
-export type DocumentExportMenuAction = 'formatted-docx' | 'original-docx' | 'txt'
+export type DocumentExportMenuAction = 'formatted-docx' | 'pdf' | 'original-docx' | 'txt'
 
 const STEPS: { id: DocumentWorkflowStep; label: string; icon: typeof Sparkles }[] = [
   { id: 'prepare', label: '准备文档', icon: Upload },
@@ -152,6 +152,15 @@ export default function DocumentWorkflowBar({
                       onClick={() => onExportAction('formatted-docx')}
                     >
                       导出 Word
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={exportBusy}
+                      title="按公文版式预览生成 A4 PDF（版式型）"
+                      onClick={() => onExportAction('pdf')}
+                    >
+                      导出 PDF
                     </button>
                     {canKeepOriginalLayout ? (
                       <button

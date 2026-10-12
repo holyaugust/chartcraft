@@ -28,17 +28,24 @@ describe('DocumentWorkflowBar export menu', () => {
 
     expect(host.textContent).not.toContain('导出文件')
     expect(host.textContent).toContain('导出 Word')
+    expect(host.textContent).toContain('导出 PDF')
     expect(host.textContent).toContain('保留原版式导出')
     expect(host.textContent).toContain('导出 TXT')
     expect(host.querySelector('.document-export-menu')).toBeTruthy()
 
-    const keepOriginal = [...host.querySelectorAll('[role="menuitem"]')].find((item) =>
-      item.textContent?.includes('保留原版式导出'),
+    const menuLabels = [...host.querySelectorAll('[role="menuitem"]')].map(
+      (item) => item.textContent?.trim() ?? '',
+    )
+    expect(menuLabels.indexOf('导出 Word')).toBeLessThan(menuLabels.indexOf('导出 PDF'))
+    expect(menuLabels.indexOf('导出 PDF')).toBeLessThan(menuLabels.indexOf('保留原版式导出'))
+
+    const exportPdf = [...host.querySelectorAll('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes('导出 PDF'),
     )
     act(() => {
-      keepOriginal?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      exportPdf?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(onExportAction).toHaveBeenCalledWith('original-docx')
+    expect(onExportAction).toHaveBeenCalledWith('pdf')
 
     act(() => root.unmount())
     host.remove()
