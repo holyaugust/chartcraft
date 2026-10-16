@@ -1946,7 +1946,7 @@ export default function DocumentWorkspace({
                     <DocumentTextEditor
                       ref={editorRef}
                       value={content}
-                      layoutMode={workflowStep === 'structure' ? 'official' : 'manuscript'}
+                      layoutMode="official"
                       highlightRange={highlightRange}
                       aiHighlightRanges={aiHighlightRanges}
                       revisionPreview={structureRevisionPreview}

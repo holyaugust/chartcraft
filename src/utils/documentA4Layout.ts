@@ -1,14 +1,17 @@
 import { buildOfficialLayoutHtml } from './documentOfficialLayout'
 
-/** A4 @96dpi（与常见浏览器打印布局一致） */
+/** A4 @96dpi；页边距为屏幕预览用的近似视觉边距（非 GB/T 9704 毫米值） */
 export const A4_PAGE_PX = {
   width: 794,
   height: 1123,
-  /** 上下边距（近似公文装订区） */
+  /** 上下边距 */
   paddingY: 72,
   /** 左右边距 */
   paddingX: 68,
 } as const
+
+/** CSS padding 简写：上下 | 左右 */
+export const A4_PAGE_PADDING_CSS = `${A4_PAGE_PX.paddingY}px ${A4_PAGE_PX.paddingX}px`
 
 export type BuildOfficialLayoutPagesOptions = {
   document?: Document
@@ -54,6 +57,61 @@ export function formatA4PageStatus(pageIndex1Based: number, pageCount: number): 
   return `第 ${safeIndex} 页，共 ${safeCount} 页 · A4`
 }
 
+/** 按整页纸高度估算页数（文本编辑用，非块级真分页） */
+export function estimateA4PageCount(contentHeightPx: number): number {
+  if (!Number.isFinite(contentHeightPx) || contentHeightPx <= 0) return 1
+  return Math.max(1, Math.ceil(contentHeightPx / A4_PAGE_PX.height))
+}
+
+/** 按滚动位置估算当前页（视口上方约 1/3 处） */
+export function estimateA4CurrentPage(
+  scrollTop: number,
+  viewportHeight: number,
+  pageCount: number,
+): number {
+  const safeCount = Math.max(1, pageCount)
+  const focusY = Math.max(0, scrollTop) + Math.max(0, viewportHeight) / 3
+  const page = Math.floor(focusY / A4_PAGE_PX.height) + 1
+  return Math.min(safeCount, Math.max(1, page))
+}
+
+/** 将已渲染的块节点按高度装入多张 A4 纸（纸间插入不可编辑页缝） */
+export function wrapBlocksIntoA4Sheets(
+  blockElements: HTMLElement[],
+  heights: number[],
+  maxHeight: number = a4ContentBoxHeightPx(),
+): DocumentFragment {
+  const fragment = document.createDocumentFragment()
+  if (blockElements.length === 0) {
+    const sheet = document.createElement('div')
+    sheet.className = 'document-a4-editor-sheet'
+    sheet.setAttribute('data-a4-sheet', '1')
+    fragment.append(sheet)
+    return fragment
+  }
+
+  const groups = paginateBlockHeights(heights, maxHeight)
+  groups.forEach((indices, pageIndex) => {
+    const sheet = document.createElement('div')
+    sheet.className = 'document-a4-editor-sheet'
+    sheet.setAttribute('data-a4-sheet', String(pageIndex + 1))
+    for (const index of indices) {
+      const block = blockElements[index]
+      if (block) sheet.append(block)
+    }
+    fragment.append(sheet)
+    if (pageIndex < groups.length - 1) {
+      const gap = document.createElement('div')
+      gap.className = 'document-a4-editor-gap'
+      gap.contentEditable = 'false'
+      gap.setAttribute('data-a4-gap', 'true')
+      gap.setAttribute('aria-hidden', 'true')
+      fragment.append(gap)
+    }
+  })
+  return fragment
+}
+
 /** 测量子节点占位高度（含上下 margin） */
 export function measureBlockHeights(container: HTMLElement): number[] {
   const children = Array.from(container.children) as HTMLElement[]
@@ -69,7 +127,7 @@ function applyMeasureInlineStyles(page: HTMLElement) {
   page.style.cssText = [
     `box-sizing:border-box`,
     `width:${A4_PAGE_PX.width}px`,
-    `padding:${A4_PAGE_PX.paddingY}px ${A4_PAGE_PX.paddingX}px`,
+    `padding:${A4_PAGE_PADDING_CSS}`,
     `background:#fff`,
     `color:#1e293b`,
   ].join(';')

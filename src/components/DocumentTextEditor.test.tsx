@@ -20,6 +20,23 @@ function renderEditor(value: string, props: Record<string, unknown> = {}) {
 }
 
 describe('DocumentTextEditor page', () => {
+  it('shows A4 page chrome and Word-like page status', () => {
+    const { host, root } = renderEditor('一、标题\n正文')
+    expect(host.querySelector('.document-page-a4')).not.toBeNull()
+    expect(host.querySelector('.document-a4-editor-sheet')).not.toBeNull()
+    expect(host.querySelector('.document-a4-status')?.textContent).toMatch(/第 \d+ 页，共 \d+ 页 · A4/)
+    act(() => root.unmount())
+  })
+
+  it('splits long text into multiple A4 editor sheets with gaps', () => {
+    const lines = Array.from({ length: 12 }, (_, i) => `段落${i + 1}：内容若干。`)
+    const { host, root } = renderEditor(lines.join('\n'), { layoutMode: 'official' })
+    expect(host.querySelectorAll('.document-a4-editor-sheet').length).toBeGreaterThan(1)
+    expect(host.querySelectorAll('.document-a4-editor-gap').length).toBeGreaterThan(0)
+    expect(host.querySelector('.document-a4-status')?.textContent).toMatch(/共 [2-9] 页 · A4/)
+    act(() => root.unmount())
+  })
+
   it('renders a heading and a table', () => {
     const { host, root } = renderEditor('一、标题\n正文\n甲 | 乙')
     const heading = host.querySelector('[data-level="h1"]')

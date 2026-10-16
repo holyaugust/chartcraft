@@ -1165,11 +1165,23 @@
   box-sizing: border-box;
 }
 
+.document-page-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .document-page-scroll {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  background: #e8eef5;
+  background: #c5ccd6;
+}
+
+.document-page-a4-stack {
+  padding: 20px 16px 28px;
 }
 
 .document-page {
@@ -1180,6 +1192,41 @@
   background: #fff;
   border: 1px solid #e2e8f0;
   box-shadow: 0 8px 28px rgba(15, 23, 42, 0.1);
+}
+
+/* 文本编辑：外层透明流动，内层多张 A4 白纸 */
+.document-page.document-page-a4 {
+  margin: 0 auto;
+  width: auto;
+  min-height: 0;
+  max-width: none;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.document-a4-editor-sheet {
+  position: relative;
+  width: 794px;
+  min-height: 1123px;
+  max-width: calc(100vw - 48px);
+  margin: 0 auto;
+  padding: 72px 68px;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid #d8dee8;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18), 0 12px 32px rgba(15, 23, 42, 0.12);
+}
+
+.document-a4-editor-gap {
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+  user-select: none;
 }
 
 .document-page-editor {

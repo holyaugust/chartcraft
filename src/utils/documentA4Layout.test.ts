@@ -3,15 +3,20 @@ import {
   A4_PAGE_PX,
   a4ContentBoxHeightPx,
   buildOfficialLayoutPages,
+  estimateA4CurrentPage,
+  estimateA4PageCount,
   paginateBlockHeights,
   formatA4PageStatus,
+  wrapBlocksIntoA4Sheets,
 } from './documentA4Layout'
 
 describe('documentA4Layout', () => {
   it('defines A4 page metrics in CSS pixels', () => {
     expect(A4_PAGE_PX.width).toBe(794)
     expect(A4_PAGE_PX.height).toBe(1123)
-    expect(a4ContentBoxHeightPx()).toBeGreaterThan(800)
+    expect(A4_PAGE_PX.paddingY).toBe(72)
+    expect(A4_PAGE_PX.paddingX).toBe(68)
+    expect(a4ContentBoxHeightPx()).toBe(A4_PAGE_PX.height - A4_PAGE_PX.paddingY * 2)
     expect(a4ContentBoxHeightPx()).toBeLessThan(A4_PAGE_PX.height)
   })
 
@@ -34,6 +39,32 @@ describe('documentA4Layout', () => {
   it('formats Word-like status text', () => {
     expect(formatA4PageStatus(1, 3)).toBe('第 1 页，共 3 页 · A4')
     expect(formatA4PageStatus(2, 2)).toBe('第 2 页，共 2 页 · A4')
+  })
+
+  it('estimates page count from content height', () => {
+    expect(estimateA4PageCount(0)).toBe(1)
+    expect(estimateA4PageCount(A4_PAGE_PX.height)).toBe(1)
+    expect(estimateA4PageCount(A4_PAGE_PX.height + 1)).toBe(2)
+    expect(estimateA4CurrentPage(0, 400, 2)).toBe(1)
+    expect(estimateA4CurrentPage(A4_PAGE_PX.height + 20, 400, 3)).toBe(2)
+  })
+
+  it('wraps block elements into multiple A4 editor sheets', () => {
+    const host = document.createElement('div')
+    const blocks = [0, 1, 2, 3].map((i) => {
+      const el = document.createElement('p')
+      el.textContent = `块${i}`
+      el.dataset.plainStart = String(i)
+      host.append(el)
+      return el
+    })
+    const fragment = wrapBlocksIntoA4Sheets(blocks, [400, 400, 400, 400])
+    const wrap = document.createElement('div')
+    wrap.append(fragment)
+    expect(wrap.querySelectorAll('.document-a4-editor-sheet')).toHaveLength(2)
+    expect(wrap.querySelectorAll('.document-a4-editor-gap')).toHaveLength(1)
+    expect(wrap.querySelectorAll('.document-a4-editor-sheet')[0]?.textContent).toContain('块0')
+    expect(wrap.querySelectorAll('.document-a4-editor-sheet')[1]?.textContent).toContain('块2')
   })
 
   it('builds multiple official-layout page html fragments from measured heights', () => {

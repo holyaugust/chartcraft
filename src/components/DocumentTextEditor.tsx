@@ -1,6 +1,23 @@
-import { forwardRef, memo, useEffect, useImperativeHandle, useLayoutEffect, useRef, type RefObject } from 'react'
+import {
+  forwardRef,
+  memo,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react'
 import type { TextHighlightRange } from '../utils/documentLocate'
 import { scrollPageToRange } from '../utils/documentLocate'
+import {
+  A4_PAGE_PADDING_CSS,
+  A4_PAGE_PX,
+  a4ContentBoxHeightPx,
+  formatA4PageStatus,
+  measureBlockHeights,
+  wrapBlocksIntoA4Sheets,
+} from '../utils/documentA4Layout'
 import {
   applyPageCommand,
   parseDocumentPage,
@@ -73,7 +90,7 @@ const PageSurface = memo(function PageSurface({
   return (
     <div
       ref={surfaceRef}
-      className={`document-page document-page-editor${layoutMode === 'official' ? ' document-page-editor-official' : ''}`}
+      className={`document-page document-page-a4 document-page-editor${layoutMode === 'official' ? ' document-page-editor-official' : ''}`}
       contentEditable
       suppressContentEditableWarning
       spellCheck={false}
@@ -284,22 +301,50 @@ function paintPage(
   layoutMode: 'manuscript' | 'official' = 'manuscript',
   revisionPreview: DocumentRevisionPreview | null = null,
 ) {
-  const fragment = document.createDocumentFragment()
   const blocks = parseDocumentPage(value)
   const officialKinds =
     layoutMode === 'official'
       ? classifyOfficialLines(blocks.map((block) => ('text' in block ? block.text : '')))
       : null
+
+  const measure = document.createElement('div')
+  measure.className =
+    layoutMode === 'official'
+      ? 'document-page-editor document-page-editor-official document-a4-editor-measure'
+      : 'document-page-editor document-a4-editor-measure'
+  measure.style.cssText = [
+    'position:fixed',
+    'left:-10000px',
+    'top:0',
+    'visibility:hidden',
+    'pointer-events:none',
+    `width:${A4_PAGE_PX.width}px`,
+    `padding:${A4_PAGE_PADDING_CSS}`,
+    'box-sizing:border-box',
+  ].join(';')
+
+  const blockElements: HTMLElement[] = []
   blocks.forEach((block, index) => {
     let officialKind: OfficialParagraphKind | undefined
     if (officialKinds && block.kind !== 'blank' && block.kind !== 'table') {
       officialKind = officialKinds[index]
     }
-    fragment.append(
-      createBlock(block, highlightRange, aiHighlightRanges, officialKind, revisionPreview),
-    )
+    const el = createBlock(block, highlightRange, aiHighlightRanges, officialKind, revisionPreview)
+    blockElements.push(el)
+    measure.append(el)
   })
-  root.replaceChildren(fragment)
+
+  document.body.append(measure)
+  let heights = measureBlockHeights(measure)
+  // jsdom 等环境高度为 0 时，用版心估算，保证长文仍能拆成多页纸
+  if (heights.length > 0 && heights.every((h) => h <= 0)) {
+    const approx = Math.max(28, Math.floor(a4ContentBoxHeightPx() / 3))
+    heights = heights.map(() => approx)
+  }
+  const sheets = wrapBlocksIntoA4Sheets(blockElements, heights)
+  measure.remove()
+
+  root.replaceChildren(sheets)
   root.contentEditable = revisionPreview ? 'false' : 'true'
 }
 
@@ -419,6 +464,7 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
   ) {
     const scrollRef = useRef<HTMLDivElement>(null)
     const pageRef = useRef<HTMLDivElement>(null)
+    const [pageStatus, setPageStatus] = useState(() => formatA4PageStatus(1, 1))
     const textRef = useRef(value)
     const emittedRef = useRef<string | null>(null)
     const composingRef = useRef(false)
@@ -456,6 +502,31 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
       layoutModeRef.current = layoutMode
     }
 
+    const refreshPageStatus = () => {
+      const scroller = scrollRef.current
+      const page = pageRef.current
+      if (!scroller || !page) return
+      const sheets = [...page.querySelectorAll<HTMLElement>('.document-a4-editor-sheet')]
+      const pageCount = Math.max(1, sheets.length)
+      if (sheets.length === 0) {
+        setPageStatus(formatA4PageStatus(1, 1))
+        return
+      }
+      const mid = scroller.scrollTop + scroller.clientHeight / 3
+      let best = 0
+      let bestDist = Number.POSITIVE_INFINITY
+      sheets.forEach((sheet, index) => {
+        const top = sheet.offsetTop
+        const center = top + sheet.offsetHeight / 2
+        const dist = Math.abs(center - mid)
+        if (dist < bestDist) {
+          bestDist = dist
+          best = index
+        }
+      })
+      setPageStatus(formatA4PageStatus(best + 1, pageCount))
+    }
+
     useLayoutEffect(() => {
       if (composingRef.current) return
       if (
@@ -473,7 +544,25 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
       }
       paintCurrent(value)
       if (highlightOnly && caretRef.current && page) placeCaret(page, caretRef.current.start)
+      refreshPageStatus()
     }, [value, highlightKey, layoutMode])
+
+    useEffect(() => {
+      const scroller = scrollRef.current
+      if (!scroller) return
+      refreshPageStatus()
+      const onScroll = () => refreshPageStatus()
+      scroller.addEventListener('scroll', onScroll, { passive: true })
+      const ro =
+        typeof ResizeObserver !== 'undefined'
+          ? new ResizeObserver(() => refreshPageStatus())
+          : null
+      if (pageRef.current && ro) ro.observe(pageRef.current)
+      return () => {
+        scroller.removeEventListener('scroll', onScroll)
+        ro?.disconnect()
+      }
+    }, [value, layoutMode])
 
     const paintCurrentRef = useRef(paintCurrent)
     paintCurrentRef.current = paintCurrent
@@ -677,8 +766,15 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
     }))
 
     return (
-      <div ref={scrollRef} className={`document-page-scroll ${className}`.trim()}>
-        <PageSurface surfaceRef={pageRef} layoutMode={layoutMode} />
+      <div className={`document-page-shell ${className}`.trim()}>
+        <div ref={scrollRef} className="document-page-scroll">
+          <div className="document-a4-stack document-page-a4-stack">
+            <PageSurface surfaceRef={pageRef} layoutMode={layoutMode} />
+          </div>
+        </div>
+        <div className="document-a4-status" role="status" aria-live="polite">
+          {pageStatus}
+        </div>
       </div>
     )
   },

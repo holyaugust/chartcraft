@@ -1,13 +1,13 @@
 import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
-import { A4_PAGE_PX, buildOfficialLayoutPages } from './documentA4Layout'
+import { A4_PAGE_PADDING_CSS, A4_PAGE_PX, buildOfficialLayoutPages } from './documentA4Layout'
 import { saveFile } from './saveFile'
 
 const PAGE_INLINE_STYLE = `
   box-sizing: border-box;
   width: ${A4_PAGE_PX.width}px;
   height: ${A4_PAGE_PX.height}px;
-  padding: ${A4_PAGE_PX.paddingY}px ${A4_PAGE_PX.paddingX}px;
+  padding: ${A4_PAGE_PADDING_CSS};
   background: #fff;
   color: #1e293b;
   overflow: hidden;
