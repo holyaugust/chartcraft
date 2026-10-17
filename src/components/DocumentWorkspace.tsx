@@ -26,9 +26,6 @@ import {
 import DocumentWordSourcePanel from './DocumentWordSourcePanel'
 import DocumentTemplatePickerModal from './DocumentTemplatePickerModal'
 import DocumentWriteModal from './DocumentWriteModal'
-import DocumentProofreadSetupModal, {
-  type ProofreadSetupSubmitPayload,
-} from './DocumentProofreadSetupModal'
 import DocumentProofreadBusyOverlay from './DocumentProofreadBusyOverlay'
 import DocumentEmptyState from './DocumentEmptyState'
 import DocumentWorkflowBar, {
@@ -161,8 +158,6 @@ export default function DocumentWorkspace({
   const [issues, setIssues] = useState<DocumentIssue[]>([])
   const [, setReviewMode] = useState<ProofreadMode | null>(null)
   const [proofreadGenreLabel, setProofreadGenreLabel] = useState<string | null>(null)
-  const [proofreadSetupOpen, setProofreadSetupOpen] = useState(false)
-  const [pendingProofreadMode, setPendingProofreadMode] = useState<ProofreadMode>('standard')
   const [contentOrigin, setContentOrigin] = useState<DocumentContentOrigin>('none')
   const [sidebarPanel, setSidebarPanel] = useState<DocumentSidebarPanel>('templates')
   const [proofreadCompleted, setProofreadCompleted] = useState(false)
@@ -466,16 +461,6 @@ export default function DocumentWorkspace({
     onSavedLabelChange(savedLabel)
   }, [savedLabel, onSavedLabelChange])
 
-  const openProofreadSetup = useCallback((mode: ProofreadMode) => {
-    if (!content.trim()) {
-      setStatusIsError(true)
-      setStatusMessage('请先输入或上传文档内容')
-      return
-    }
-    setPendingProofreadMode(mode)
-    setProofreadSetupOpen(true)
-  }, [content])
-
   const runReview = useCallback(async (mode: ProofreadMode, promptContext: ProofreadPromptContext) => {
     const { checkWithDeepSeek, isDeepSeekConfigured } = await import('../utils/deepseek')
     if (!isDeepSeekConfigured()) {
@@ -580,17 +565,6 @@ export default function DocumentWorkspace({
       }
     },
     [content, proofreadCompleted, runReview],
-  )
-
-  const handleProofreadSetupSubmit = useCallback(
-    (payload: ProofreadSetupSubmitPayload) => {
-      setProofreadSetupOpen(false)
-      void runReview(payload.mode, {
-        ...payload.promptContext,
-        rescan: proofreadCompleted,
-      })
-    },
-    [runReview, proofreadCompleted],
   )
 
   const handleWordUpload = useCallback(async (file: File) => {
@@ -2067,7 +2041,6 @@ export default function DocumentWorkspace({
                   onToggleAdoptGroup={handleToggleAdoptGroup}
                   onApplyAll={handleApplyAll}
                   onStartProofread={() => void startProofreadDirect('standard')}
-                  onAdjustProofreadPlan={() => openProofreadSetup('standard')}
                   onGoFormat={() => openFormatStep()}
                   onDismiss={() => {
                     dismissStepSidebar()
@@ -2124,15 +2097,6 @@ export default function DocumentWorkspace({
         open={showWriteModal}
         onClose={() => setShowWriteModal(false)}
         onGenerated={handleWriteGenerated}
-      />
-
-      <DocumentProofreadSetupModal
-        open={proofreadSetupOpen}
-        mode={pendingProofreadMode}
-        content={content}
-        isTableDocument={hasTableLikeRows(content)}
-        onClose={() => setProofreadSetupOpen(false)}
-        onSubmit={handleProofreadSetupSubmit}
       />
 
       <DocumentTemplatePickerModal

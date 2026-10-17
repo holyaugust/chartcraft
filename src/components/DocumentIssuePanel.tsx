@@ -19,7 +19,6 @@ interface DocumentIssuePanelProps {
   onApplyAll: () => void
   onDismiss: () => void
   onStartProofread?: () => void
-  onAdjustProofreadPlan?: () => void
   onGoFormat?: () => void
   busy?: boolean
 }
@@ -60,7 +59,6 @@ export default function DocumentIssuePanel({
   onApplyAll,
   onDismiss,
   onStartProofread,
-  onAdjustProofreadPlan,
   onGoFormat,
   busy = false,
 }: DocumentIssuePanelProps) {
@@ -101,17 +99,6 @@ export default function DocumentIssuePanel({
           </p>
         </div>
         <div className="document-issue-panel-actions">
-          {onAdjustProofreadPlan ? (
-            <button
-              type="button"
-              className="btn btn-sm btn-ghost"
-              disabled={busy}
-              onClick={onAdjustProofreadPlan}
-              title="调整文体与校对提示词后再校对"
-            >
-              调整方案
-            </button>
-          ) : null}
           {onStartProofread ? (
             <button
               type="button"
@@ -139,22 +126,12 @@ export default function DocumentIssuePanel({
       ) : !hasRun ? (
         <div className="document-issue-empty-start">
           <Sparkles size={22} />
-          <p>点击开始后将自动识别文体并完成智能校对，结果会显示在这里。也可先「调整方案」。</p>
+          <p>点击开始后将自动识别文体并完成智能校对，结果会显示在这里。</p>
           <div className="document-issue-empty-actions">
             {onStartProofread ? (
               <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={onStartProofread}>
                 <Sparkles size={14} />
                 开始智能校对
-              </button>
-            ) : null}
-            {onAdjustProofreadPlan ? (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                disabled={busy}
-                onClick={onAdjustProofreadPlan}
-              >
-                调整方案
               </button>
             ) : null}
           </div>

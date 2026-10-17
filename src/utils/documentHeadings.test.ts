@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { extractDocumentHeadings } from './documentHeadings'
+import { extractDocumentHeadings, resolveHeadingOutlineLevel } from './documentHeadings'
+import { detectHeadingLevel } from './documentFormatNormalize'
 import { buildDocumentTocDirectory } from './documentOutlineSections'
 
 const sample = [
@@ -13,6 +14,29 @@ const sample = [
   '围绕主业做强做优。',
 ].join('\n')
 
+describe('resolveHeadingOutlineLevel', () => {
+  it('classifies GB/T-style markers into outline levels', () => {
+    expect(resolveHeadingOutlineLevel('一、总则')).toBe(1)
+    expect(resolveHeadingOutlineLevel('（一）范围')).toBe(2)
+    expect(resolveHeadingOutlineLevel('1. 条目')).toBe(3)
+    expect(resolveHeadingOutlineLevel('（1）细目')).toBe(4)
+    expect(resolveHeadingOutlineLevel('普通段落')).toBeNull()
+  })
+
+  it('stays aligned with format detectHeadingLevel', () => {
+    const samples = ['一、总则', '（一）范围', '1. 条目', '（1）细目', '2024年计划']
+    for (const line of samples) {
+      const outline = resolveHeadingOutlineLevel(line)
+      const format = detectHeadingLevel(line)
+      if (outline == null) {
+        expect(format).toBeNull()
+      } else {
+        expect(format).toBe(`h${outline}`)
+      }
+    }
+  })
+})
+
 describe('extractDocumentHeadings', () => {
   it('extracts numbered headings with levels and offsets from the body', () => {
     const headings = extractDocumentHeadings(sample)
@@ -24,6 +48,11 @@ describe('extractDocumentHeadings', () => {
     ])
     expect(headings.map((item) => item.level)).toEqual([1, 1, 2, 2])
     expect(sample.slice(headings[2]!.start, headings[2]!.end)).toBe('（一）总体思路')
+  })
+
+  it('treats arabic numbered lines as level 3, not level 1', () => {
+    const text = '一、总体\n（一）方向\n1. 短期安排\n正文'
+    expect(extractDocumentHeadings(text).map((item) => item.level)).toEqual([1, 2, 3])
   })
 
   it('does not invent inductive titles that are not heading lines', () => {

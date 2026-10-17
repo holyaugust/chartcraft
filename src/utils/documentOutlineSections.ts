@@ -18,7 +18,7 @@ export interface OutlineDirectoryEntry {
   found: boolean
   charCount: number
   short: boolean
-  level?: 1 | 2 | 3
+  level?: 1 | 2 | 3 | 4
   section: OutlineSectionRange | null
 }
 

@@ -2,6 +2,10 @@
  * 公文结构规范化：层次标题与正文拆行、附件格式拆行
  */
 
+import { HEADING1_PREFIX_RE, resolveHeadingOutlineLevel } from './documentHeadings'
+
+export { HEADING1_PREFIX_RE }
+
 export function stripLeadingIndent(text: string): string {
   return text.replace(/^[ \t　]+/, '')
 }
@@ -82,16 +86,10 @@ export function normalizeDocumentStructure(text: string): string {
 
 export type HeadingLevel = 'h1' | 'h2' | 'h3' | 'h4'
 
-/** 「一、」后可跟年份；「一．2」这种点号+数字不当作一级标题 */
-export const HEADING1_PREFIX_RE =
-  /^[一二三四五六七八九十百零〇]+(?:、|[．.](?!\d))/u
-
 export function detectHeadingLevel(trimmed: string): HeadingLevel | null {
-  if (HEADING1_PREFIX_RE.test(trimmed)) return 'h1'
-  if (/^（[一二三四五六七八九十百零〇]+）/u.test(trimmed)) return 'h2'
-  if (/^（\d+）/u.test(trimmed)) return 'h4'
-  if (/^\d+[．.、]\s/u.test(trimmed) && trimmed.length <= 48 && !/[。；！？]/.test(trimmed)) return 'h3'
-  return null
+  const level = resolveHeadingOutlineLevel(trimmed)
+  if (level == null) return null
+  return `h${level}` as HeadingLevel
 }
 
 /** 文首首行：较短且无句末标点，按总标题处理 */

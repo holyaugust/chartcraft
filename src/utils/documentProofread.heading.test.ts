@@ -79,4 +79,40 @@ describe('heading proofread guards', () => {
     const issues = collectStructuralProofreadIssues(text)
     expect(issues.some((item) => item.message.includes('标题末尾不宜使用句号'))).toBe(false)
   })
+
+  it('does not treat level-3 arabic headings as misuse when Chinese L1 exists', () => {
+    const text = [
+      '一、总体思路',
+      '（一）主要方向',
+      '1. 短期安排',
+      '2. 中期安排',
+    ].join('\n')
+    const issues = collectStructuralProofreadIssues(text)
+    expect(issues.some((item) => item.message.includes('阿拉伯数字序号'))).toBe(false)
+  })
+
+  it('flags arabic top-level headings when the document has no Chinese L1', () => {
+    const text = '1、概况\n正文\n2、计划\n更多正文'
+    const issues = collectStructuralProofreadIssues(text)
+    const hits = issues.filter((item) => item.message.includes('阿拉伯数字作一级标题'))
+    expect(hits.length).toBeGreaterThanOrEqual(2)
+    expect(text.slice(hits[0]!.start, hits[0]!.end)).toContain('1、概况')
+    expect(hits[0]!.start).toBeGreaterThanOrEqual(0)
+    expect(hits[0]!.end).toBeGreaterThan(hits[0]!.start)
+  })
+
+  it('flags skipped heading levels from L1 to L3', () => {
+    const text = '一、总体思路\n1. 短期安排\n正文'
+    const issues = collectStructuralProofreadIssues(text)
+    const hit = issues.find((item) => item.message.includes('标题层级跳跃'))
+    expect(hit).toBeTruthy()
+    expect(text.slice(hit!.start, hit!.end)).toContain('1. 短期安排')
+  })
+
+  it('flags mixed second-tier marker styles', () => {
+    const text = '一、总体\n（一）方向甲\n（1）方向乙\n正文'
+    const issues = collectStructuralProofreadIssues(text)
+    const hit = issues.find((item) => item.message.includes('二级层次序号样式混用'))
+    expect(hit).toBeTruthy()
+  })
 })
