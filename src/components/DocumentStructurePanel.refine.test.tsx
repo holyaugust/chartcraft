@@ -1,6 +1,7 @@
 import { createRoot, type Root } from 'react-dom/client'
-import { act } from 'react'
+import { act, type ComponentProps } from 'react'
 import { describe, expect, it } from 'vitest'
+import DocumentLocalRefineCard from './DocumentLocalRefineCard'
 import DocumentStructurePanel from './DocumentStructurePanel'
 import type { DocumentStructureAnalysisResult } from '../utils/documentStructureAnalysis'
 
@@ -13,8 +14,23 @@ const report: DocumentStructureAnalysisResult = {
   rawMarkdown: '',
 }
 
+function renderFooterCard(props: Partial<ComponentProps<typeof DocumentLocalRefineCard>> = {}) {
+  return (
+    <DocumentLocalRefineCard
+      prompt=""
+      onPromptChange={() => {}}
+      selectedPreview={null}
+      busy={false}
+      error={null}
+      onSubmit={() => {}}
+      collapsible
+      {...props}
+    />
+  )
+}
+
 describe('DocumentStructurePanel local refine footer', () => {
-  it('renders a refine footer in the structure stage panel', () => {
+  it('keeps refine collapsed by default so structure outline keeps space', () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
     const root: Root = createRoot(host)
@@ -29,13 +45,22 @@ describe('DocumentStructurePanel local refine footer', () => {
           onOptimizeSuggestion={() => {}}
           onConfirmPatch={() => {}}
           onCancelPatch={() => {}}
-          footer={<div data-testid="structure-refine">你想对这篇文档做什么</div>}
+          footer={renderFooterCard()}
         />,
       )
     })
 
-    expect(host.querySelector('[data-testid="structure-refine"]')).toBeTruthy()
+    const collapsed = host.querySelector('.document-local-refine-collapsed')
+    expect(collapsed).toBeTruthy()
+    expect(collapsed?.className).toContain('is-accent')
+    expect(host.querySelector('.document-local-refine-input')).toBeNull()
     expect(host.textContent).toContain('你想对这篇文档做什么')
+    expect(host.textContent).toContain('展开')
+
+    act(() => {
+      collapsed?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(host.querySelector('.document-local-refine-input')).toBeTruthy()
 
     act(() => root.unmount())
     host.remove()
@@ -57,12 +82,13 @@ describe('DocumentStructurePanel local refine footer', () => {
           onOptimizeSuggestion={() => {}}
           onConfirmPatch={() => {}}
           onCancelPatch={() => {}}
-          footer={<div data-testid="structure-refine">你想对这篇文档做什么</div>}
+          footer={renderFooterCard()}
         />,
       )
     })
 
-    expect(host.querySelector('[data-testid="structure-refine"]')).toBeNull()
+    expect(host.querySelector('.document-local-refine')).toBeNull()
+    expect(host.querySelector('.document-local-refine-collapsed')).toBeNull()
 
     act(() => root.unmount())
     host.remove()

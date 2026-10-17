@@ -11,13 +11,6 @@ export function documentEditorChrome(
   if (step === 'prepare') {
     return { showTextTab: false, showOfficialTab: false, showOriginalWordLink: false }
   }
-  if (step === 'format') {
-    return {
-      showTextTab: true,
-      showOfficialTab: true,
-      showOriginalWordLink: hasOriginalWord,
-    }
-  }
   return {
     showTextTab: false,
     showOfficialTab: false,

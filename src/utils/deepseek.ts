@@ -4,6 +4,8 @@ import {
   getLineTextAtOffset,
   mergeProofreadIssues,
   proofreadDocument,
+  isHeadingMarkerFragment,
+  isStaleProofreadIssue,
   shouldSkipProofreadIssue,
   trimDuplicateTrailingPunctuation,
 } from './documentProofread'
@@ -637,6 +639,9 @@ function findOriginalPosition(
     from = start + 1
   }
 
+  // 标题序号类原文禁止模糊定位，避免「一、」命中到已经是「（一）」的行
+  if (isHeadingMarkerFragment(original)) return null
+
   // 空白差异导致无法精确命中时：用去空白后的子串回映到原文
   const needle = original.replace(/\s+/g, '')
   if (needle.length >= 8) {
@@ -1183,17 +1188,50 @@ function mapPayloadsToIssues(
     const trimmedSuggestion = trimDuplicateTrailingPunctuation(fullText, end, suggestion)
     const resolvedOriginal = fullText.slice(start, end)
 
-    // 深度审阅：即使 suggestion 为空，仍保留逻辑提醒（常需人工改写）
-    if (!trimmedSuggestion || trimmedSuggestion === resolvedOriginal) {
+    // 模型声称的原文必须与命中片段一致；标题序号尤其不能模糊替换
+    if (resolvedOriginal !== original) {
       if (deepReview) {
         issues.push({
           id: nextId(),
           category,
-          message,
-          start,
-          end,
-          original: resolvedOriginal,
-          suggestion: trimmedSuggestion === resolvedOriginal ? '' : trimmedSuggestion,
+          message: `${message}（涉及：${original.length > 36 ? `${original.slice(0, 36)}…` : original}）`,
+          start: 0,
+          end: 0,
+          original,
+          suggestion,
+          autoFixable: false,
+        })
+      }
+      continue
+    }
+
+    const candidate: DocumentIssue = {
+      id: nextId(),
+      category,
+      message,
+      start,
+      end,
+      original: resolvedOriginal,
+      suggestion: trimmedSuggestion,
+      autoFixable: Boolean(trimmedSuggestion && trimmedSuggestion !== resolvedOriginal),
+    }
+    if (isStaleProofreadIssue(fullText, candidate)) {
+      if (deepReview && (!trimmedSuggestion || trimmedSuggestion === resolvedOriginal)) {
+        issues.push({
+          ...candidate,
+          suggestion: '',
+          autoFixable: false,
+        })
+      }
+      continue
+    }
+
+    // 深度审阅：即使 suggestion 为空，仍保留逻辑提醒（常需人工改写）
+    if (!trimmedSuggestion || trimmedSuggestion === resolvedOriginal) {
+      if (deepReview) {
+        issues.push({
+          ...candidate,
+          suggestion: '',
           autoFixable: false,
         })
       }
@@ -1209,13 +1247,7 @@ function mapPayloadsToIssues(
     }
 
     issues.push({
-      id: nextId(),
-      category,
-      message,
-      start,
-      end,
-      original: resolvedOriginal,
-      suggestion: trimmedSuggestion,
+      ...candidate,
       autoFixable: true,
     })
   }

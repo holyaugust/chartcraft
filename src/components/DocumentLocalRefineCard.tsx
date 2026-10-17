@@ -1,4 +1,5 @@
-import { Loader2, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, Sparkles } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import {
   DOCUMENT_LOCAL_REFINE_EXAMPLES,
   isConsultativePrompt,
@@ -12,6 +13,8 @@ interface DocumentLocalRefineCardProps {
   error: string | null
   answer?: string | null
   disabled?: boolean
+  /** 默认收起为矮栏，展开后显示完整对话框 */
+  collapsible?: boolean
   onSubmit: () => void
   onApplyAnswerAsRewrite?: () => void
 }
@@ -24,14 +27,49 @@ export default function DocumentLocalRefineCard({
   error,
   answer = null,
   disabled = false,
+  collapsible = false,
   onSubmit,
   onApplyAnswerAsRewrite,
 }: DocumentLocalRefineCardProps) {
   const hasSelection = Boolean(selectedPreview?.trim())
   const asking = isConsultativePrompt(prompt)
+  const [expanded, setExpanded] = useState(!collapsible)
+
+  useEffect(() => {
+    if (!collapsible) {
+      setExpanded(true)
+      return
+    }
+    if (busy || answer || error) setExpanded(true)
+  }, [collapsible, busy, answer, error])
+
+  if (collapsible && !expanded) {
+    return (
+      <button
+        type="button"
+        className="document-local-refine-collapsed is-accent"
+        aria-expanded={false}
+        aria-controls="document-local-refine-panel"
+        onClick={() => setExpanded(true)}
+      >
+        <span className="document-local-refine-collapsed-label">
+          <Sparkles size={15} aria-hidden />
+          你想对这篇文档做什么
+        </span>
+        <span className="document-local-refine-collapsed-action">
+          展开
+          <ChevronUp size={16} aria-hidden />
+        </span>
+      </button>
+    )
+  }
 
   return (
-    <section className="document-local-refine" aria-label="你想对这篇文档做什么">
+    <section
+      id="document-local-refine-panel"
+      className="document-local-refine"
+      aria-label="你想对这篇文档做什么"
+    >
       <div className="document-local-refine-head">
         <Sparkles size={15} />
         <div>
@@ -44,6 +82,17 @@ export default function DocumentLocalRefineCard({
                 : '建议先选中再优化；未选中时会自动定位片段'}
           </p>
         </div>
+        {collapsible ? (
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost document-local-refine-toggle"
+            aria-expanded={true}
+            aria-label="收起对话框"
+            onClick={() => setExpanded(false)}
+          >
+            <ChevronDown size={16} />
+          </button>
+        ) : null}
       </div>
 
       {hasSelection ? (

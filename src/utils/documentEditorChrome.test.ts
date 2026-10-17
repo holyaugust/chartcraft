@@ -18,20 +18,23 @@ describe('documentEditorChrome', () => {
     })
   })
 
-  it('keeps text and 公文版式 tabs on 智能排版', () => {
+  it('uses one editable 公文版式 surface on 智能排版 without a text tab', () => {
     expect(documentEditorChrome('format', false)).toEqual({
-      showTextTab: true,
-      showOfficialTab: true,
+      showTextTab: false,
+      showOfficialTab: false,
       showOriginalWordLink: false,
     })
   })
 
   it('adds original-Word compare on 智能排版 when a file was uploaded', () => {
-    expect(documentEditorChrome('format', true).showOriginalWordLink).toBe(true)
-    expect(documentEditorChrome('format', true).showOfficialTab).toBe(true)
+    expect(documentEditorChrome('format', true)).toEqual({
+      showTextTab: false,
+      showOfficialTab: false,
+      showOriginalWordLink: true,
+    })
   })
 
-  it('hides 公文版式 on proofread and export', () => {
+  it('hides layout tabs on proofread and export', () => {
     expect(documentEditorChrome('proofread', true)).toMatchObject({
       showOfficialTab: false,
       showOriginalWordLink: true,

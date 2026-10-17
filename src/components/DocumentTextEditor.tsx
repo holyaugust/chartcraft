@@ -55,6 +55,7 @@ interface DocumentTextEditorProps {
   highlightRange?: TextHighlightRange | null
   aiHighlightRanges?: TextHighlightRange[]
   revisionPreview?: DocumentRevisionPreview | null
+  revisionPreviews?: DocumentRevisionPreview[]
   className?: string
   placeholder?: string
   layoutMode?: 'manuscript' | 'official'
@@ -124,18 +125,25 @@ export function plainOffsetFromNode(root: HTMLElement, node: Node, offset: numbe
   return start + extra + offset
 }
 
+function overlappingRevision(
+  revisions: DocumentRevisionPreview[],
+  absStart: number,
+  absEnd: number,
+): DocumentRevisionPreview | null {
+  return (
+    revisions.find((revision) => revision.start < absEnd && revision.end > absStart && revision.end > revision.start) ??
+    null
+  )
+}
+
 function sliceVariant(
   absStart: number,
   absEnd: number,
   highlightRange: TextHighlightRange | null,
   aiHighlightRanges: TextHighlightRange[],
-  revisionPreview: DocumentRevisionPreview | null,
+  revisions: DocumentRevisionPreview[],
 ): MarkVariant {
-  if (
-    revisionPreview &&
-    revisionPreview.start < absEnd &&
-    revisionPreview.end > absStart
-  ) {
+  if (overlappingRevision(revisions, absStart, absEnd)) {
     return 'revision-del'
   }
   if (highlightRange && highlightRange.start < absEnd && highlightRange.end > absStart) {
@@ -152,7 +160,7 @@ function appendMarked(
   absStart: number,
   highlightRange: TextHighlightRange | null,
   aiHighlightRanges: TextHighlightRange[],
-  revisionPreview: DocumentRevisionPreview | null = null,
+  revisions: DocumentRevisionPreview[] = [],
 ) {
   if (!text) {
     parent.append(document.createElement('br'))
@@ -167,9 +175,10 @@ function appendMarked(
     cuts.add(Math.max(absStart, Math.min(range.start, absEnd)))
     cuts.add(Math.max(absStart, Math.min(range.end, absEnd)))
   }
-  if (revisionPreview && revisionPreview.end > revisionPreview.start) {
-    cuts.add(Math.max(absStart, Math.min(revisionPreview.start, absEnd)))
-    cuts.add(Math.max(absStart, Math.min(revisionPreview.end, absEnd)))
+  for (const revision of revisions) {
+    if (revision.end <= revision.start) continue
+    cuts.add(Math.max(absStart, Math.min(revision.start, absEnd)))
+    cuts.add(Math.max(absStart, Math.min(revision.end, absEnd)))
   }
   const points = [...cuts].sort((a, b) => a - b)
   for (let index = 0; index < points.length - 1; index += 1) {
@@ -182,7 +191,7 @@ function appendMarked(
       end,
       highlightRange,
       aiHighlightRanges,
-      revisionPreview,
+      revisions,
     )
     if (variant === 'plain') {
       parent.append(document.createTextNode(slice))
@@ -199,15 +208,15 @@ function appendMarked(
       mark.textContent = slice
       parent.append(mark)
     }
-    if (
-      revisionPreview &&
-      end === revisionPreview.end &&
-      revisionPreview.end > revisionPreview.start &&
-      end > absStart &&
-      end <= absEnd
-    ) {
-      appendRevisionInsertion(parent, revisionPreview.replacement)
-    }
+    const ended = revisions.find(
+      (revision) =>
+        revision.replacement &&
+        end === revision.end &&
+        revision.end > revision.start &&
+        end > absStart &&
+        end <= absEnd,
+    )
+    if (ended) appendRevisionInsertion(parent, ended.replacement)
   }
 }
 
@@ -221,22 +230,25 @@ function createBlock(
   highlightRange: TextHighlightRange | null,
   aiHighlightRanges: TextHighlightRange[],
   officialKind?: OfficialParagraphKind,
-  revisionPreview: DocumentRevisionPreview | null = null,
+  revisions: DocumentRevisionPreview[] = [],
 ): HTMLElement {
   if (block.kind === 'blank') {
     const gap = document.createElement('div')
-    gap.className = 'document-page-gap'
+    const struck = revisions.some(
+      (revision) => revision.end > revision.start && revision.start < block.end + 1 && revision.end > block.start,
+    )
+    gap.className = struck ? 'document-page-gap document-revision-del' : 'document-page-gap'
     gap.dataset.plainStart = String(block.start)
     gap.dataset.plainEnd = String(block.end)
     gap.append(document.createElement('br'))
-    if (
-      revisionPreview &&
-      revisionPreview.end > revisionPreview.start &&
-      revisionPreview.end > block.start &&
-      revisionPreview.end <= block.end
-    ) {
-      appendRevisionInsertion(gap, revisionPreview.replacement)
-    }
+    const ended = revisions.find(
+      (revision) =>
+        revision.replacement &&
+        revision.end > revision.start &&
+        revision.end > block.start &&
+        revision.end <= block.end,
+    )
+    if (ended) appendRevisionInsertion(gap, ended.replacement)
     return gap
   }
   if (block.kind === 'table') {
@@ -255,7 +267,7 @@ function createBlock(
           cell.start,
           highlightRange,
           aiHighlightRanges,
-          revisionPreview,
+          revisions,
         )
         tr.append(td)
       }
@@ -288,7 +300,7 @@ function createBlock(
     block.start,
     highlightRange,
     aiHighlightRanges,
-    revisionPreview,
+    revisions,
   )
   return paragraph
 }
@@ -299,7 +311,7 @@ function paintPage(
   highlightRange: TextHighlightRange | null,
   aiHighlightRanges: TextHighlightRange[],
   layoutMode: 'manuscript' | 'official' = 'manuscript',
-  revisionPreview: DocumentRevisionPreview | null = null,
+  revisions: DocumentRevisionPreview[] = [],
 ) {
   const blocks = parseDocumentPage(value)
   const officialKinds =
@@ -329,7 +341,7 @@ function paintPage(
     if (officialKinds && block.kind !== 'blank' && block.kind !== 'table') {
       officialKind = officialKinds[index]
     }
-    const el = createBlock(block, highlightRange, aiHighlightRanges, officialKind, revisionPreview)
+    const el = createBlock(block, highlightRange, aiHighlightRanges, officialKind, revisions)
     blockElements.push(el)
     measure.append(el)
   })
@@ -345,7 +357,7 @@ function paintPage(
   measure.remove()
 
   root.replaceChildren(sheets)
-  root.contentEditable = revisionPreview ? 'false' : 'true'
+  root.contentEditable = revisions.some((revision) => revision.end > revision.start || revision.replacement) ? 'false' : 'true'
 }
 
 function blockAt(root: HTMLElement, offset: number): HTMLElement | null {
@@ -455,6 +467,7 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
       highlightRange = null,
       aiHighlightRanges = [],
       revisionPreview = null,
+      revisionPreviews = [],
       className = '',
       placeholder: _placeholder,
       layoutMode = 'manuscript',
@@ -471,18 +484,22 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
     const onChangeRef = useRef(onChange)
     const highlightRef = useRef(highlightRange)
     const aiRef = useRef(aiHighlightRanges)
-    const revisionRef = useRef(revisionPreview)
+    const revisionRef = useRef<DocumentRevisionPreview[]>([])
     const selectionRef = useRef(onSelectionChange)
     const highlightKeyRef = useRef('')
     const layoutModeRef = useRef(layoutMode)
     const caretRef = useRef<PageCaret | null>(null)
     const caretAtComposeRef = useRef<PageCaret>({ start: 0, end: 0 })
     const lastSelectionRef = useRef<{ start: number; end: number; text: string } | null>(null)
-    const highlightKey = `${highlightRange?.start ?? ''}:${highlightRange?.end ?? ''}:${highlightRange?.adopted ?? ''}|${aiHighlightRanges.map((range) => `${range.start}:${range.end}:${range.adopted ?? ''}`).join(',')}|rev:${revisionPreview?.start ?? ''}:${revisionPreview?.end ?? ''}:${revisionPreview?.replacement ?? ''}`
+    const revisionList = [
+      ...(revisionPreview ? [revisionPreview] : []),
+      ...revisionPreviews,
+    ]
+    const highlightKey = `${highlightRange?.start ?? ''}:${highlightRange?.end ?? ''}:${highlightRange?.adopted ?? ''}|${aiHighlightRanges.map((range) => `${range.start}:${range.end}:${range.adopted ?? ''}`).join(',')}|rev:${revisionList.map((revision) => `${revision.start}:${revision.end}:${revision.replacement}`).join(';')}`
     onChangeRef.current = onChange
     highlightRef.current = highlightRange
     aiRef.current = aiHighlightRanges
-    revisionRef.current = revisionPreview
+    revisionRef.current = revisionList
     selectionRef.current = onSelectionChange
 
     const paintCurrent = (next: string) => {
@@ -582,7 +599,7 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
       }
 
       const onKeyDown = (event: KeyboardEvent) => {
-        if (revisionRef.current) {
+        if (revisionRef.current.length > 0) {
           if (!event.key.startsWith('Arrow')) event.preventDefault()
           return
         }
@@ -615,8 +632,8 @@ const DocumentTextEditor = forwardRef<DocumentPageEditorHandle, DocumentTextEdit
       }
 
       const onPaste = (event: ClipboardEvent) => {
-        if (revisionRef.current || composingRef.current) {
-          if (revisionRef.current) event.preventDefault()
+        if (revisionRef.current.length > 0 || composingRef.current) {
+          if (revisionRef.current.length > 0) event.preventDefault()
           return
         }
         event.preventDefault()

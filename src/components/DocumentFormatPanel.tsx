@@ -1,16 +1,14 @@
 import {
   AlertTriangle,
   Check,
-  Eye,
   Loader2,
   RefreshCw,
   Type,
+  Undo2,
   Wand2,
   X,
 } from 'lucide-react'
-import { useMemo } from 'react'
 import type { FormatAdjustReport } from '../utils/documentFormatAdjust'
-import { buildOfficialLayoutHtml } from '../utils/documentOfficialLayout'
 
 interface DocumentFormatPanelProps {
   report: FormatAdjustReport | null
@@ -23,6 +21,10 @@ interface DocumentFormatPanelProps {
   onCancelApply: () => void
   onDismiss: () => void
   onGoExport?: () => void
+  onLocate?: (item: FormatAdjustReport['items'][number]) => void
+  canUndo?: boolean
+  onUndo?: () => void
+  activeItemId?: string | null
 }
 
 export default function DocumentFormatPanel({
@@ -36,13 +38,13 @@ export default function DocumentFormatPanel({
   onCancelApply,
   onDismiss,
   onGoExport,
+  onLocate,
+  canUndo = false,
+  onUndo,
+  activeItemId = null,
 }: DocumentFormatPanelProps) {
   const autoCount = report?.items.filter((item) => item.autoApply).length ?? 0
   const advisoryCount = report?.items.filter((item) => !item.autoApply).length ?? 0
-  const previewHtml = useMemo(
-    () => (report?.previewContent ? buildOfficialLayoutHtml(report.previewContent.slice(0, 2500)) : ''),
-    [report?.previewContent],
-  )
 
   return (
     <aside className="document-format-panel">
@@ -81,7 +83,7 @@ export default function DocumentFormatPanel({
       {!busy && !report ? (
         <div className="document-format-empty">
           <Wand2 size={22} />
-          <p>检查层次序号（一、／（一）／1.）、空行落款，并生成公文版式预览。完成后导出即可直接得到排版好的 Word。</p>
+          <p>检查层次序号（一、／（一）／1.）、空行与落款。确认后写入当前页面，导出即可直接得到排版好的 Word。</p>
           <button type="button" className="btn btn-sm btn-primary" onClick={onAnalyze}>
             开始排版
           </button>
@@ -110,9 +112,27 @@ export default function DocumentFormatPanel({
             {advisoryCount > 0 ? <span>另有 {advisoryCount} 条提示</span> : null}
           </div>
 
+          {canUndo && onUndo ? (
+            <div className="document-format-undo">
+              <p>刚应用的排版可以撤回，恢复到应用前的正文。</p>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={onUndo}>
+                <Undo2 size={12} />
+                撤销本次排版
+              </button>
+            </div>
+          ) : null}
+
           <ul className="document-format-list">
             {report.items.map((item) => (
-              <li key={item.id} className={item.autoApply ? 'is-auto' : 'is-advisory'}>
+              <li
+                key={item.id}
+                className={`${item.autoApply ? 'is-auto' : 'is-advisory'}${activeItemId === item.id ? ' is-active' : ''}`}
+              >
+                <button
+                  type="button"
+                  className="document-format-locate"
+                  onClick={() => onLocate?.(item)}
+                >
                 <div className="document-format-item-icon" aria-hidden="true">
                   {item.autoApply ? <Wand2 size={13} /> : <AlertTriangle size={13} />}
                 </div>
@@ -134,22 +154,10 @@ export default function DocumentFormatPanel({
                     </ul>
                   ) : null}
                 </div>
+                </button>
               </li>
             ))}
           </ul>
-
-          {report.changed ? (
-            <section className="document-format-preview">
-              <header>
-                <Eye size={13} />
-                排版后预览
-              </header>
-              <div
-                className="document-format-preview-layout"
-                dangerouslySetInnerHTML={{ __html: previewHtml }}
-              />
-            </section>
-          ) : null}
 
           <div className="document-format-footer">
             {report.changed && !applied ? (

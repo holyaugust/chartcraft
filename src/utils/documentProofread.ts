@@ -78,6 +78,30 @@ export function shouldSkipProofreadIssue(
   return false
 }
 
+/** 标题序号类片段：只允许精确命中，禁止模糊定位到别的标题 */
+export function isHeadingMarkerFragment(text: string): boolean {
+  return /^[（(]?[\d一二三四五六七八九十百零〇]+[）)]?[、.．]/u.test(text.trim())
+}
+
+/**
+ * 建议已过期或无实际改动：原文不在正文、定位区间与原文不一致、或建议等于当前文本。
+ * 用于挡住模型把「一、」改成「（一）」但正文已经是「（一）」这类错误。
+ */
+export function isStaleProofreadIssue(text: string, issue: DocumentIssue): boolean {
+  const content = text.replace(/\r\n/g, '\n')
+  if (issue.start < issue.end) {
+    if (issue.end > content.length) return true
+    const slice = content.slice(issue.start, issue.end)
+    if (issue.suggestion && issue.suggestion === slice) return true
+    if (issue.original && slice !== issue.original) return true
+    return false
+  }
+
+  if (issue.original && !content.includes(issue.original)) return true
+  if (issue.suggestion && issue.original && issue.suggestion === issue.original) return true
+  return false
+}
+
 function isDigitToChineseStyleOnlyChange(original: string, suggestion: string): boolean {
   if (original === suggestion) return false
   const stripNumeric = (value: string) =>
@@ -253,6 +277,8 @@ export function mergeProofreadIssues(
   const occupied: Array<{ start: number; end: number }> = []
 
   for (const issue of batches) {
+    if (isStaleProofreadIssue(text, issue)) continue
+
     if (issue.start < issue.end) {
       const lineText = getLineTextAtOffset(text, issue.start)
       if (shouldSkipProofreadIssue(issue.original, issue.suggestion, { lineText, isTableDocument })) {

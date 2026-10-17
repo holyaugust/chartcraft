@@ -84,7 +84,7 @@ describe('DocumentTextEditor page', () => {
     act(() => root.unmount())
   })
 
-  it('lays out 结构梳理 with official metrics and keeps the editor font', () => {
+  it('lays out 结构梳理 with the same official typeface as the layout preview', () => {
     const sample = [
       '特发服务2027年度资本运作计划报告',
       '一、企业基本情况',
@@ -109,7 +109,15 @@ describe('DocumentTextEditor page', () => {
     expect(css).toMatch(
       /\.document-page-editor-official[\s\S]*?\.doc-layout-body[\s\S]*?text-indent:\s*2em/,
     )
-    expect(css).not.toMatch(/\.document-page-editor-official[\s\S]{0,800}FangSong/)
+    expect(css).toMatch(
+      /\.document-page-editor-official \.doc-layout-p[\s\S]*?FangSong/,
+    )
+    expect(css).toMatch(
+      /\.document-page-editor-official \.doc-layout-title[\s\S]*?STZhongsong/,
+    )
+    expect(css).toMatch(
+      /\.document-page-editor-official \.doc-layout-heading1[\s\S]*?SimHei/,
+    )
     act(() => root.unmount())
   })
 

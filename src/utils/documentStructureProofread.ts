@@ -16,6 +16,7 @@ function pushLineIssue(
   category: DocumentIssue['category'],
   message: string,
   autoFixable = false,
+  suggestion = '',
 ): void {
   issues.push({
     id: nextStructuralIssueId(),
@@ -24,9 +25,56 @@ function pushLineIssue(
     start,
     end,
     original: text.slice(start, end),
-    suggestion: '',
+    suggestion,
     autoFixable,
   })
+}
+
+/** 单独成行的编号标题（一、/（一）/1.） */
+function isStandaloneNumberedHeading(trimmed: string): boolean {
+  if (!trimmed || trimmed.includes('|')) return false
+  if (/^[一二三四五六七八九十百零〇]+[、．.]/u.test(trimmed)) return true
+  if (/^（[一二三四五六七八九十百零〇\d]+）/u.test(trimmed)) return true
+  if (/^\([一二三四五六七八九十百零〇\d]+\)/u.test(trimmed)) return true
+  // 阿拉伯数字三级标题：短行且非年份起头
+  if (
+    /^\d+[、．.]\s*\S/u.test(trimmed) &&
+    !/^\d{4}年/u.test(trimmed) &&
+    trimmed.length <= 48
+  ) {
+    return true
+  }
+  return false
+}
+
+/** 标题行末尾带「。」：公文标题一般不用句号收束 */
+function collectHeadingTrailingPeriodIssues(issues: DocumentIssue[], text: string): void {
+  const lines = text.split('\n')
+  let offset = 0
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? ''
+    const trimmed = line.trim()
+    if (isStandaloneNumberedHeading(trimmed) && /。$/u.test(trimmed)) {
+      const lead = line.match(/^\s*/)?.[0].length ?? 0
+      const start = offset + lead
+      const end = offset + line.length
+      const original = text.slice(start, end)
+      const suggestion = original.replace(/。(\s*)$/u, '$1')
+      if (suggestion && suggestion !== original) {
+        pushLineIssue(
+          issues,
+          text,
+          start,
+          end,
+          'format',
+          '单独成行的标题末尾不宜使用句号，建议去掉「。」',
+          true,
+          suggestion,
+        )
+      }
+    }
+    offset += line.length + (i < lines.length - 1 ? 1 : 0)
+  }
 }
 
 function pushDocumentIssue(
@@ -44,6 +92,86 @@ function pushDocumentIssue(
     suggestion: '',
     autoFixable: false,
   })
+}
+
+const CN_ORDINAL_VALUE: Record<string, number> = {
+  一: 1,
+  二: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+  十: 10,
+}
+
+function chineseOrdinalValue(token: string): number | null {
+  if (token in CN_ORDINAL_VALUE) return CN_ORDINAL_VALUE[token]!
+  if (token.startsWith('十') && token.length === 2) {
+    const ones = CN_ORDINAL_VALUE[token[1]!]
+    return ones ? 10 + ones : null
+  }
+  return null
+}
+
+/** 同层「（二）」后出现「（一）」等回退序号 */
+function collectHeadingOrderIssues(issues: DocumentIssue[], text: string): void {
+  const lines = text.split('\n')
+  let offset = 0
+  let lastLevel2: { value: number; line: string } | null = null
+  let lastLevel1: { value: number; line: string } | null = null
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? ''
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.includes('|')) {
+      offset += line.length + (i < lines.length - 1 ? 1 : 0)
+      continue
+    }
+
+    const level2 = trimmed.match(/^（([一二三四五六七八九十]+)）/u)
+    if (level2) {
+      const value = chineseOrdinalValue(level2[1]!)
+      if (value != null) {
+        if (lastLevel2 && value < lastLevel2.value) {
+          pushLineIssue(
+            issues,
+            text,
+            offset,
+            offset + line.length,
+            'format',
+            `二级标题序号顺序异常：前文序号更大，此处又出现「（${level2[1]}）」，请核对层级与序号`,
+          )
+        }
+        lastLevel2 = { value, line: trimmed }
+      }
+      offset += line.length + (i < lines.length - 1 ? 1 : 0)
+      continue
+    }
+
+    const level1 = trimmed.match(/^([一二三四五六七八九十]+)[、．.]/u)
+    if (level1) {
+      const value = chineseOrdinalValue(level1[1]!)
+      if (value != null) {
+        if (lastLevel1 && value < lastLevel1.value) {
+          pushLineIssue(
+            issues,
+            text,
+            offset,
+            offset + line.length,
+            'format',
+            `一级标题序号顺序异常：前文已有「${lastLevel1.value === 1 ? '一' : lastLevel1.value}、」，此处序号回退，请核对章节顺序`,
+          )
+        }
+        lastLevel1 = { value, line: trimmed }
+        lastLevel2 = null
+      }
+    }
+
+    offset += line.length + (i < lines.length - 1 ? 1 : 0)
+  }
 }
 
 /** 本地公文格式与逻辑结构检查（不依赖 AI） */
@@ -106,6 +234,9 @@ export function collectStructuralProofreadIssues(text: string): DocumentIssue[] 
         `有 ${badHierarchy.length} 处一级层次使用了阿拉伯数字序号，GB/T 9704 建议一级用「一、」、二级用「（一）」`,
       )
     }
+
+    collectHeadingOrderIssues(issues, normalized)
+    collectHeadingTrailingPeriodIssues(issues, normalized)
   }
 
   const lines = normalized.split('\n')

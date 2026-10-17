@@ -5,15 +5,12 @@ import {
   Loader2,
   AlertCircle,
   Eye,
-  PenLine,
-  BookText,
   Check,
   X,
 } from 'lucide-react'
 import DocumentIssuePanel from './DocumentIssuePanel'
 import DocumentStructurePanel from './DocumentStructurePanel'
 import DocumentFormatPanel from './DocumentFormatPanel'
-import DocumentOfficialLayoutPreview from './DocumentOfficialLayoutPreview'
 import DocumentTextEditor, {
   type DocumentEditorSelection,
   type DocumentPageEditorHandle,
@@ -58,6 +55,7 @@ import {
 import { resolveDocumentUndoKey } from '../utils/documentUndoKey'
 import type { TextHighlightRange } from '../utils/documentLocate'
 import { computeAiWriteHighlightRanges } from '../utils/documentAiHighlight'
+import { buildFormatRevisionHunks, locateFormatIssue } from '../utils/documentFormatDiff'
 import { getIssueCategoryLabel } from '../utils/documentProofread'
 import { exportDocumentToDocx } from '../utils/docxExport'
 import { exportDocumentToPdf } from '../utils/documentPdfExport'
@@ -221,6 +219,8 @@ export default function DocumentWorkspace({
   const [formatReport, setFormatReport] = useState<FormatAdjustReport | null>(null)
   const [formatBusy, setFormatBusy] = useState(false)
   const [formatConfirmOpen, setFormatConfirmOpen] = useState(false)
+  const [canUndoFormat, setCanUndoFormat] = useState(false)
+  const [activeFormatItemId, setActiveFormatItemId] = useState<string | null>(null)
   const [formatCompleted, setFormatCompleted] = useState(false)
   const [editorSelection, setEditorSelection] = useState<DocumentEditorSelection | null>(null)
   const [selectionRefineHintDismissed, setSelectionRefineHintDismissed] = useState(
@@ -247,6 +247,13 @@ export default function DocumentWorkspace({
     workflowStep === 'structure' || workflowStep === 'proofread' || workflowStep === 'format'
   const structureRail = workflowStep === 'structure' && !structureExpanded && !structurePendingPatch
   const editorChrome = documentEditorChrome(workflowStep, Boolean(docxBuffer))
+  const formatPreviewPending =
+    workflowStep === 'format' &&
+    Boolean(formatReport?.changed && formatReport.previewContent !== content)
+  const formatRevisionPreviews = useMemo(() => {
+    if (!formatPreviewPending || !formatReport) return []
+    return buildFormatRevisionHunks(content, formatReport.previewContent)
+  }, [formatPreviewPending, formatReport, content])
   const showExportSourceSidebar = !isStepSidebar && preferSourceSidebar
   const showRightSidebar = isStepSidebar || showExportSourceSidebar
 
@@ -274,6 +281,7 @@ export default function DocumentWorkspace({
       undoPastRef.current.shift()
     }
     setCanUndoStructureWrite(false)
+    setCanUndoFormat(false)
   }, [content, adoptedIssueIds, structureAppliedSuggestions, structureAppliedSnippets])
 
   const restoreUndoSnapshot = useCallback((snapshot: DocumentUndoSnapshot) => {
@@ -292,6 +300,7 @@ export default function DocumentWorkspace({
     setHighlightRange(null)
     setLocateHint(null)
     setCanUndoStructureWrite(false)
+    setCanUndoFormat(false)
   }, [docxBuffer])
 
   const handleUndo = useCallback(() => {
@@ -614,12 +623,12 @@ export default function DocumentWorkspace({
       setStatusIsError(false)
       setActiveTemplateId(null)
       setContentOrigin('word')
-      const tableHint = hasTables ? '；表格在「文本编辑」中以 | 分隔列' : ''
+      const tableHint = hasTables ? '；表格在编辑区以 | 分隔列' : ''
       setStatusMessage(
         warnings.length > 0
           ? `Word 已导入并已整理段落格式${tableHint}（${warnings.length} 条提示）`
           : hasTables
-            ? 'Word 已导入并已整理段落格式；表格文本请切换到「文本编辑」（列以 | 分隔）'
+            ? 'Word 已导入并已整理段落格式；表格文本在编辑区以 | 分隔列'
             : 'Word 已导入并已整理段落格式；可点「对照原 Word」查看原排版',
       )
     } catch (err) {
@@ -1013,7 +1022,7 @@ export default function DocumentWorkspace({
   const showSelectionRefineHint = shouldShowSelectionRefineHint({
     dismissed: selectionRefineHintDismissed,
     hasContent,
-    viewMode,
+    viewMode: formatPreviewPending ? 'official' : viewMode,
     workflowStep,
     hasSelection: Boolean(selectedPreview),
   })
@@ -1120,6 +1129,8 @@ export default function DocumentWorkspace({
       setFormatConfirmOpen(false)
       setFormatCompleted(false)
       clearFormatCompleted()
+      setCanUndoFormat(false)
+      setActiveFormatItemId(null)
       if (issues.length > 0 || adoptedIssueIds.length > 0) {
         setIssues([])
         setReviewMode(null)
@@ -1414,7 +1425,7 @@ export default function DocumentWorkspace({
       })
       const report = analyzeDocumentFormat(content)
       setFormatReport({ ...report, items: [...report.items] })
-      setViewMode('official')
+      setViewMode('text')
       const autoCount = report.items.filter((item) => item.autoApply).length
       setStatusIsError(false)
       setStatusMessage(
@@ -1450,15 +1461,44 @@ export default function DocumentWorkspace({
     setFormatReport(analyzeDocumentFormat(next))
     setFormatConfirmOpen(false)
     setWorkflowStep('format')
-    setViewMode('official')
+    setViewMode('text')
+    setCanUndoFormat(true)
+    setActiveFormatItemId(null)
     setStatusIsError(false)
-    setStatusMessage('已应用智能排版，左侧为公文版式预览；导出 Word 将直接使用本次结果。Ctrl+Z 可撤销')
+    setStatusMessage('已应用智能排版并写入当前页面。改动已高亮，可点侧栏「撤销本次排版」撤回')
   }, [formatReport, content, captureUndoSnapshot, docxBuffer])
+
+  const handleLocateFormatItem = useCallback(
+    (item: FormatAdjustReport['items'][number]) => {
+      const range = locateFormatIssue(content, item)
+      setActiveFormatItemId(item.id)
+      if (!range) {
+        setLocateHint('这条提示没有单独落在某一行，请在页面上通读附近段落')
+        return
+      }
+      setHighlightRange({ start: range.start, end: range.end })
+      setLocateHint(item.autoApply ? `将调整：${item.title}` : `请查看：${item.title}`)
+      window.setTimeout(() => {
+        editorRef.current?.scrollToRange(range.start, range.end)
+      }, 0)
+    },
+    [content],
+  )
+
+  const handleUndoFormat = useCallback(() => {
+    if (!canUndoFormat) return
+    const ok = handleUndo()
+    if (!ok) return
+    setCanUndoFormat(false)
+    setActiveFormatItemId(null)
+    setFormatReport(null)
+    setStatusMessage('已撤销本次排版')
+  }, [canUndoFormat, handleUndo])
 
   const openFormatStep = useCallback(() => {
     setSidebarPanel('format')
     setWorkflowStep('format')
-    setViewMode('official')
+    setViewMode('text')
     if (!formatReport) {
       void runFormatAnalysis()
     }
@@ -1561,7 +1601,7 @@ export default function DocumentWorkspace({
       }
 
       setWorkflowStep(step)
-      setViewMode(step === 'format' ? 'official' : 'text')
+      setViewMode('text')
 
       if (step === 'prepare' || step === 'export') {
         setSidebarPanel(preferSourceSidebar ? 'source' : 'templates')
@@ -1794,31 +1834,6 @@ export default function DocumentWorkspace({
                     editorChrome.showTextTab || editorChrome.showOfficialTab ? '文档视图' : '对照原 Word'
                   }
                 >
-                  {editorChrome.showTextTab ? (
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={viewMode === 'text'}
-                    className={`document-view-tab${viewMode === 'text' ? ' active' : ''}`}
-                    onClick={() => setViewMode('text')}
-                  >
-                    <PenLine size={14} />
-                    文本编辑
-                  </button>
-                  ) : null}
-                  {editorChrome.showOfficialTab ? (
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={viewMode === 'official'}
-                    className={`document-view-tab${viewMode === 'official' ? ' active' : ''}`}
-                    disabled={!hasContent}
-                    onClick={() => setViewMode('official')}
-                  >
-                    <BookText size={14} />
-                    公文版式
-                  </button>
-                  ) : null}
                   {editorChrome.showOriginalWordLink ? (
                   <button
                     type="button"
@@ -1826,7 +1841,7 @@ export default function DocumentWorkspace({
                     onClick={() => setViewMode(viewMode === 'preview' ? 'text' : 'preview')}
                   >
                     <Eye size={14} />
-                    {viewMode === 'preview' ? '返回文本编辑' : '对照原 Word'}
+                    {viewMode === 'preview' ? '返回编辑' : '对照原 Word'}
                     {viewMode !== 'preview' && docxFileName ? (
                       <span className="document-view-tab-name">{docxFileName}</span>
                     ) : null}
@@ -1842,7 +1857,7 @@ export default function DocumentWorkspace({
                   />
                   {viewMode === 'preview' && previewTextMismatch ? (
                     <div className="document-preview-stale-hint document-preview-mismatch-hint" role="status">
-                      版式预览可能存在漏字，请切换到「文本编辑」查看完整内容。
+                      版式预览可能存在漏字，请返回编辑查看完整内容。
                     </div>
                   ) : null}
 
@@ -1872,7 +1887,7 @@ export default function DocumentWorkspace({
                     </div>
                   ) : null}
 
-                  {viewMode === 'text' && hasTableLikeRows(content) ? (
+                  {viewMode === 'text' && !formatPreviewPending && hasTableLikeRows(content) ? (
                     <div className="document-table-hint" role="status">
                       表格文本：列与列之间为「 | 」
                       {editorChrome.showOriginalWordLink ? '；点「对照原 Word」可查看原格式' : ''}
@@ -1882,6 +1897,7 @@ export default function DocumentWorkspace({
 
                   {aiHighlightRanges.length > 0 &&
                   viewMode === 'text' &&
+                  !formatPreviewPending &&
                   !highlightRange &&
                   !locateHint ? (
                     <div className="document-ai-highlight-hint" role="status">
@@ -1897,7 +1913,7 @@ export default function DocumentWorkspace({
                     </div>
                   ) : null}
 
-                  {viewMode === 'text' && structurePendingPatch ? (
+                  {viewMode === 'text' && !formatPreviewPending && structurePendingPatch ? (
                     <div className="document-revision-bar" role="region" aria-label="结构修订预览">
                       <div className="document-revision-bar-copy">
                         <strong>修订预览（尚未写入正文）</strong>
@@ -1930,7 +1946,7 @@ export default function DocumentWorkspace({
                     </div>
                   ) : null}
 
-                  {viewMode === 'text' && (!hasContent || workflowStep === 'prepare') ? (
+                  {viewMode === 'text' && !formatPreviewPending && (!hasContent || workflowStep === 'prepare') ? (
                     <DocumentEmptyState
                       busy={busy}
                       onWrite={() => setShowWriteModal(true)}
@@ -1942,6 +1958,12 @@ export default function DocumentWorkspace({
                     />
                   ) : null}
 
+                  {formatPreviewPending && viewMode !== 'preview' ? (
+                    <div className="document-preview-stale-hint" role="status">
+                      删除线是将去掉的原文，绿色是拟写入的内容。确认应用后才会保存；仅提示项点右侧可定位，应用后可自行修改。
+                    </div>
+                  ) : null}
+
                   {viewMode === 'text' && hasContent && workflowStep !== 'prepare' ? (
                     <DocumentTextEditor
                       ref={editorRef}
@@ -1950,24 +1972,10 @@ export default function DocumentWorkspace({
                       highlightRange={highlightRange}
                       aiHighlightRanges={aiHighlightRanges}
                       revisionPreview={structureRevisionPreview}
+                      revisionPreviews={formatRevisionPreviews}
                       onChange={handleContentChange}
                       onSelectionChange={setEditorSelection}
                       placeholder="在此输入报告正文…"
-                    />
-                  ) : null}
-
-                  {viewMode === 'official' && hasContent && workflowStep !== 'prepare' ? (
-                    <DocumentOfficialLayoutPreview
-                      content={
-                        formatReport?.changed && formatReport.previewContent !== content
-                          ? formatReport.previewContent
-                          : content
-                      }
-                      banner={
-                        formatReport?.changed && formatReport.previewContent !== content
-                          ? '以下为智能排版预览（尚未写入正文）。确认应用后才会保存；编辑请切到「文本编辑」。'
-                          : '公文版式预览：标题居中、层次加粗、正文首行缩进。编辑请切到「文本编辑」。'
-                      }
                     />
                   ) : null}
                 </div>
@@ -1989,6 +1997,10 @@ export default function DocumentWorkspace({
                   onConfirmApply={handleConfirmFormatApply}
                   onCancelApply={() => setFormatConfirmOpen(false)}
                   onDismiss={dismissStepSidebar}
+                  onLocate={handleLocateFormatItem}
+                  canUndo={canUndoFormat}
+                  onUndo={handleUndoFormat}
+                  activeItemId={activeFormatItemId}
                   onGoExport={() => {
                     const fp = fingerprintDocumentContent(content)
                     setFormatCompleted(true)
@@ -2033,6 +2045,7 @@ export default function DocumentWorkspace({
                       error={refineError}
                       answer={refineAnswer}
                       disabled={!hasContent || busy}
+                      collapsible
                       onSubmit={() => void handleLocalRefine()}
                       onApplyAnswerAsRewrite={
                         selectedPreview?.trim() ? handleApplyAnswerAsRewrite : undefined
@@ -2083,7 +2096,7 @@ export default function DocumentWorkspace({
         </div>
       </section>
 
-      {selectedPreview && viewMode === 'text' && hasContent && workflowStep !== 'prepare' ? (
+      {selectedPreview && viewMode === 'text' && !formatPreviewPending && hasContent && workflowStep !== 'prepare' ? (
         <DocumentSelectionRefinePopover
           open
           selectedPreview={selectedPreview}

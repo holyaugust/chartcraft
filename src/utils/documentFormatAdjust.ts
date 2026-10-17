@@ -103,7 +103,7 @@ export function analyzeDocumentFormat(content: string): FormatAdjustReport {
       id: 'indent',
       kind: 'indent',
       title: '清理行首缩进空格',
-      detail: '纯文本中去掉手工缩进；编辑区「公文版式」与 Word 导出会显示规范首行缩进',
+      detail: '去掉手工缩进；当前页面与 Word 导出会显示规范首行缩进',
       autoApply: true,
     })
   }
@@ -137,7 +137,7 @@ export function analyzeDocumentFormat(content: string): FormatAdjustReport {
       kind: 'advisory',
       title: '文本格式已较规范',
       detail:
-        '请点上方「公文版式」查看标题居中、正文首行缩进等视觉效果；确认后直接「导出 Word」即可',
+        '当前页面已按公文版式显示标题居中与首行缩进；确认后直接「导出 Word」即可',
       autoApply: false,
     })
   }
